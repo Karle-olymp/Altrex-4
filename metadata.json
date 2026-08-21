@@ -1,0 +1,6 @@
+{
+  "name": "Altrex",
+  "description": "On-device AI model showcase and skill platform, featuring LLM Chat, Prompt Lab, Agent Chat with Skills & MCP tools, and Benchmarking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
