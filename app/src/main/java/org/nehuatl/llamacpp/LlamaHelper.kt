@@ -1,5 +1,6 @@
 package org.nehuatl.llamacpp
 
+import java.io.File
 import android.content.ContentResolver
 import android.net.Uri
 import android.util.Log
