@@ -59,6 +59,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+enum class ChatMode {
+  GENERAL,
+  CODE,
+}
+
 private const val TAG = "AGLlmChatViewModel"
 
 @OptIn(ExperimentalApi::class)
@@ -70,10 +75,29 @@ open class LlmChatViewModelBase(
 ) : ChatViewModel(userDataDataStore) {
   private val _uiSystemPrompt = MutableStateFlow("")
   val uiSystemPrompt = _uiSystemPrompt.asStateFlow()
+  private val _chatMode = MutableStateFlow(ChatMode.GENERAL)
+  val chatMode = _chatMode.asStateFlow()
+
+  companion object {
+    const val CODE_MODE_SYSTEM_PROMPT =
+      "You are an expert software engineer and coding assistant. You excel at writing clean, efficient, and well-documented code, explaining technical concepts clearly, and systematically debugging issues. Always provide clear explanations, best practices, and production-ready code snippets."
+  }
   // Map to track if the session was stopped by the model for a given model name.
   private val sessionStoppedByModel = mutableMapOf<String, Boolean>()
   // The current task ID for the session.
   private var currentTaskId: String = ""
+
+  fun setChatMode(mode: ChatMode, task: Task) {
+    _chatMode.value = mode
+    when (mode) {
+      ChatMode.GENERAL -> {
+        loadSystemPrompt(task)
+      }
+      ChatMode.CODE -> {
+        _uiSystemPrompt.value = CODE_MODE_SYSTEM_PROMPT
+      }
+    }
+  }
 
   /**
    * Sets the system prompt in the UI.
@@ -94,6 +118,10 @@ open class LlmChatViewModelBase(
    */
   fun loadSystemPrompt(task: Task) {
     currentTaskId = task.id
+    if (_chatMode.value == ChatMode.CODE) {
+      _uiSystemPrompt.value = CODE_MODE_SYSTEM_PROMPT
+      return
+    }
     viewModelScope.launch {
       val effectivePrompt =
         SystemPromptHelper.getEffectiveSystemPrompt(systemPromptRepository, task)

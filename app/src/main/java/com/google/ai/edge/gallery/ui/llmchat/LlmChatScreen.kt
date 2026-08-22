@@ -23,11 +23,19 @@ import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +64,38 @@ import com.google.ai.edge.gallery.ui.theme.emptyStateTitle
 
 private const val TAG = "AGLlmChatScreen"
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LlmChatModeToggle(
+  selectedMode: ChatMode,
+  onModeSelected: (ChatMode) -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  Row(
+    modifier =
+      modifier
+        .fillMaxWidth()
+        .padding(horizontal = 16.dp, vertical = 6.dp),
+    horizontalArrangement = Arrangement.Center,
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    SingleChoiceSegmentedButtonRow {
+      SegmentedButton(
+        selected = selectedMode == ChatMode.GENERAL,
+        onClick = { onModeSelected(ChatMode.GENERAL) },
+        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+        label = { Text("General Chat") },
+      )
+      SegmentedButton(
+        selected = selectedMode == ChatMode.CODE,
+        onClick = { onModeSelected(ChatMode.CODE) },
+        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+        label = { Text("Code Mode") },
+      )
+    }
+  }
+}
+
 @Composable
 fun LlmChatScreen(
   modelManagerViewModel: ModelManagerViewModel,
@@ -81,7 +121,19 @@ fun LlmChatScreen(
   skillCount: Int = 0,
   mcpCount: Int = 0,
   mcpToolsCount: Int = 0,
+  topContent: (@Composable () -> Unit)? = null,
 ) {
+  val chatMode by viewModel.chatMode.collectAsState()
+  val task = modelManagerViewModel.getTaskById(id = taskId)
+  val defaultTopContent: @Composable () -> Unit = {
+    if (taskId == BuiltInTaskId.LLM_CHAT && task != null) {
+      LlmChatModeToggle(
+        selectedMode = chatMode,
+        onModeSelected = { mode -> viewModel.setChatMode(mode, task) },
+      )
+    }
+  }
+
   ChatViewWrapper(
     viewModel = viewModel,
     modelManagerViewModel = modelManagerViewModel,
@@ -105,6 +157,7 @@ fun LlmChatScreen(
     showImagePicker = showImagePicker,
     showAudioPicker = showAudioPicker,
     getActiveSkills = getActiveSkills,
+    topContent = topContent ?: defaultTopContent,
   )
 }
 
@@ -223,6 +276,7 @@ fun ChatViewWrapper(
   skillCount: Int = 0,
   mcpCount: Int = 0,
   mcpToolsCount: Int = 0,
+  topContent: (@Composable () -> Unit)? = null,
 ) {
   val context = LocalContext.current
   val task = modelManagerViewModel.getTaskById(id = taskId)!!
@@ -348,5 +402,6 @@ fun ChatViewWrapper(
     onSystemPromptChanged = onSystemPromptChanged,
     sendMessageTrigger = sendMessageTrigger,
     showAudioPicker = showAudioPicker,
+    topContent = topContent,
   )
 }
