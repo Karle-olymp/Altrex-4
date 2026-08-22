@@ -49,6 +49,27 @@ android {
     buildConfigField("String", "FEEDBACK_API_KEY", "\"\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+    externalNativeBuild {
+      cmake {
+        abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+        arguments += listOf(
+          "-DLLAMA_BUILD_COMMON=ON",
+          "-DCMAKE_BUILD_TYPE=Release"
+        )
+        cppFlags("")
+      }
+    }
+    ndk {
+      abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+    }
+  }
+
+  externalNativeBuild {
+    cmake {
+      path("src/main/cpp/CMakeLists.txt")
+      version = "3.22.1"
+    }
   }
 
   buildTypes {

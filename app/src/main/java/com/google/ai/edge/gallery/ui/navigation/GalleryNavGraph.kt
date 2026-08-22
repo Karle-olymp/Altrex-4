@@ -83,6 +83,7 @@ import com.google.ai.edge.gallery.ui.common.ModelPageAppBar
 import com.google.ai.edge.gallery.ui.common.chat.ModelDownloadStatusInfoPanel
 import com.google.ai.edge.gallery.ui.home.HomeScreen
 import com.google.ai.edge.gallery.ui.home.PromoScreenGm4
+import com.google.ai.edge.gallery.ui.llamacpp.LlamaCppTestScreen
 import com.google.ai.edge.gallery.ui.modelmanager.GlobalModelManager
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManager
@@ -99,6 +100,7 @@ private const val ROUTE_MODEL = "route_model"
 private const val ROUTE_BENCHMARK = "benchmark"
 private const val ROUTE_MODEL_MANAGER = "model_manager"
 private const val ROUTE_NOTIFICATIONS = "notifications"
+private const val ROUTE_LLAMA_CPP_TEST = "llama_cpp_test"
 private const val ENTER_ANIMATION_DURATION_MS = 500
 private val ENTER_ANIMATION_EASING = EaseOutExpo
 private const val ENTER_ANIMATION_DELAY_MS = 100
@@ -212,6 +214,7 @@ fun GalleryNavHost(
             },
             onModelsClicked = { navController.navigate(ROUTE_MODEL_MANAGER) },
             onNotificationsClicked = { navController.navigate(ROUTE_NOTIFICATIONS) },
+            onLlamaCppClicked = { navController.navigate(ROUTE_LLAMA_CPP_TEST) },
             gm4 = true,
           )
         }
@@ -451,6 +454,20 @@ fun GalleryNavHost(
           },
         )
       }
+    }
+
+    // llama.cpp native engine test screen.
+    composable(
+      route = ROUTE_LLAMA_CPP_TEST,
+      enterTransition = { slideEnter() },
+      exitTransition = { slideExit() },
+    ) {
+      LlamaCppTestScreen(
+        onBackClicked = {
+          enableHomeScreenAnimation = false
+          navController.navigateUp()
+        }
+      )
     }
   }
 
