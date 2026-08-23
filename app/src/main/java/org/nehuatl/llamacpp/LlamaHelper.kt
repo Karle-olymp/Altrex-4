@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class LlamaHelper(
@@ -154,6 +155,17 @@ class LlamaHelper(
         }
 
         completionJob = scope.launch {
+            val formattedPrompt = try {
+                llama.getFormattedChat(
+                    context,
+                    listOf(mapOf("role" to "user", "content" to prompt)),
+                    ""
+                ).first()
+            } catch (e: Exception) {
+                Log.e("LlamaHelper", "Chat template formatting failed, using raw prompt", e)
+                prompt
+            }
+            params["prompt"] = formattedPrompt
             sharedFlow.tryEmit(LLMEvent.Started(prompt))
             llama.launchCompletion(
                 id = context,
