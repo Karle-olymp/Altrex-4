@@ -31,5 +31,8 @@ val Model.runtimeHelper: LlmModelHelper
     if (this.runtimeType == RuntimeType.AICORE) {
       return AICoreModelHelper
     }
+    if (this.runtimeType == RuntimeType.LLAMA_CPP) {
+      return LlamaCppModelHelper
+    }
     return LlmChatModelHelper
   }
