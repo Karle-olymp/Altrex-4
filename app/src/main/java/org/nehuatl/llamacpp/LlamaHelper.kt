@@ -155,16 +155,7 @@ class LlamaHelper(
         }
 
         completionJob = scope.launch {
-            val formattedPrompt = try {
-                llama.getFormattedChat(
-                    context,
-                    listOf(mapOf("role" to "user", "content" to prompt)),
-                    ""
-                ).first()
-            } catch (e: Exception) {
-                Log.e("LlamaHelper", "Chat template formatting failed, using raw prompt", e)
-                prompt
-            }
+            val formattedPrompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n$prompt<|im_end|>\n<|im_start|>assistant\n"
             params["prompt"] = formattedPrompt
             sharedFlow.tryEmit(LLMEvent.Started(prompt))
             llama.launchCompletion(
