@@ -126,3 +126,9 @@ endfunction()
 
 # Default target
 build_library("rnllama" "generic" "")
+
+build_library("rnllama_v8" "arm" "-march=armv8-a")
+build_library("rnllama_v8_2" "arm" "-march=armv8.2-a")
+build_library("rnllama_v8_2_dotprod" "arm" "-march=armv8.2-a+dotprod")
+build_library("rnllama_v8_2_i8mm" "arm" "-march=armv8.2-a+i8mm")
+build_library("rnllama_v8_2_dotprod_i8mm" "arm" "-march=armv8.2-a+dotprod+i8mm")
