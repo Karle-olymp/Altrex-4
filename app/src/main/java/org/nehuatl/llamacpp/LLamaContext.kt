@@ -18,43 +18,46 @@ class LlamaContext(
         private const val NAME = "RNLlamaContext"
 
         init {
-            Log.d(NAME, "Primary ABI: ${Build.SUPPORTED_ABIS[0]}")
-            if (isArm64V8a()) {
-                val cpuFeatures = getCpuFeatures()
-                Log.d(NAME, "CPU features: $cpuFeatures")
+            try {
+                if (isArm64V8a()) {
+                    val cpuFeatures = getCpuFeatures()
+                    Log.d(NAME, "CPU features: $cpuFeatures")
 
-                val hasDotProd = cpuFeatures.contains("dotprod") || cpuFeatures.contains("asimddp")
-                val isAtLeastArmV82 = cpuFeatures.contains("asimd") && cpuFeatures.contains("crc32") && cpuFeatures.contains("aes")
-                val hasI8mm = cpuFeatures.contains("i8mm")
+                    val hasDotProd = cpuFeatures.contains("dotprod") || cpuFeatures.contains("asimddp")
+                    val isAtLeastArmV82 = cpuFeatures.contains("asimd") && cpuFeatures.contains("crc32") && cpuFeatures.contains("aes")
+                    val hasI8mm = cpuFeatures.contains("i8mm")
 
-                when {
-                    isAtLeastArmV82 && hasDotProd && hasI8mm -> {
-                        Log.d(NAME, "Loading librnllama_v8_2_dotprod_i8mm.so")
-                        System.loadLibrary("rnllama_v8_2_dotprod_i8mm")
+                    when {
+                        isAtLeastArmV82 && hasDotProd && hasI8mm -> {
+                            Log.d(NAME, "Loading librnllama_v8_2_dotprod_i8mm.so")
+                            System.loadLibrary("rnllama_v8_2_dotprod_i8mm")
+                        }
+                        isAtLeastArmV82 && hasDotProd -> {
+                            Log.d(NAME, "Loading librnllama_v8_2_dotprod.so")
+                            System.loadLibrary("rnllama_v8_2_dotprod")
+                        }
+                        isAtLeastArmV82 && hasI8mm -> {
+                            Log.d(NAME, "Loading librnllama_v8_2_i8mm.so")
+                            System.loadLibrary("rnllama_v8_2_i8mm")
+                        }
+                        isAtLeastArmV82 -> {
+                            Log.d(NAME, "Loading librnllama_v8_2.so")
+                            System.loadLibrary("rnllama_v8_2")
+                        }
+                        else -> {
+                            Log.d(NAME, "Loading librnllama_v8.so")
+                            System.loadLibrary("rnllama_v8")
+                        }
                     }
-                    isAtLeastArmV82 && hasDotProd -> {
-                        Log.d(NAME, "Loading librnllama_v8_2_dotprod.so")
-                        System.loadLibrary("rnllama_v8_2_dotprod")
-                    }
-                    isAtLeastArmV82 && hasI8mm -> {
-                        Log.d(NAME, "Loading librnllama_v8_2_i8mm.so")
-                        System.loadLibrary("rnllama_v8_2_i8mm")
-                    }
-                    isAtLeastArmV82 -> {
-                        Log.d(NAME, "Loading librnllama_v8_2.so")
-                        System.loadLibrary("rnllama_v8_2")
-                    }
-                    else -> {
-                        Log.d(NAME, "Loading librnllama_v8.so")
-                        System.loadLibrary("rnllama_v8")
-                    }
+                } else if (isX86_64()) {
+                    Log.d(NAME, "Loading librnllama_x86_64.so")
+                    System.loadLibrary("rnllama_x86_64")
+                } else {
+                    Log.d(NAME, "Loading default librnllama.so")
+                    System.loadLibrary("rnllama")
                 }
-            } else if (isX86_64()) {
-                Log.d(NAME, "Loading librnllama_x86_64.so")
-                System.loadLibrary("rnllama_x86_64")
-            } else {
-                Log.d(NAME, "Loading default librnllama.so")
-                System.loadLibrary("rnllama")
+            } catch (t: Throwable) {
+                Log.w(NAME, "Native library rnllama could not be loaded: ${t.message}")
             }
         }
 

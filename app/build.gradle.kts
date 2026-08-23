@@ -30,12 +30,12 @@ plugins {
 
 android {
   namespace = "com.google.ai.edge.gallery"
-  compileSdk { this.version = release(37) { minorApiLevel = 0 } }
+  compileSdk = 36
 
   defaultConfig {
     applicationId = "com.aistudio.altrex.app"
     minSdk = 31
-    targetSdk = 37
+    targetSdk = 36
     versionCode = 41
     versionName = "1.0.19"
 
@@ -49,31 +49,20 @@ android {
     buildConfigField("String", "FEEDBACK_API_KEY", "\"\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-    externalNativeBuild {
-      cmake {
-        abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
-        arguments += listOf(
-          "-DLLAMA_BUILD_COMMON=ON",
-          "-DCMAKE_BUILD_TYPE=Release"
-        )
-        cppFlags("")
-      }
-    }
-    ndk {
-      abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
-    }
   }
 
-  externalNativeBuild {
-    cmake {
-      path("src/main/cpp/CMakeLists.txt")
-      version = "3.22.1"
+  signingConfigs {
+    create("debugConfig") {
+      storeFile = file("${rootDir}/debug.keystore")
+      storePassword = "android"
+      keyAlias = "androiddebugkey"
+      keyPassword = "android"
     }
   }
 
   buildTypes {
     debug {
+      signingConfig = signingConfigs.getByName("debugConfig")
     }
     release {
     }

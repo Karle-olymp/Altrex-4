@@ -21,8 +21,8 @@
 
     <uses-sdk
         android:minSdkVersion="31"
-        android:compileSdkVersion ="37"
-        android:targetSdkVersion="37" />
+        android:compileSdkVersion ="36"
+        android:targetSdkVersion="36" />
 
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
