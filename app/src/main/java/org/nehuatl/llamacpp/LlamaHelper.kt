@@ -155,7 +155,7 @@ class LlamaHelper(
         }
 
         completionJob = scope.launch {
-            val formattedPrompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n$prompt<|im_end|>\n<|im_start|>assistant\n"
+            val formattedPrompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n$prompt<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
             params["prompt"] = formattedPrompt
             sharedFlow.tryEmit(LLMEvent.Started(prompt))
             llama.launchCompletion(
