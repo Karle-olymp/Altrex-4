@@ -68,7 +68,7 @@ class LlamaHelper(
             val config = mutableMapOf<String, Any>(
                 "model" to modelUri.toString(),
                 "model_fd" to modelFd,
-                "use_mmap" to false,
+                "use_mmap" to true,
                 "use_mlock" to false,
                 "n_ctx" to contextLength,
                 "embedding" to false,

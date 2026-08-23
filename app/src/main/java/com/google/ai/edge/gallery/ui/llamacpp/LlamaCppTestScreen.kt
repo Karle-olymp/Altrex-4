@@ -95,7 +95,6 @@ fun LlamaCppTestScreen(
   val llamaHelper = remember {
     LlamaHelper(
       contentResolver = context.contentResolver,
-      scope = scope,
       sharedFlow = sharedFlow,
     )
   }
