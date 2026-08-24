@@ -75,6 +75,7 @@ import com.google.ai.edge.gallery.customtasks.common.CustomTaskData
 import com.google.ai.edge.gallery.customtasks.common.CustomTaskDataForBuiltinTask
 import com.google.ai.edge.gallery.data.ModelDownloadStatusType
 import com.google.ai.edge.gallery.data.Task
+import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.isLegacyTasks
 import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.ui.benchmark.BenchmarkScreen
@@ -161,6 +162,24 @@ fun GalleryNavHost(
   var enableHomeScreenAnimation by remember { mutableStateOf(true) }
   var enableModelListAnimation by remember { mutableStateOf(true) }
   val modelManagerUiState by modelManagerViewModel.uiState.collectAsState()
+// Auto-navigate straight into AI Chat on cold start, using the last successful
+  // model or the first available one. Home stays in the back stack (accessible via
+  // system back / drawer) but is no longer a mandatory step.
+  var autoNavigatedToChat by remember { mutableStateOf(false) }
+  LaunchedEffect(modelManagerUiState.tasks) {
+    if (!autoNavigatedToChat && modelManagerUiState.tasks.isNotEmpty()) {
+      val chatTask = modelManagerUiState.tasks.find { it.id == BuiltInTaskId.LLM_CHAT }
+      val defaultModel =
+        chatTask?.models?.firstOrNull { model ->
+          modelManagerUiState.modelDownloadStatus[model.name]?.status ==
+            ModelDownloadStatusType.SUCCEEDED
+        } ?: chatTask?.models?.firstOrNull()
+      if (chatTask != null && defaultModel != null) {
+        autoNavigatedToChat = true
+        navController.navigate("$ROUTE_MODEL/${chatTask.id}/${defaultModel.name}")
+      }
+    }
+  }
 
   // Track whether app is in foreground.
   DisposableEffect(lifecycleOwner) {

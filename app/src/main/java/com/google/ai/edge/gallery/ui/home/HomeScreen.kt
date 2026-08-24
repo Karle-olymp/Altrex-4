@@ -58,6 +58,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ListAlt
 import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.Mms
+import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Notifications
@@ -354,11 +358,107 @@ fun HomeScreen(
                     ),
                 )
                 Spacer(modifier = Modifier.width(16.dp))
-                Spacer(modifier = Modifier.weight(1f))
+SquareDrawerItem(
+                  label = "AI Chat",
+                  description = "Chat with an on-device LLM",
+                  icon = Icons.Outlined.Forum,
+                  onClick = {
+                    scope.launch { drawerState.close() }
+                    tasks.find { it.id == BuiltInTaskId.LLM_CHAT }?.let { navigateToTaskScreen(it) }
+                  },
+                  modifier = Modifier.weight(1f),
+                  iconBrush =
+                    linearGradient(
+                      colors =
+                        listOf(
+                          MaterialTheme.customColors.taskBgGradientColors[3][0],
+                          MaterialTheme.customColors.taskBgGradientColors[3][1],
+                        )
+                    ),
+                )
               }
+              Spacer(modifier = Modifier.height(16.dp))
+              Row(modifier = Modifier.fillMaxWidth()) {
+                SquareDrawerItem(
+                  label = "Ask Image",
+                  description = "Ask questions about images",
+                  icon = Icons.Outlined.Mms,
+                  onClick = {
+                    scope.launch { drawerState.close() }
+                    tasks.find { it.id == BuiltInTaskId.LLM_ASK_IMAGE }?.let { navigateToTaskScreen(it) }
+                  },
+                  modifier = Modifier.weight(1f),
+                  iconBrush =
+                    linearGradient(
+                      colors =
+                        listOf(
+                          MaterialTheme.customColors.taskBgGradientColors[0][0],
+                          MaterialTheme.customColors.taskBgGradientColors[0][1],
+                        )
+                    ),
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                SquareDrawerItem(
+                  label = "Audio Scribe",
+                  description = "Transcribe and translate audio",
+                  icon = Icons.Outlined.Mic,
+                  onClick = {
+                    scope.launch { drawerState.close() }
+                    tasks.find { it.id == BuiltInTaskId.LLM_ASK_AUDIO }?.let { navigateToTaskScreen(it) }
+                  },
+                  modifier = Modifier.weight(1f),
+                  iconBrush =
+                    linearGradient(
+                      colors =
+                        listOf(
+                          MaterialTheme.customColors.taskBgGradientColors[1][0],
+                          MaterialTheme.customColors.taskBgGradientColors[1][1],
+                        )
+                    ),
+                )
+              }
+              Spacer(modifier = Modifier.height(16.dp))
+              Row(modifier = Modifier.fillMaxWidth()) {
+                SquareDrawerItem(
+                  label = "Agent Skills",
+                  description = "Complete agentic tasks with chat",
+                  icon = Icons.Rounded.Flag,
+                  onClick = {
+                    scope.launch { drawerState.close() }
+                    tasks.find { it.id == BuiltInTaskId.LLM_AGENT_CHAT }?.let { navigateToTaskScreen(it) }
+                  },
+                  modifier = Modifier.weight(1f),
+                  iconBrush =
+                    linearGradient(
+                      colors =
+                        listOf(
+                          MaterialTheme.customColors.taskBgGradientColors[3][0],
+                          MaterialTheme.customColors.taskBgGradientColors[3][1],
+                        )
+                    ),
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                SquareDrawerItem(
+                  label = "Prompt Lab",
+                  description = "Single turn use cases",
+                  icon = Icons.Outlined.Widgets,
+                  onClick = {
+                    scope.launch { drawerState.close() }
+                    tasks.find { it.id == BuiltInTaskId.LLM_PROMPT_LAB }?.let { navigateToTaskScreen(it) }
+                  },
+                  modifier = Modifier.weight(1f),
+                  iconBrush =
+                    linearGradient(
+                      colors =
+                        listOf(
+                          MaterialTheme.customColors.taskBgGradientColors[2][0],
+                          MaterialTheme.customColors.taskBgGradientColors[2][1],
+                        )
+                    ),
+                )
+}
             }
-          }
-        },
+          }        },
         gesturesEnabled = drawerState.isOpen,
       ) {
         Scaffold(
