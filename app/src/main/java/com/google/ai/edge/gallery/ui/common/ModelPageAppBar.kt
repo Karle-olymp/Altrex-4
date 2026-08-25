@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -77,6 +78,7 @@ fun ModelPageAppBar(
   modifier: Modifier = Modifier,
   hideModelSelector: Boolean = false,
   useThemeColor: Boolean = false,
+  onMenuClicked: (() -> Unit)? = null,
   onConfigChanged: (oldConfigValues: Map<String, Any>, newConfigValues: Map<String, Any>) -> Unit =
     { _, _ ->
     },
@@ -133,14 +135,23 @@ fun ModelPageAppBar(
       }
     },
     modifier = modifier,
-    // The back button.
+    // The navigation icon (menu or back button).
     navigationIcon = {
-      val enableBackButton = !isModelInitializing && !inProgress
-      IconButton(onClick = onBackClicked, enabled = enableBackButton) {
-        Icon(
-          imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-          contentDescription = stringResource(R.string.cd_navigate_back_icon),
-        )
+      val enableNavButton = !isModelInitializing && !inProgress
+      if (onMenuClicked != null) {
+        IconButton(onClick = onMenuClicked, enabled = enableNavButton) {
+          Icon(
+            imageVector = Icons.Rounded.Menu,
+            contentDescription = stringResource(R.string.cd_menu),
+          )
+        }
+      } else {
+        IconButton(onClick = onBackClicked, enabled = enableNavButton) {
+          Icon(
+            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+            contentDescription = stringResource(R.string.cd_navigate_back_icon),
+          )
+        }
       }
     },
     // The config button for the model (if existed).

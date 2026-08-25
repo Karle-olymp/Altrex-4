@@ -37,13 +37,33 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ListAlt
+import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.Mms
+import androidx.compose.material.icons.outlined.Widgets
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -55,12 +75,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush.Companion.linearGradient
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -71,11 +94,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.google.ai.edge.gallery.GalleryEvent
+import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.customtasks.common.CustomTaskData
 import com.google.ai.edge.gallery.customtasks.common.CustomTaskDataForBuiltinTask
+import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.ModelDownloadStatusType
 import com.google.ai.edge.gallery.data.Task
-import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.isLegacyTasks
 import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.ui.benchmark.BenchmarkScreen
@@ -84,12 +108,15 @@ import com.google.ai.edge.gallery.ui.common.ModelPageAppBar
 import com.google.ai.edge.gallery.ui.common.chat.ModelDownloadStatusInfoPanel
 import com.google.ai.edge.gallery.ui.home.HomeScreen
 import com.google.ai.edge.gallery.ui.home.PromoScreenGm4
+import com.google.ai.edge.gallery.ui.home.SettingsDialog
+import com.google.ai.edge.gallery.ui.home.SquareDrawerItem
 import com.google.ai.edge.gallery.ui.llamacpp.LlamaCppTestScreen
 import com.google.ai.edge.gallery.ui.modelmanager.GlobalModelManager
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManager
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import com.google.ai.edge.gallery.ui.notifications.NotificationsScreen
+import com.google.ai.edge.gallery.ui.theme.customColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -163,6 +190,28 @@ fun GalleryNavHost(
   var enableHomeScreenAnimation by remember { mutableStateOf(true) }
   var enableModelListAnimation by remember { mutableStateOf(true) }
   val modelManagerUiState by modelManagerViewModel.uiState.collectAsState()
+  val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+  val scope = rememberCoroutineScope()
+  var showSettingsDialog by remember { mutableStateOf(false) }
+
+  // Close the menu when back button is pressed.
+  BackHandler(drawerState.isOpen) { scope.launch { drawerState.close() } }
+
+  val navigateToTaskScreen: (Task) -> Unit = { task ->
+    val defaultModel =
+      task.models.firstOrNull { model ->
+        modelManagerUiState.modelDownloadStatus[model.name]?.status ==
+          ModelDownloadStatusType.SUCCEEDED
+      } ?: task.models.firstOrNull()
+    if (defaultModel != null) {
+      navController.navigate("$ROUTE_MODEL/${task.id}/${defaultModel.name}")
+    } else {
+      pickedTask = task
+      enableModelListAnimation = true
+      navController.navigate(ROUTE_MODEL_LIST)
+    }
+  }
+
   // Track whether app is in foreground.
   DisposableEffect(lifecycleOwner) {
     val observer = LifecycleEventObserver { _, event ->
@@ -186,12 +235,197 @@ fun GalleryNavHost(
     onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
   }
 
-  NavHost(
-    navController = navController,
-    startDestination = ROUTE_START,
-    enterTransition = { EnterTransition.None },
-    exitTransition = { ExitTransition.None },
+  ModalNavigationDrawer(
+    drawerState = drawerState,
+    drawerContent = {
+      ModalDrawerSheet {
+        Column(modifier = Modifier.padding(16.dp)) {
+          Row(modifier = Modifier.fillMaxWidth()) {
+            SquareDrawerItem(
+              label = stringResource(R.string.drawer_settings_label),
+              description = stringResource(R.string.drawer_settings_description),
+              icon = Icons.Rounded.Settings,
+              onClick = {
+                showSettingsDialog = true
+                scope.launch { drawerState.close() }
+              },
+              modifier = Modifier.weight(1f),
+              iconBrush =
+                linearGradient(
+                  colors =
+                    listOf(
+                      MaterialTheme.customColors.taskBgGradientColors[2][0],
+                      MaterialTheme.customColors.taskBgGradientColors[2][1],
+                    )
+                ),
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            SquareDrawerItem(
+              label = stringResource(R.string.drawer_models_label),
+              description = stringResource(R.string.drawer_models_description),
+              icon = Icons.AutoMirrored.Rounded.ListAlt,
+              onClick = {
+                scope.launch { drawerState.close() }
+                scope.launch {
+                  delay(50)
+                  navController.navigate(ROUTE_MODEL_MANAGER)
+                }
+              },
+              modifier = Modifier.weight(1f),
+              iconBrush =
+                linearGradient(
+                  colors =
+                    listOf(
+                      MaterialTheme.customColors.taskBgGradientColors[1][0],
+                      MaterialTheme.customColors.taskBgGradientColors[1][1],
+                    )
+                ),
+            )
+          }
+          Spacer(modifier = Modifier.height(16.dp))
+          Row(modifier = Modifier.fillMaxWidth()) {
+            SquareDrawerItem(
+              label = "llama.cpp Test",
+              description = "Native GGUF engine",
+              icon = Icons.Rounded.Code,
+              onClick = {
+                scope.launch { drawerState.close() }
+                scope.launch {
+                  delay(50)
+                  navController.navigate(ROUTE_LLAMA_CPP_TEST)
+                }
+              },
+              modifier = Modifier.weight(1f),
+              iconBrush =
+                linearGradient(
+                  colors =
+                    listOf(
+                      MaterialTheme.customColors.taskBgGradientColors[0][0],
+                      MaterialTheme.customColors.taskBgGradientColors[0][1],
+                    )
+                ),
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            SquareDrawerItem(
+              label = "AI Chat",
+              description = "Chat with an on-device LLM",
+              icon = Icons.Outlined.Forum,
+              onClick = {
+                scope.launch { drawerState.close() }
+                modelManagerUiState.tasks.find { it.id == BuiltInTaskId.LLM_CHAT }?.let {
+                  navigateToTaskScreen(it)
+                }
+              },
+              modifier = Modifier.weight(1f),
+              iconBrush =
+                linearGradient(
+                  colors =
+                    listOf(
+                      MaterialTheme.customColors.taskBgGradientColors[3][0],
+                      MaterialTheme.customColors.taskBgGradientColors[3][1],
+                    )
+                ),
+            )
+          }
+          Spacer(modifier = Modifier.height(16.dp))
+          Row(modifier = Modifier.fillMaxWidth()) {
+            SquareDrawerItem(
+              label = "Ask Image",
+              description = "Ask questions about images",
+              icon = Icons.Outlined.Mms,
+              onClick = {
+                scope.launch { drawerState.close() }
+                modelManagerUiState.tasks.find { it.id == BuiltInTaskId.LLM_ASK_IMAGE }?.let {
+                  navigateToTaskScreen(it)
+                }
+              },
+              modifier = Modifier.weight(1f),
+              iconBrush =
+                linearGradient(
+                  colors =
+                    listOf(
+                      MaterialTheme.customColors.taskBgGradientColors[0][0],
+                      MaterialTheme.customColors.taskBgGradientColors[0][1],
+                    )
+                ),
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            SquareDrawerItem(
+              label = "Audio Scribe",
+              description = "Transcribe and translate audio",
+              icon = Icons.Outlined.Mic,
+              onClick = {
+                scope.launch { drawerState.close() }
+                modelManagerUiState.tasks.find { it.id == BuiltInTaskId.LLM_ASK_AUDIO }?.let {
+                  navigateToTaskScreen(it)
+                }
+              },
+              modifier = Modifier.weight(1f),
+              iconBrush =
+                linearGradient(
+                  colors =
+                    listOf(
+                      MaterialTheme.customColors.taskBgGradientColors[1][0],
+                      MaterialTheme.customColors.taskBgGradientColors[1][1],
+                    )
+                ),
+            )
+          }
+          Spacer(modifier = Modifier.height(16.dp))
+          Row(modifier = Modifier.fillMaxWidth()) {
+            SquareDrawerItem(
+              label = "Agent Skills",
+              description = "Complete agentic tasks with chat",
+              icon = Icons.Rounded.Flag,
+              onClick = {
+                scope.launch { drawerState.close() }
+                modelManagerUiState.tasks.find { it.id == BuiltInTaskId.LLM_AGENT_CHAT }?.let {
+                  navigateToTaskScreen(it)
+                }
+              },
+              modifier = Modifier.weight(1f),
+              iconBrush =
+                linearGradient(
+                  colors =
+                    listOf(
+                      MaterialTheme.customColors.taskBgGradientColors[3][0],
+                      MaterialTheme.customColors.taskBgGradientColors[3][1],
+                    )
+                ),
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            SquareDrawerItem(
+              label = "Prompt Lab",
+              description = "Single turn use cases",
+              icon = Icons.Outlined.Widgets,
+              onClick = {
+                scope.launch { drawerState.close() }
+                modelManagerUiState.tasks.find { it.id == BuiltInTaskId.LLM_PROMPT_LAB }?.let {
+                  navigateToTaskScreen(it)
+                }
+              },
+              modifier = Modifier.weight(1f),
+              iconBrush =
+                linearGradient(
+                  colors =
+                    listOf(
+                      MaterialTheme.customColors.taskBgGradientColors[2][0],
+                      MaterialTheme.customColors.taskBgGradientColors[2][1],
+                    )
+                ),
+            )
+          }
+        }
+      }
+    },
+    gesturesEnabled = drawerState.isOpen,
   ) {
+    NavHost(
+      navController = navController,
+      startDestination = ROUTE_START,
+      enterTransition = { EnterTransition.None },
+      exitTransition = { ExitTransition.None },
+    ) {
     // Invisible start route to avoid flashing the home screen on cold start
     composable(route = ROUTE_START) {
       Box(modifier = modifier.fillMaxSize())
@@ -241,6 +475,7 @@ fun GalleryNavHost(
             onModelsClicked = { navController.navigate(ROUTE_MODEL_MANAGER) },
             onNotificationsClicked = { navController.navigate(ROUTE_NOTIFICATIONS) },
             onLlamaCppClicked = { navController.navigate(ROUTE_LLAMA_CPP_TEST) },
+            onMenuClicked = { scope.launch { drawerState.open() } },
             gm4 = true,
           )
         }
@@ -355,8 +590,12 @@ fun GalleryNavHost(
                 CustomTaskDataForBuiltinTask(
                   modelManagerViewModel = modelManagerViewModel,
                   onNavUp = {
-                    enableModelListAnimation = false
-                    navController.navigateUp()
+                    if (navController.previousBackStackEntry != null) {
+                      enableModelListAnimation = false
+                      navController.navigateUp()
+                    } else {
+                      scope.launch { drawerState.apply { if (isClosed) open() else close() } }
+                    }
                   },
                   initialQuery = queryParam,
                 )
@@ -388,6 +627,9 @@ fun GalleryNavHost(
                     }
                   }
                 }
+              },
+              onMenuClicked = {
+                scope.launch { drawerState.apply { if (isClosed) open() else close() } }
               },
               disableAppBarControls = disableAppBarControls,
               hideTopBar = hideTopBar,
@@ -497,6 +739,16 @@ fun GalleryNavHost(
     }
   }
 
+  // Settings dialog
+  if (showSettingsDialog) {
+    SettingsDialog(
+      curThemeOverride = modelManagerViewModel.readThemeOverride(),
+      curFirebaseAnalytics = modelManagerViewModel.readFirebaseAnalytics(),
+      modelManagerViewModel = modelManagerViewModel,
+      onDismissed = { showSettingsDialog = false },
+    )
+  }
+
   // Handle incoming intents for deep links
   val intent = androidx.activity.compose.LocalActivity.current?.intent
   val data = intent?.data
@@ -564,6 +816,7 @@ private fun CustomTaskScreen(
   hideTopBar: Boolean,
   useThemeColor: Boolean,
   onNavigateUp: () -> Unit,
+  onMenuClicked: (() -> Unit)? = null,
   content: @Composable (bottomPadding: Dp) -> Unit,
 ) {
   val modelManagerUiState by modelManagerViewModel.uiState.collectAsState()
@@ -621,6 +874,7 @@ private fun CustomTaskScreen(
           hideModelSelector = task.models.size <= 1,
           onConfigChanged = { _, _ -> },
           onBackClicked = { handleNavigateUp() },
+          onMenuClicked = onMenuClicked,
           onModelSelected = { prevModel, newSelectedModel ->
             val instanceToCleanUp = prevModel.instance
             scope.launch(Dispatchers.Default) {
