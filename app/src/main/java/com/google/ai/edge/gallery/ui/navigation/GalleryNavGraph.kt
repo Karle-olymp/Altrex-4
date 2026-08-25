@@ -95,6 +95,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val TAG = "AGGalleryNavGraph"
+private const val ROUTE_START = "start"
 private const val ROUTE_HOMESCREEN = "homepage"
 private const val ROUTE_MODEL_LIST = "model_list"
 private const val ROUTE_MODEL = "route_model"
@@ -162,25 +163,6 @@ fun GalleryNavHost(
   var enableHomeScreenAnimation by remember { mutableStateOf(true) }
   var enableModelListAnimation by remember { mutableStateOf(true) }
   val modelManagerUiState by modelManagerViewModel.uiState.collectAsState()
-// Auto-navigate straight into AI Chat on cold start, using the last successful
-  // model or the first available one. Home stays in the back stack (accessible via
-  // system back / drawer) but is no longer a mandatory step.
-  var autoNavigatedToChat by remember { mutableStateOf(false) }
-  LaunchedEffect(modelManagerUiState.tasks) {
-    if (!autoNavigatedToChat && modelManagerUiState.tasks.isNotEmpty()) {
-      val chatTask = modelManagerUiState.tasks.find { it.id == BuiltInTaskId.LLM_CHAT }
-      val defaultModel =
-        chatTask?.models?.firstOrNull { model ->
-          modelManagerUiState.modelDownloadStatus[model.name]?.status ==
-            ModelDownloadStatusType.SUCCEEDED
-        } ?: chatTask?.models?.firstOrNull()
-      if (chatTask != null && defaultModel != null) {
-        autoNavigatedToChat = true
-        navController.navigate("$ROUTE_MODEL/${chatTask.id}/${defaultModel.name}")
-      }
-    }
-  }
-
   // Track whether app is in foreground.
   DisposableEffect(lifecycleOwner) {
     val observer = LifecycleEventObserver { _, event ->
@@ -206,10 +188,35 @@ fun GalleryNavHost(
 
   NavHost(
     navController = navController,
-    startDestination = ROUTE_HOMESCREEN,
+    startDestination = ROUTE_START,
     enterTransition = { EnterTransition.None },
     exitTransition = { ExitTransition.None },
   ) {
+    // Invisible start route to avoid flashing the home screen on cold start
+    composable(route = ROUTE_START) {
+      Box(modifier = modifier.fillMaxSize())
+
+      LaunchedEffect(modelManagerUiState.tasks) {
+        if (modelManagerUiState.tasks.isNotEmpty()) {
+          val chatTask = modelManagerUiState.tasks.find { it.id == BuiltInTaskId.LLM_CHAT }
+          val defaultModel =
+            chatTask?.models?.firstOrNull { model ->
+              modelManagerUiState.modelDownloadStatus[model.name]?.status ==
+                ModelDownloadStatusType.SUCCEEDED
+            } ?: chatTask?.models?.firstOrNull()
+          if (chatTask != null && defaultModel != null) {
+            navController.navigate("$ROUTE_MODEL/${chatTask.id}/${defaultModel.name}") {
+              popUpTo(ROUTE_START) { inclusive = true }
+            }
+          } else {
+            navController.navigate(ROUTE_HOMESCREEN) {
+              popUpTo(ROUTE_START) { inclusive = true }
+            }
+          }
+        }
+      }
+    }
+
     // Home screen.
     composable(route = ROUTE_HOMESCREEN) {
       // Create a state to trigger PromoScreen fade in animation.
