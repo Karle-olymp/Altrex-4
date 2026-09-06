@@ -738,6 +738,7 @@ fun GalleryNavHost(
       )
     }
   }
+  }
 
   // Settings dialog
   if (showSettingsDialog) {

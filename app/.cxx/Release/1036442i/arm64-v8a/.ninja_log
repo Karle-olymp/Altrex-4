@@ -1,0 +1,13 @@
+# ninja log v5
+23	1696	1788689740437374151	CMakeFiles/rnllama.dir/lib/ggml-alloc.c.o	1ff266c321e59308
+73	4086	1788689742823250674	CMakeFiles/rnllama.dir/lib/ggml-backend-dl.cpp.o	d12cbccb70b3c985
+20	4575	1788689743251436440	CMakeFiles/rnllama.dir/lib/ggml.c.o	5e00277b3000b8de
+4089	6873	1788689745543138488	CMakeFiles/rnllama.dir/lib/ggml-threading.cpp.o	fb12c33cf799d6c0
+25	6885	1788689745543585668	CMakeFiles/rnllama.dir/lib/ggml-backend.cpp.o	d48ba0985e1e2e58
+76	7690	1788689746428015457	CMakeFiles/rnllama.dir/lib/ggml-backend-reg.cpp.o	90a4b928e4a50ae0
+6885	8876	1788689747547496346	CMakeFiles/rnllama.dir/lib/ggml-cpu/ggml-cpu.c.o	9591830474bc8b
+1697	9286	1788689748021089142	CMakeFiles/rnllama.dir/lib/ggml-opt.cpp.o	74a8a919e86c4c6a
+7690	12674	1788689751361000262	CMakeFiles/rnllama.dir/lib/ggml-cpu/quants.c.o	3311f26eeeea7cf0
+9287	15807	1788689754534788925	CMakeFiles/rnllama.dir/lib/ggml-cpu/ggml-cpu.cpp.o	70c6e176059e7dda
+8877	18796	1788689757529123910	CMakeFiles/rnllama.dir/lib/ggml-cpu/binary-ops.cpp.o	26344dc83e9b5cbb
+4575	20284	1788689759024652719	CMakeFiles/rnllama.dir/lib/ggml-quants.c.o	f82ddbcfc3cc4a9f
