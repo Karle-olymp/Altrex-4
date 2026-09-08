@@ -70,16 +70,12 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -168,15 +164,15 @@ fun HomeScreen(
   modelManagerViewModel: ModelManagerViewModel,
   tosViewModel: TosViewModel,
   navigateToTaskScreen: (Task) -> Unit,
-  onModelsClicked: () -> Unit,
-  onNotificationsClicked: () -> Unit,
+  onModelsClicked: () -> Unit = {},
+  onNotificationsClicked: () -> Unit = {},
   enableAnimation: Boolean,
   modifier: Modifier = Modifier,
   gm4: Boolean = false,
   onLlamaCppClicked: () -> Unit = {},
+  onMenuClicked: () -> Unit = {},
 ) {
   val uiState by modelManagerViewModel.uiState.collectAsState()
-  var showSettingsDialog by remember { mutableStateOf(false) }
   var showTosDialog by remember { mutableStateOf(!tosViewModel.getIsTosAccepted()) }
   val scope = rememberCoroutineScope()
   val context = LocalContext.current
@@ -262,8 +258,6 @@ fun HomeScreen(
     }
     // Main UI when allowlist is done loading.
     if (!loadingModelAllowlistDelayed && !uiState.loadingModelAllowlist) {
-      val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-
       val requestPermissionLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
           isGranted: Boolean ->
@@ -284,347 +278,167 @@ fun HomeScreen(
         }
       }
 
-      // Close the menu when back button is pressed.
-      BackHandler(drawerState.isOpen) { scope.launch { drawerState.close() } }
-
-      ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-          ModalDrawerSheet {
-            Column(modifier = Modifier.padding(16.dp)) {
-              Row(modifier = Modifier.fillMaxWidth()) {
-                SquareDrawerItem(
-                  label = stringResource(R.string.drawer_settings_label),
-                  description = stringResource(R.string.drawer_settings_description),
-                  icon = Icons.Rounded.Settings,
-                  onClick = {
-                    showSettingsDialog = true
-                    scope.launch { drawerState.close() }
-                  },
-                  modifier = Modifier.weight(1f),
-                  iconBrush =
-                    linearGradient(
-                      colors =
-                        listOf(
-                          MaterialTheme.customColors.taskBgGradientColors[2][0],
-                          MaterialTheme.customColors.taskBgGradientColors[2][1],
-                        )
-                    ),
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                SquareDrawerItem(
-                  label = stringResource(R.string.drawer_models_label),
-                  description = stringResource(R.string.drawer_models_description),
-                  icon = Icons.AutoMirrored.Rounded.ListAlt,
-                  onClick = {
-                    scope.launch { drawerState.close() }
-                    scope.launch {
-                      delay(50)
-                      onModelsClicked()
-                    }
-                  },
-                  modifier = Modifier.weight(1f),
-                  iconBrush =
-                    linearGradient(
-                      colors =
-                        listOf(
-                          MaterialTheme.customColors.taskBgGradientColors[1][0],
-                          MaterialTheme.customColors.taskBgGradientColors[1][1],
-                        )
-                    ),
-                )
-              }
-              Spacer(modifier = Modifier.height(16.dp))
-              Row(modifier = Modifier.fillMaxWidth()) {
-                SquareDrawerItem(
-                  label = "llama.cpp Test",
-                  description = "Native GGUF engine",
-                  icon = Icons.Rounded.Code,
-                  onClick = {
-                    scope.launch { drawerState.close() }
-                    scope.launch {
-                      delay(50)
-                      onLlamaCppClicked()
-                    }
-                  },
-                  modifier = Modifier.weight(1f),
-                  iconBrush =
-                    linearGradient(
-                      colors =
-                        listOf(
-                          MaterialTheme.customColors.taskBgGradientColors[0][0],
-                          MaterialTheme.customColors.taskBgGradientColors[0][1],
-                        )
-                    ),
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-SquareDrawerItem(
-                  label = "AI Chat",
-                  description = "Chat with an on-device LLM",
-                  icon = Icons.Outlined.Forum,
-                  onClick = {
-                    scope.launch { drawerState.close() }
-                    tasks.find { it.id == BuiltInTaskId.LLM_CHAT }?.let { navigateToTaskScreen(it) }
-                  },
-                  modifier = Modifier.weight(1f),
-                  iconBrush =
-                    linearGradient(
-                      colors =
-                        listOf(
-                          MaterialTheme.customColors.taskBgGradientColors[3][0],
-                          MaterialTheme.customColors.taskBgGradientColors[3][1],
-                        )
-                    ),
-                )
-              }
-              Spacer(modifier = Modifier.height(16.dp))
-              Row(modifier = Modifier.fillMaxWidth()) {
-                SquareDrawerItem(
-                  label = "Ask Image",
-                  description = "Ask questions about images",
-                  icon = Icons.Outlined.Mms,
-                  onClick = {
-                    scope.launch { drawerState.close() }
-                    tasks.find { it.id == BuiltInTaskId.LLM_ASK_IMAGE }?.let { navigateToTaskScreen(it) }
-                  },
-                  modifier = Modifier.weight(1f),
-                  iconBrush =
-                    linearGradient(
-                      colors =
-                        listOf(
-                          MaterialTheme.customColors.taskBgGradientColors[0][0],
-                          MaterialTheme.customColors.taskBgGradientColors[0][1],
-                        )
-                    ),
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                SquareDrawerItem(
-                  label = "Audio Scribe",
-                  description = "Transcribe and translate audio",
-                  icon = Icons.Outlined.Mic,
-                  onClick = {
-                    scope.launch { drawerState.close() }
-                    tasks.find { it.id == BuiltInTaskId.LLM_ASK_AUDIO }?.let { navigateToTaskScreen(it) }
-                  },
-                  modifier = Modifier.weight(1f),
-                  iconBrush =
-                    linearGradient(
-                      colors =
-                        listOf(
-                          MaterialTheme.customColors.taskBgGradientColors[1][0],
-                          MaterialTheme.customColors.taskBgGradientColors[1][1],
-                        )
-                    ),
-                )
-              }
-              Spacer(modifier = Modifier.height(16.dp))
-              Row(modifier = Modifier.fillMaxWidth()) {
-                SquareDrawerItem(
-                  label = "Agent Skills",
-                  description = "Complete agentic tasks with chat",
-                  icon = Icons.Rounded.Flag,
-                  onClick = {
-                    scope.launch { drawerState.close() }
-                    tasks.find { it.id == BuiltInTaskId.LLM_AGENT_CHAT }?.let { navigateToTaskScreen(it) }
-                  },
-                  modifier = Modifier.weight(1f),
-                  iconBrush =
-                    linearGradient(
-                      colors =
-                        listOf(
-                          MaterialTheme.customColors.taskBgGradientColors[3][0],
-                          MaterialTheme.customColors.taskBgGradientColors[3][1],
-                        )
-                    ),
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                SquareDrawerItem(
-                  label = "Prompt Lab",
-                  description = "Single turn use cases",
-                  icon = Icons.Outlined.Widgets,
-                  onClick = {
-                    scope.launch { drawerState.close() }
-                    tasks.find { it.id == BuiltInTaskId.LLM_PROMPT_LAB }?.let { navigateToTaskScreen(it) }
-                  },
-                  modifier = Modifier.weight(1f),
-                  iconBrush =
-                    linearGradient(
-                      colors =
-                        listOf(
-                          MaterialTheme.customColors.taskBgGradientColors[2][0],
-                          MaterialTheme.customColors.taskBgGradientColors[2][1],
-                        )
-                    ),
-                )
-}
-            }
-          }        },
-        gesturesEnabled = drawerState.isOpen,
-      ) {
-        Scaffold(
-          containerColor = MaterialTheme.colorScheme.background,
-          topBar = {
-            // Top bar animation:
-            //
-            // Fade in and move down at the same time.
-            val progress =
-              if (!enableAnimation) 1f
-              else
-                rememberDelayedAnimationProgress(
-                  initialDelay = ANIMATION_INIT_DELAY - 50,
-                  animationDurationMs = TOP_APP_BAR_ANIMATION_DURATION,
-                  animationLabel = "top bar",
-                )
-            Box(
-              modifier =
-                Modifier.graphicsLayer {
-                  alpha = progress
-                  translationY = ((-16).dp * (1 - progress)).toPx()
-                }
-            ) {
-              GalleryTopAppBar(
-                title = stringResource(HomeScreenDestination.titleRes),
-                leftAction =
-                  AppBarAction(
-                    actionType = AppBarActionType.MENU,
-                    actionFn = {
-                      scope.launch { drawerState.apply { if (isClosed) open() else close() } }
-                    },
-                  ),
+      Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+          // Top bar animation:
+          //
+          // Fade in and move down at the same time.
+          val progress =
+            if (!enableAnimation) 1f
+            else
+              rememberDelayedAnimationProgress(
+                initialDelay = ANIMATION_INIT_DELAY - 50,
+                animationDurationMs = TOP_APP_BAR_ANIMATION_DURATION,
+                animationLabel = "top bar",
               )
-            }
-          },
-        ) { innerPadding ->
-          // Outer box for coloring the background edge to edge.
+          Box(
+            modifier =
+              Modifier.graphicsLayer {
+                alpha = progress
+                translationY = ((-16).dp * (1 - progress)).toPx()
+              }
+          ) {
+            GalleryTopAppBar(
+              title = stringResource(HomeScreenDestination.titleRes),
+              leftAction =
+                AppBarAction(
+                  actionType = AppBarActionType.MENU,
+                  actionFn = onMenuClicked,
+                ),
+            )
+          }
+        },
+      ) { innerPadding ->
+        // Outer box for coloring the background edge to edge.
+        Box(
+          contentAlignment = Alignment.TopCenter,
+          modifier =
+            Modifier.fillMaxSize()
+              .background(
+                if (gm4) {
+                  MaterialTheme.colorScheme.surface
+                } else {
+                  MaterialTheme.colorScheme.surfaceContainer
+                }
+              ),
+        ) {
+          // Inner box to hold content.
           Box(
             contentAlignment = Alignment.TopCenter,
             modifier =
               Modifier.fillMaxSize()
-                .background(
-                  if (gm4) {
-                    MaterialTheme.colorScheme.surface
-                  } else {
-                    MaterialTheme.colorScheme.surfaceContainer
-                  }
-                ),
+                .padding(top = innerPadding.calculateTopPadding())
+                .verticalScroll(rememberScrollState()),
           ) {
-            // Inner box to hold content.
-            Box(
-              contentAlignment = Alignment.TopCenter,
-              modifier =
-                Modifier.fillMaxSize()
-                  .padding(top = innerPadding.calculateTopPadding())
-                  .verticalScroll(rememberScrollState()),
-            ) {
-              // Background star at top.
-              if (gm4) {
-                val progress =
-                  if (!enableAnimation) {
-                    1f
-                  } else {
-                    rememberDelayedAnimationProgress(
-                      initialDelay = ANIMATION_INIT_DELAY,
-                      animationDurationMs = 2000,
-                      animationLabel = "bg star",
-                    )
-                  }
-                val configuration = LocalConfiguration.current
-                val screenWidth = configuration.screenWidthDp.dp
-                val targetWidth = screenWidth * 1.5f
-                Image(
-                  painter = painterResource(id = R.drawable.bg_star),
-                  contentDescription = null,
-                  modifier =
-                    Modifier.requiredWidth(targetWidth)
-                      .blur(radius = 35.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
-                      .offset(x = screenWidth * 0.25f, y = -screenWidth * 0.1f)
-                      .graphicsLayer {
-                        rotationZ = (1f - progress) * 40f
-                        scaleX = 0.4f + 0.6f * progress
-                        scaleY = 0.4f + 0.6f * progress
-                        alpha = progress * 2f
-                      },
-                  contentScale = ContentScale.Crop,
-                  colorFilter = ColorFilter.tint(MaterialTheme.customColors.bgStarColor),
-                )
-              }
-
-              Column(modifier = Modifier.fillMaxWidth()) {
-                var selectedCategoryIndex by remember { mutableIntStateOf(0) }
-
-                // App title and intro text.
-                Column(
-                  modifier =
-                    Modifier.padding(
-                        horizontal = if (gm4) 24.dp else 40.dp,
-                        vertical = if (gm4) 0.dp else 48.dp,
-                      )
-                      .padding(top = 24.dp, bottom = 16.dp)
-                      .semantics(mergeDescendants = true) {},
-                  verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                  if (gm4) {
-                    AppTitleGm4(enableAnimation = enableAnimation)
-                  } else {
-                    AppTitle(enableAnimation = enableAnimation)
-                  }
-                  IntroText(enableAnimation = enableAnimation, gm4 = gm4)
-                  if (gm4) {
-                    TryGm4IntroText(enableAnimation = enableAnimation)
-                  }
-                }
-
-                // Tab header for categories.
-                //
-                // synchronizes the `pagerState` and the `selectedCategoryIndex` to ensure that
-                //  both the tab header and the task list always show the correct category and page.
-                val pagerState = rememberPagerState(pageCount = { sortedCategories.size })
-                LaunchedEffect(pagerState.settledPage) {
-                  selectedCategoryIndex = pagerState.settledPage
-                }
-                if (sortedCategories.size > 1) {
-                  CategoryTabHeader(
-                    sortedCategories = sortedCategories,
-                    selectedIndex = selectedCategoryIndex,
-                    enableAnimation = enableAnimation,
-                    onCategorySelected = { index ->
-                      selectedCategoryIndex = index
-                      scope.launch { pagerState.animateScrollToPage(page = index) }
-                    },
+            // Background star at top.
+            if (gm4) {
+              val progress =
+                if (!enableAnimation) {
+                  1f
+                } else {
+                  rememberDelayedAnimationProgress(
+                    initialDelay = ANIMATION_INIT_DELAY,
+                    animationDurationMs = 2000,
+                    animationLabel = "bg star",
                   )
                 }
-
-                // Task list in a horizontal pager. Each page shows the list of tasks for the
-                // category.
-                val grid = gm4
-                TaskList(
-                  modelManagerViewModel = modelManagerViewModel,
-                  pagerState = pagerState,
-                  sortedCategories = sortedCategories,
-                  tasksByCategories = uiState.tasksByCategory,
-                  enableAnimation = enableAnimation,
-                  navigateToTaskScreen = navigateToTaskScreen,
-                  gm4 = gm4,
-                  grid = grid,
-                )
-
-                Spacer(modifier = Modifier.height(innerPadding.calculateBottomPadding() + 10.dp))
-              }
+              val configuration = LocalConfiguration.current
+              val screenWidth = configuration.screenWidthDp.dp
+              val targetWidth = screenWidth * 1.5f
+              Image(
+                painter = painterResource(id = R.drawable.bg_star),
+                contentDescription = null,
+                modifier =
+                  Modifier.requiredWidth(targetWidth)
+                    .blur(radius = 35.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
+                    .offset(x = screenWidth * 0.25f, y = -screenWidth * 0.1f)
+                    .graphicsLayer {
+                      rotationZ = (1f - progress) * 40f
+                      scaleX = 0.4f + 0.6f * progress
+                      scaleY = 0.4f + 0.6f * progress
+                      alpha = progress * 2f
+                    },
+                contentScale = ContentScale.Crop,
+                colorFilter = ColorFilter.tint(MaterialTheme.customColors.bgStarColor),
+              )
             }
 
-            // Gradient overlay at the bottom.
-            Box(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .height(innerPadding.calculateBottomPadding())
-                  .background(
-                    Brush.verticalGradient(
-                      colors = listOf(Color.Transparent, MaterialTheme.colorScheme.surfaceContainer)
+            Column(modifier = Modifier.fillMaxWidth()) {
+              var selectedCategoryIndex by remember { mutableIntStateOf(0) }
+
+              // App title and intro text.
+              Column(
+                modifier =
+                  Modifier.padding(
+                      horizontal = if (gm4) 24.dp else 40.dp,
+                      vertical = if (gm4) 0.dp else 48.dp,
                     )
-                  )
-                  .align(Alignment.BottomCenter)
-            )
+                    .padding(top = 24.dp, bottom = 16.dp)
+                    .semantics(mergeDescendants = true) {},
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+              ) {
+                if (gm4) {
+                  AppTitleGm4(enableAnimation = enableAnimation)
+                } else {
+                  AppTitle(enableAnimation = enableAnimation)
+                }
+                IntroText(enableAnimation = enableAnimation, gm4 = gm4)
+                if (gm4) {
+                  TryGm4IntroText(enableAnimation = enableAnimation)
+                }
+              }
+
+              // Tab header for categories.
+              //
+              // synchronizes the `pagerState` and the `selectedCategoryIndex` to ensure that
+              //  both the tab header and the task list always show the correct category and page.
+              val pagerState = rememberPagerState(pageCount = { sortedCategories.size })
+              LaunchedEffect(pagerState.settledPage) {
+                selectedCategoryIndex = pagerState.settledPage
+              }
+              if (sortedCategories.size > 1) {
+                CategoryTabHeader(
+                  sortedCategories = sortedCategories,
+                  selectedIndex = selectedCategoryIndex,
+                  enableAnimation = enableAnimation,
+                  onCategorySelected = { index ->
+                    selectedCategoryIndex = index
+                    scope.launch { pagerState.animateScrollToPage(page = index) }
+                  },
+                )
+              }
+
+              // Task list in a horizontal pager. Each page shows the list of tasks for the
+              // category.
+              val grid = gm4
+              TaskList(
+                modelManagerViewModel = modelManagerViewModel,
+                pagerState = pagerState,
+                sortedCategories = sortedCategories,
+                tasksByCategories = uiState.tasksByCategory,
+                enableAnimation = enableAnimation,
+                navigateToTaskScreen = navigateToTaskScreen,
+                gm4 = gm4,
+                grid = grid,
+              )
+
+              Spacer(modifier = Modifier.height(innerPadding.calculateBottomPadding() + 10.dp))
+            }
           }
+
+          // Gradient overlay at the bottom.
+          Box(
+            modifier =
+              Modifier.fillMaxWidth()
+                .height(innerPadding.calculateBottomPadding())
+                .background(
+                  Brush.verticalGradient(
+                    colors = listOf(Color.Transparent, MaterialTheme.colorScheme.surfaceContainer)
+                  )
+                )
+                .align(Alignment.BottomCenter)
+          )
         }
       }
     }
@@ -637,16 +451,6 @@ SquareDrawerItem(
         showTosDialog = false
         tosViewModel.acceptTos()
       }
-    )
-  }
-
-  // Settings dialog.
-  if (showSettingsDialog) {
-    SettingsDialog(
-      curThemeOverride = modelManagerViewModel.readThemeOverride(),
-      curFirebaseAnalytics = modelManagerViewModel.readFirebaseAnalytics(),
-      modelManagerViewModel = modelManagerViewModel,
-      onDismissed = { showSettingsDialog = false },
     )
   }
 

@@ -590,8 +590,12 @@ fun GalleryNavHost(
                 CustomTaskDataForBuiltinTask(
                   modelManagerViewModel = modelManagerViewModel,
                   onNavUp = {
-                    enableModelListAnimation = false
-                    navController.navigateUp()
+                    if (navController.previousBackStackEntry != null) {
+                      enableModelListAnimation = false
+                      navController.navigateUp()
+                    } else {
+                      scope.launch { drawerState.apply { if (isClosed) open() else close() } }
+                    }
                   },
                   initialQuery = queryParam,
                   onMenuClicked = {
