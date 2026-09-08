@@ -211,6 +211,7 @@ constructor(
       modelManagerViewModel = myData.modelManagerViewModel,
       navigateUp = myData.onNavUp,
       agentTools = agentTools,
+      onMenuClicked = myData.onMenuClicked,
       initialQuery = myData.initialQuery,
     )
   }

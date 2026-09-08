@@ -68,6 +68,7 @@ fun LlmSingleTurnScreen(
   modelManagerViewModel: ModelManagerViewModel,
   navigateUp: () -> Unit,
   modifier: Modifier = Modifier,
+  onMenuClicked: (() -> Unit)? = null,
   viewModel: LlmSingleTurnViewModel = hiltViewModel(),
 ) {
   val task = modelManagerViewModel.getTaskById(id = BuiltInTaskId.LLM_PROMPT_LAB)!!
@@ -132,6 +133,7 @@ fun LlmSingleTurnScreen(
         modelPreparing = uiState.preparing,
         onConfigChanged = { _, _ -> },
         onBackClicked = { handleNavigateUp() },
+        onMenuClicked = onMenuClicked,
         onModelSelected = { prevModel, newSelectedModel ->
           scope.launch(Dispatchers.Default) {
             if (prevModel.name != newSelectedModel.name) {

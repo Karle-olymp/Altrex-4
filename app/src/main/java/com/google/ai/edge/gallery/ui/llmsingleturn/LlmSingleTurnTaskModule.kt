@@ -89,6 +89,7 @@ class LlmSingleTurnTask @Inject constructor(@ApplicationContext private val cont
     LlmSingleTurnScreen(
       modelManagerViewModel = myData.modelManagerViewModel,
       navigateUp = myData.onNavUp,
+      onMenuClicked = myData.onMenuClicked,
     )
   }
 }

@@ -122,6 +122,7 @@ fun ChatView(
   onBenchmarkClicked: (Model, ChatMessage, Int, Int) -> Unit,
   navigateUp: () -> Unit,
   modifier: Modifier = Modifier,
+  onMenuClicked: (() -> Unit)? = null,
   skillCount: Int = 0,
   mcpCount: Int = 0,
   onResetSessionClicked:
@@ -319,6 +320,7 @@ fun ChatView(
                 )
               },
               onBackClicked = { handleNavigateUp() },
+              onMenuClicked = onMenuClicked,
               onModelSelected = { prevModel, curModel ->
                 if (prevModel.name != curModel.name) {
                   modelManagerViewModel.cleanupModel(
