@@ -5,6 +5,9 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -29,7 +32,14 @@ jobs:
       - name: Build Debug APK
         run: gradle assembleDebug
 
-      - uses: actions/upload-artifact@v4
+      - name: Publish APK as a GitHub Release (avoids Actions artifact storage quota)
+        uses: ncipollo/release-action@v1
         with:
-          name: Altrex-Debug-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          tag: debug-latest
+          name: "Altrex Debug APK (latest)"
+          artifacts: "app/build/outputs/apk/debug/app-debug.apk"
+          allowUpdates: true
+          replacesArtifacts: true
+          removeArtifacts: true
+          makeLatest: true
+          token: ${{ secrets.GITHUB_TOKEN }}
