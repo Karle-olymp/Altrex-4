@@ -618,7 +618,7 @@ fun GlobalModelManager(
   }
 }
 
-private fun validateAndProcessModelUri(
+internal fun validateAndProcessModelUri(
   uri: Uri,
   context: Context,
   isWebImport: Boolean,
@@ -631,7 +631,10 @@ private fun validateAndProcessModelUri(
     if (isWebImport) {
       fileName != null && fileName.endsWith(".litertlm")
     } else {
-      fileName != null && (fileName.endsWith(".task") || fileName.endsWith(".litertlm"))
+      fileName != null &&
+        (fileName.endsWith(".task") ||
+          fileName.endsWith(".litertlm") ||
+          fileName.endsWith(".gguf"))
     }
 
   if (!hasValidExtension) {

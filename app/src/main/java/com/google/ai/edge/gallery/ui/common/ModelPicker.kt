@@ -21,6 +21,11 @@ package com.google.ai.edge.gallery.ui.common
 // import com.google.ai.edge.gallery.ui.preview.TASK_TEST1
 // import com.google.ai.edge.gallery.ui.theme.GalleryTheme
 
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -32,7 +37,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.NoteAdd
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.rounded.Error
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -55,8 +64,12 @@ import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.RuntimeType
 import com.google.ai.edge.gallery.data.Task
+import com.google.ai.edge.gallery.proto.ImportedModel
 import com.google.ai.edge.gallery.ui.common.modelitem.StatusIcon
+import com.google.ai.edge.gallery.ui.modelmanager.ModelImportDialog
+import com.google.ai.edge.gallery.ui.modelmanager.ModelImportingDialog
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
+import com.google.ai.edge.gallery.ui.modelmanager.validateAndProcessModelUri
 import com.google.ai.edge.gallery.ui.theme.labelSmallNarrow
 
 @Composable
@@ -69,6 +82,40 @@ fun ModelPicker(
   var showMemoryWarning by remember { mutableStateOf(false) }
   var modelToPick by remember { mutableStateOf<Model?>(null) }
   val context = LocalContext.current
+
+  // Local model/GGUF import state, mirroring the flow used in GlobalModelManager's "Models"
+  // screen, so a model can be imported without leaving the chat.
+  var showImportDialog by remember { mutableStateOf(false) }
+  var showImportingDialog by remember { mutableStateOf(false) }
+  var showUnsupportedModelDialog by remember { mutableStateOf(false) }
+  var unsupportedModelErrorMessage by remember { mutableStateOf("") }
+  var selectedLocalModelFileUri by remember { mutableStateOf<Uri?>(null) }
+  var selectedImportedModelInfo by remember { mutableStateOf<ImportedModel?>(null) }
+
+  val processModelUri: (Uri) -> Unit = { uri ->
+    validateAndProcessModelUri(
+      uri = uri,
+      context = context,
+      isWebImport = false,
+      onUnsupportedModelError = { errorMessage ->
+        unsupportedModelErrorMessage = errorMessage
+        showUnsupportedModelDialog = true
+      },
+      onValidModelUri = { validUri ->
+        selectedLocalModelFileUri = validUri
+        showImportDialog = true
+      },
+    )
+  }
+
+  val filePickerLauncher: ActivityResultLauncher<Intent> =
+    rememberLauncherForActivityResult(
+      contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+      if (result.resultCode == android.app.Activity.RESULT_OK) {
+        result.data?.data?.let { uri -> processModelUri(uri) }
+      }
+    }
 
   Column(modifier = Modifier.padding(bottom = 8.dp)) {
     // Title
@@ -92,6 +139,9 @@ fun ModelPicker(
     }
 
     // Model list.
+    // Reading task.updateTrigger keeps this list in sync when a model is imported while this
+    // picker is open (import mutates task.models and bumps this trigger).
+    task.updateTrigger.value
     for (model in task.models) {
       val selected = model.name == modelManagerUiState.selectedModel.name
       Row(
@@ -150,6 +200,31 @@ fun ModelPicker(
         }
       }
     }
+
+    // Import a local model file (.gguf or .litertlm) without leaving the chat.
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
+      modifier =
+        Modifier.fillMaxWidth()
+          .clickable {
+            val intent =
+              Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, false)
+              }
+            filePickerLauncher.launch(intent)
+          }
+          .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+      Spacer(modifier = Modifier.width(24.dp))
+      Icon(Icons.AutoMirrored.Outlined.NoteAdd, contentDescription = null)
+      Text(
+        stringResource(R.string.cd_import_model_from_local_file_button),
+        style = MaterialTheme.typography.bodyMedium,
+      )
+    }
   }
 
   if (showMemoryWarning) {
@@ -162,6 +237,64 @@ fun ModelPicker(
         showMemoryWarning = false
       },
       onDismissed = { showMemoryWarning = false },
+    )
+  }
+
+  // Import dialog: lets the user set config (context length, image/audio support, etc.)
+  // for the picked file.
+  if (showImportDialog) {
+    selectedLocalModelFileUri?.let { uri ->
+      ModelImportDialog(
+        uri = uri,
+        huggingFaceApiClient = modelManagerViewModel.huggingFaceApiClient,
+        onDismiss = { showImportDialog = false },
+        onDone = { info ->
+          selectedImportedModelInfo = info
+          showImportDialog = false
+          showImportingDialog = true
+        },
+        accessToken = modelManagerViewModel.dataStoreRepository.readAccessTokenData()?.accessToken,
+      )
+    }
+  }
+
+  // Importing-in-progress dialog. On success, the model is added to every compatible task
+  // (including this one), and the reactive task.updateTrigger read above makes it show up
+  // in this same list immediately.
+  if (showImportingDialog) {
+    selectedLocalModelFileUri?.let { uri ->
+      selectedImportedModelInfo?.let { info ->
+        ModelImportingDialog(
+          uri = uri,
+          info = info,
+          onDismiss = { showImportingDialog = false },
+          onDone = {
+            modelManagerViewModel.addImportedLlmModel(info = it)
+            showImportingDialog = false
+          },
+        )
+      }
+    }
+  }
+
+  // Alert dialog for unsupported model file types.
+  if (showUnsupportedModelDialog) {
+    AlertDialog(
+      icon = {
+        Icon(
+          Icons.Rounded.Error,
+          contentDescription = stringResource(R.string.cd_error),
+          tint = MaterialTheme.colorScheme.error,
+        )
+      },
+      onDismissRequest = { showUnsupportedModelDialog = false },
+      title = { Text(stringResource(R.string.unsupported_model_title)) },
+      text = { Text(unsupportedModelErrorMessage) },
+      confirmButton = {
+        Button(onClick = { showUnsupportedModelDialog = false }) {
+          Text(stringResource(R.string.ok))
+        }
+      },
     )
   }
 }

@@ -1287,9 +1287,16 @@ constructor(
         capabilityToTaskTypes = capabilityToTaskTypes.toMap(),
         llmMaxToken = llmMaxToken,
         accelerators = accelerators,
-        // We assume all imported models are LLM for now.
         isLlm = true,
-        runtimeType = RuntimeType.LITERT_LM,
+        // Detect the actual runtime engine from the imported file's extension: GGUF files run
+        // through the native llama.cpp engine, everything else (.task/.litertlm) through
+        // LiteRT-LM.
+        runtimeType =
+          if (info.fileName.endsWith(".gguf")) {
+            RuntimeType.LLAMA_CPP
+          } else {
+            RuntimeType.LITERT_LM
+          },
       )
     model.preProcess()
 
