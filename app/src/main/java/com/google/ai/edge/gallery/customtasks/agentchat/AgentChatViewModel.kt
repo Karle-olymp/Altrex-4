@@ -59,6 +59,11 @@ constructor(
    */
   val autonomousModeEnabled = MutableStateFlow(false)
 
+  /** Turns the self-correcting autonomous loop on or off for this session. */
+  fun setAutonomousMode(enabled: Boolean) {
+    autonomousModeEnabled.value = enabled
+  }
+
   override fun generateResponse(
     model: Model,
     input: String,
@@ -213,6 +218,9 @@ constructor(
     super.generateResponse(
       model = model,
       input = critiquePrompt,
+      images = listOf(),
+      audioMessages = listOf(),
+      onFirstToken = {},
       onDone = {
         val critiqueText =
           (getLastMessageWithType(model = model, type = ChatMessageType.TEXT) as? ChatMessageText)
