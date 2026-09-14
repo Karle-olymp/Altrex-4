@@ -1,18 +1,3 @@
-/*
- * Copyright 2026 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package com.google.ai.edge.gallery.intents
 
 import android.Manifest
@@ -116,12 +101,10 @@ object IntentHandler {
           val params = jsonAdapter.fromJson(parameters)
           if (params != null) {
             val intent =
-              Intent(Intent.ACTION_SEND).apply {
-                data = "mailto:".toUri()
-                type = "text/plain"
-                putExtra(Intent.EXTRA_EMAIL, arrayOf(params.extra_email))
+              Intent(Intent.ACTION_SENDTO, "mailto:${params.extra_email}".toUri()).apply {
                 putExtra(Intent.EXTRA_SUBJECT, params.extra_subject)
                 putExtra(Intent.EXTRA_TEXT, params.extra_text)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
               }
             context.startActivity(intent)
             "succeeded"
@@ -141,8 +124,10 @@ object IntentHandler {
           val params = jsonAdapter.fromJson(parameters)
           if (params != null) {
             val uri = "smsto:${params.phone_number}".toUri()
-            val intent = Intent(Intent.ACTION_SENDTO, uri)
-            intent.putExtra("sms_body", params.sms_body)
+            val intent = Intent(Intent.ACTION_SENDTO, uri).apply {
+              putExtra("sms_body", params.sms_body)
+              flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
             context.startActivity(intent)
             "succeeded"
           } else {
@@ -170,6 +155,7 @@ object IntentHandler {
                 putExtra(Events.DESCRIPTION, params.description)
                 putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, beginTimeMillis)
                 putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endTimeMillis)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
               }
             context.startActivity(intent)
             "succeeded"
