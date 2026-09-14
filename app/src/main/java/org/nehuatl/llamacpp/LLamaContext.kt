@@ -278,6 +278,7 @@ class LlamaContext(
     ): Long
 
     private external fun loadModelDetails(contextPtr: Long): Map<String, Any>
+    external fun getModelContextSize(): Int
 
     external fun getFormattedChat(contextPtr: Long, messages: Array<Map<String, Any>>, chatTemplate: String): String
 
