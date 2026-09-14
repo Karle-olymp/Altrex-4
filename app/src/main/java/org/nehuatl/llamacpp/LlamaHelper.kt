@@ -20,7 +20,7 @@ class LlamaHelper(
     private val llama by lazy { LlamaAndroid(contentResolver) }
     private var loadJob: Job? = null
     private var completionJob: Job? = null
-    private var currentContext: Int? = null
+    var currentContext: Int? = null
     private var tokenCount = 0
     private var allText = ""
 
@@ -52,7 +52,7 @@ class LlamaHelper(
         loaded: (Long) -> Unit
     ) {
         currentContext?.let { id -> llama.releaseContext(id) }
-        
+
         try {
             val modelUri = if (path.startsWith("content://") || path.startsWith("file://")) {
                 Uri.parse(path)
@@ -128,23 +128,19 @@ class LlamaHelper(
         val startTime = System.currentTimeMillis()
         tokenCount = 0
         allText = ""
-        
+
         val params = mutableMapOf<String, Any>(
             "prompt" to prompt,
             "n_predict" to 512,
             "stop" to listOf("<|im_end|>", "<|endoftext|>"),
             "emit_partial_completion" to partialCompletion,
         )
-        
+
         imagePath?.let {
             try {
                 val imgUri = Uri.parse(it)
                 Log.d("LlamaHelper", ">>> Opening image FD for URI: $imgUri")
                 contentResolver.openFileDescriptor(imgUri, "r")?.use { pfd ->
-                    // Since we want to pass the FD to JNI, we should detach it if needed,
-                    // but here we might be able to just pass the FD number if it stays open
-                    // for the duration of the call.
-                    // Actually, detachFd() is safer.
                     val imgFd = pfd.detachFd()
                     params["image_fds"] = listOf(imgFd)
                     Log.d("LlamaHelper", ">>> Image FD added to params: $imgFd")
@@ -155,7 +151,7 @@ class LlamaHelper(
         }
 
         completionJob = scope.launch {
-            val formattedPrompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n$prompt<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+            val formattedPrompt = "<|im_start|>system\n${getDefaultSystemPrompt()}<|im_end|>\n<|im_start|>user\n$prompt<|im_end|>\n<|im_start|>assistant\n\n\n"
             params["prompt"] = formattedPrompt
             sharedFlow.tryEmit(LLMEvent.Started(prompt))
             llama.launchCompletion(
@@ -193,5 +189,24 @@ class LlamaHelper(
         data class Ongoing(val word: String, val tokenCount: Int) : LLMEvent()
         data class Done(val fullText: String, val tokenCount: Int, val duration: Long) : LLMEvent()
         data class Error(val message: String) : LLMEvent()
+    }
+
+    companion object {
+        const val DEFAULT_CONTEXT_SIZE = 2048
+
+        fun getDefaultSystemPrompt(): String {
+            return "You are a helpful assistant."
+        }
+
+        fun getModelContextSize(context: LLamaContext): Int {
+            return try {
+                val size = context.getModelContextSize()
+                Log.i("LlamaHelper", "Contexte GGUF détecté: $size tokens")
+                size
+            } catch (e: Exception) {
+                Log.e("LlamaHelper", "Erreur lecture contexte GGUF", e)
+                -1
+            }
+        }
     }
 }
