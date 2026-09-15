@@ -432,10 +432,13 @@ Java_org_nehuatl_llamacpp_LlamaContext_doCompletion(
     UNUSED(mirostat);
     UNUSED(mirostat_tau);
     UNUSED(mirostat_eta);
+    UNUSED(penalize_nl);
     UNUSED(xtc_t);
     UNUSED(xtc_p);
     UNUSED(tfs_z);
     UNUSED(typical_p);
+    UNUSED(stop);
+    UNUSED(ignore_eos);
     UNUSED(logit_bias);
     
     auto it = context_map.find((long) context_ptr);
@@ -456,12 +459,10 @@ Java_org_nehuatl_llamacpp_LlamaContext_doCompletion(
     llama->params.sampling.top_p = top_p;
     llama->params.sampling.min_p = min_p;
     llama->params.n_predict = n_predict;
-    llama->params.sampling.penalize_nl = penalize_nl;
     llama->params.sampling.penalty_last_n = penalty_last_n;
     llama->params.sampling.penalty_repeat = penalty_repeat;
     llama->params.sampling.penalty_freq = penalty_freq;
     llama->params.sampling.penalty_present = penalty_present;
-    llama->params.logit_bias.clear();
 
     llama->completion->initSampling();
     
