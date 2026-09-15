@@ -115,21 +115,8 @@ object LlamaCppModelHelper : LlmModelHelper {
         mmprojPath = null,
       ) { contextId ->
         Log.d(TAG, "LlamaHelper loaded callback with contextId=$contextId")
-        
-        // 🔍 Détecte le contexte réel du modèle GGUF
-        val detectedContextSize = LlamaHelper.getModelContextSize(llamaHelper.currentContext)
-        val finalContextSize = when {
-          detectedContextSize > 0 -> {
-            Log.i(TAG, "✅ Contexte GGUF détecté: $detectedContextSize tokens")
-            detectedContextSize
-          }
-          else -> {
-            Log.w(TAG, "⚠️ Contexte non détecté, fallback sur maxTokens=$maxTokens")
-            maxTokens
-          }
-        }
-        Log.i(TAG, "Modèle chargé avec contexte final: $finalContextSize tokens")
-        
+        Log.i(TAG, "Modèle chargé avec contexte: $maxTokens tokens")
+
         if (!hasCompletedInit) {
           hasCompletedInit = true
           model.instance =
