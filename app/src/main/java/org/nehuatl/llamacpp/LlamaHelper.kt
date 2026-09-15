@@ -197,16 +197,5 @@ class LlamaHelper(
         fun getDefaultSystemPrompt(): String {
             return "You are a helpful assistant."
         }
-
-        fun getModelContextSize(context: LLamaContext): Int {
-            return try {
-                val size = context.getModelContextSize()
-                Log.i("LlamaHelper", "Contexte GGUF détecté: $size tokens")
-                size
-            } catch (e: Exception) {
-                Log.e("LlamaHelper", "Erreur lecture contexte GGUF", e)
-                -1
-            }
-        }
     }
 }
