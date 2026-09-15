@@ -17,7 +17,10 @@
 package com.google.ai.edge.gallery.tools
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.widget.Toast
 import com.google.ai.edge.gallery.intents.IntentAction
 import com.google.ai.edge.gallery.intents.IntentHandler
 import com.google.ai.edge.gallery.skills.SkillsProvider
@@ -33,6 +36,13 @@ class RunIntentTool(private val context: Context, private val skillsProvider: Sk
   override val alwaysAllow: Boolean = true
   override var executionContext: ToolExecutionContext? = null
 
+  /** Affiche un Toast de diagnostic depuis n'importe quel thread (safe UI). */
+  private fun diagToast(message: String) {
+    Handler(Looper.getMainLooper()).post {
+      Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+    }
+  }
+
   /** Run an Android intent */
   @Tool(
     description =
@@ -45,12 +55,28 @@ class RunIntentTool(private val context: Context, private val skillsProvider: Sk
     )
     parameters: String,
   ): Map<String, String> {
+    // ═══ DIAG 3 : preuve visuelle que le modèle a bien appelé le tool ═══
+    diagToast("TOOL APPELE: $intent")
+
     return runBlocking(Dispatchers.Default) {
+      // ═══ DIAG 1 : entrées brutes ═══
+      Log.e(TAG, "🔍 DIAG runIntent APPELE — intent brut='$intent'")
+      Log.e(TAG, "🔍 DIAG parameters brut='$parameters'")
+
       if (IntentAction.from(intent) == null) {
+        // ═══ DIAG 2 : rejet + liste des noms attendus ═══
+        Log.e(TAG, "❌ DIAG Intent REJETE: '$intent'")
+        val expected = IntentAction.entries.joinToString(", ") { it.name }
+        Log.e(TAG, "❌ DIAG Attendus: $expected")
+        diagToast("REJETE: '$intent'\nAttendus: $expected")
+
         Log.w(TAG, "Intent not found: '$intent'")
         return@runBlocking guardMissingEntityWithSkillFallback(name = intent, type = "Intent")
       }
+
+      Log.e(TAG, "✅ DIAG Intent ACCEPTE: '$intent'")
       Log.d(TAG, "Run intent. Intent: '$intent', parameters: '$parameters'")
+
       executionContext
         ?.actionChannel
         ?.send(
@@ -67,6 +93,11 @@ class RunIntentTool(private val context: Context, private val skillsProvider: Sk
           executionContext?.actionChannel?.send(permissionAction)
           permissionAction.result.await()
         }
+
+      // ═══ DIAG 4 : résultat renvoyé par IntentHandler ═══
+      Log.e(TAG, "📤 DIAG resultat IntentHandler='$res'")
+      diagToast("RESULTAT: $res")
+
       return@runBlocking mapOf("action" to intent, "parameters" to parameters, "result" to res)
     }
   }
@@ -82,7 +113,8 @@ class RunIntentTool(private val context: Context, private val skillsProvider: Sk
     type: String,
   ): Map<String, String> {
     val isSkill = skillsProvider.loadSkill(name) != null
+    Log.e(TAG, "🔎 DIAG fallback skill pour '$name' → trouvé=$isSkill")
     val error = if (isSkill) "$type not found. Try to run it as a skill" else "Tool not found"
     return mapOf("error" to error, "status" to "failed")
   }
-}
+  }
