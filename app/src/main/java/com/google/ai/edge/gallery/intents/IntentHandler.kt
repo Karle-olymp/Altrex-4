@@ -13,6 +13,7 @@ import androidx.core.content.ContextCompat.checkSelfPermission
 import androidx.core.net.toUri
 import com.google.ai.edge.gallery.notifications.NotificationScheduleManagerEntryPoint
 import com.google.ai.edge.gallery.proto.ScheduledNotification
+import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 import com.squareup.moshi.Moshi
 import dagger.hilt.android.EntryPointAccessors
@@ -25,13 +26,29 @@ import java.util.UUID
 
 @JsonClass(generateAdapter = true)
 data class SendEmailParams(
-  val extra_email: String,
-  val extra_subject: String,
-  val extra_text: String,
-)
+  @Json(name = "to") val to: String? = null,
+  @Json(name = "extra_email") val extra_email: String? = null,
+  @Json(name = "subject") val subject: String? = null,
+  @Json(name = "extra_subject") val extra_subject: String? = null,
+  @Json(name = "body") val body: String? = null,
+  @Json(name = "extra_text") val extra_text: String? = null,
+) {
+  val resolvedEmail: String get() = to ?: extra_email ?: ""
+  val resolvedSubject: String get() = subject ?: extra_subject ?: ""
+  val resolvedText: String get() = body ?: extra_text ?: ""
+}
 
 @JsonClass(generateAdapter = true)
-data class SendSmsParams(val phone_number: String, val sms_body: String)
+data class SendSmsParams(
+  @Json(name = "phone_number") val phone_number: String? = null,
+  @Json(name = "to") val to: String? = null,
+  @Json(name = "sms_body") val sms_body: String? = null,
+  @Json(name = "message") val message: String? = null,
+  @Json(name = "body") val body: String? = null,
+) {
+  val resolvedPhone: String get() = phone_number ?: to ?: ""
+  val resolvedBody: String get() = sms_body ?: message ?: body ?: ""
+}
 
 @JsonClass(generateAdapter = true)
 data class CreateCalendarEventParams(
@@ -41,7 +58,8 @@ data class CreateCalendarEventParams(
   val end_time: String,
 )
 
-@JsonClass(generateAdapter = true) data class ReadCalendarEventsParams(val date: String)
+@JsonClass(generateAdapter = true)
+data class ReadCalendarEventsParams(val date: String)
 
 @JsonClass(generateAdapter = true)
 data class CalendarEventDto(
@@ -89,8 +107,6 @@ object IntentHandler {
     context: Context,
     action: String,
     parameters: String,
-    // requestPermission is a suspend function that takes a permission string and returns true if
-    // the permission is granted, false otherwise.
     requestPermission: suspend (String) -> Boolean,
   ): String {
     return when (IntentAction.from(action)) {
@@ -99,18 +115,17 @@ object IntentHandler {
           val moshi = Moshi.Builder().build()
           val jsonAdapter = moshi.adapter(SendEmailParams::class.java)
           val params = jsonAdapter.fromJson(parameters)
-          if (params != null) {
+          if (params != null && params.resolvedEmail.isNotEmpty()) {
             val intent =
-              Intent(Intent.ACTION_SENDTO, "mailto:${params.extra_email}".toUri()).apply {
-                putExtra(Intent.EXTRA_SUBJECT, params.extra_subject)
-                putExtra(Intent.EXTRA_TEXT, params.extra_text)
-                // CORRECTION ICI : addFlags au lieu de flags =
+              Intent(Intent.ACTION_SENDTO, "mailto:${params.resolvedEmail}".toUri()).apply {
+                putExtra(Intent.EXTRA_SUBJECT, params.resolvedSubject)
+                putExtra(Intent.EXTRA_TEXT, params.resolvedText)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
               }
             context.startActivity(intent)
             "succeeded"
           } else {
-            Log.e(TAG, "Failed to parse send_email parameters: $parameters")
+            Log.e(TAG, "Failed to parse send_email parameters or missing email: $parameters")
             "failed"
           }
         } catch (e: Exception) {
@@ -123,11 +138,10 @@ object IntentHandler {
           val moshi = Moshi.Builder().build()
           val jsonAdapter = moshi.adapter(SendSmsParams::class.java)
           val params = jsonAdapter.fromJson(parameters)
-          if (params != null) {
-            val uri = "smsto:${params.phone_number}".toUri()
+          if (params != null && params.resolvedPhone.isNotEmpty()) {
+            val uri = "smsto:${params.resolvedPhone}".toUri()
             val intent = Intent(Intent.ACTION_SENDTO, uri).apply {
-              putExtra("sms_body", params.sms_body)
-              // CORRECTION ICI : addFlags au lieu de flags =
+              putExtra("sms_body", params.resolvedBody)
               addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
@@ -157,7 +171,6 @@ object IntentHandler {
                 putExtra(Events.DESCRIPTION, params.description)
                 putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, beginTimeMillis)
                 putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endTimeMillis)
-                // CORRECTION ICI : addFlags au lieu de flags =
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
               }
             context.startActivity(intent)
