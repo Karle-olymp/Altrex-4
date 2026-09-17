@@ -104,7 +104,8 @@ object IntentHandler {
               Intent(Intent.ACTION_SENDTO, "mailto:${params.extra_email}".toUri()).apply {
                 putExtra(Intent.EXTRA_SUBJECT, params.extra_subject)
                 putExtra(Intent.EXTRA_TEXT, params.extra_text)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                // CORRECTION ICI : addFlags au lieu de flags =
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
               }
             context.startActivity(intent)
             "succeeded"
@@ -126,7 +127,8 @@ object IntentHandler {
             val uri = "smsto:${params.phone_number}".toUri()
             val intent = Intent(Intent.ACTION_SENDTO, uri).apply {
               putExtra("sms_body", params.sms_body)
-              flags = Intent.FLAG_ACTIVITY_NEW_TASK
+              // CORRECTION ICI : addFlags au lieu de flags =
+              addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
             "succeeded"
@@ -155,7 +157,8 @@ object IntentHandler {
                 putExtra(Events.DESCRIPTION, params.description)
                 putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, beginTimeMillis)
                 putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endTimeMillis)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                // CORRECTION ICI : addFlags au lieu de flags =
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
               }
             context.startActivity(intent)
             "succeeded"
