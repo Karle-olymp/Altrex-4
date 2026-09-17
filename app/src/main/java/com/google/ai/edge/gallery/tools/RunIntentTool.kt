@@ -26,8 +26,6 @@ import com.google.ai.edge.gallery.intents.IntentHandler
 import com.google.ai.edge.gallery.skills.SkillsProvider
 import com.google.ai.edge.litertlm.Tool
 import com.google.ai.edge.litertlm.ToolParam
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
 
 private const val TAG = "AGRunIntentTool"
 
@@ -48,7 +46,7 @@ class RunIntentTool(private val context: Context, private val skillsProvider: Sk
     description =
       "Run an Android intent. It is used to interact with the app to perform certain actions."
   )
-  fun runIntent(
+  suspend fun runIntent(
     @ToolParam(description = "The intent to run.") intent: String,
     @ToolParam(
       description = "A JSON string containing the parameter values required for the intent."
@@ -58,48 +56,47 @@ class RunIntentTool(private val context: Context, private val skillsProvider: Sk
     // ═══ DIAG 3 : preuve visuelle que le modèle a bien appelé le tool ═══
     diagToast("TOOL APPELE: $intent")
 
-    return runBlocking(Dispatchers.Default) {
-      // ═══ DIAG 1 : entrées brutes ═══
-      Log.e(TAG, "🔍 DIAG runIntent APPELE — intent brut='$intent'")
-      Log.e(TAG, "🔍 DIAG parameters brut='$parameters'")
+    // ═══ DIAG 1 : entrées brutes ═══
+    Log.e(TAG, "🔍 DIAG runIntent APPELE — intent brut='$intent'")
+    Log.e(TAG, "🔍 DIAG parameters brut='$parameters'")
 
-      if (IntentAction.from(intent) == null) {
-        // ═══ DIAG 2 : rejet + liste des noms attendus ═══
-        Log.e(TAG, "❌ DIAG Intent REJETE: '$intent'")
-        val expected = IntentAction.entries.joinToString(", ") { it.name }
-        Log.e(TAG, "❌ DIAG Attendus: $expected")
-        diagToast("REJETE: '$intent'\nAttendus: $expected")
+    if (IntentAction.from(intent) == null) {
+      // ═══ DIAG 2 : rejet + liste des noms attendus ═══
+      Log.e(TAG, "❌ DIAG Intent REJETE: '$intent'")
+      val expected = IntentAction.entries.joinToString(", ") { it.name }
+      Log.e(TAG, "❌ DIAG Attendus: $expected")
+      diagToast("REJETE: '$intent'\nAttendus: $expected")
 
-        Log.w(TAG, "Intent not found: '$intent'")
-        return@runBlocking guardMissingEntityWithSkillFallback(name = intent, type = "Intent")
+      Log.w(TAG, "Intent not found: '$intent'")
+      return guardMissingEntityWithSkillFallback(name = intent, type = "Intent")
+    }
+
+    Log.e(TAG, "✅ DIAG Intent ACCEPTE: '$intent'")
+    Log.d(TAG, "Run intent. Intent: '$intent', parameters: '$parameters'")
+
+    executionContext
+      ?.actionChannel
+      ?.send(
+        SkillProgressToolAction(
+          label = "Executing intent \"$intent\"",
+          inProgress = true,
+          addItemTitle = "Execute intent \"$intent\"",
+          addItemDescription = "Parameters: $parameters",
+        )
+      )
+      
+    val res =
+      IntentHandler.handleAction(context, intent, parameters) { permission ->
+        val permissionAction = RequestPermissionToolAction(permission = permission)
+        executionContext?.actionChannel?.send(permissionAction)
+        permissionAction.result.await()
       }
 
-      Log.e(TAG, "✅ DIAG Intent ACCEPTE: '$intent'")
-      Log.d(TAG, "Run intent. Intent: '$intent', parameters: '$parameters'")
+    // ═══ DIAG 4 : résultat renvoyé par IntentHandler ═══
+    Log.e(TAG, "📤 DIAG resultat IntentHandler='$res'")
+    diagToast("RESULTAT: $res")
 
-      executionContext
-        ?.actionChannel
-        ?.send(
-          SkillProgressToolAction(
-            label = "Executing intent \"$intent\"",
-            inProgress = true,
-            addItemTitle = "Execute intent \"$intent\"",
-            addItemDescription = "Parameters: $parameters",
-          )
-        )
-      val res =
-        IntentHandler.handleAction(context, intent, parameters) { permission ->
-          val permissionAction = RequestPermissionToolAction(permission = permission)
-          executionContext?.actionChannel?.send(permissionAction)
-          permissionAction.result.await()
-        }
-
-      // ═══ DIAG 4 : résultat renvoyé par IntentHandler ═══
-      Log.e(TAG, "📤 DIAG resultat IntentHandler='$res'")
-      diagToast("RESULTAT: $res")
-
-      return@runBlocking mapOf("action" to intent, "parameters" to parameters, "result" to res)
-    }
+    return mapOf("action" to intent, "parameters" to parameters, "result" to res)
   }
 
   /**
@@ -117,4 +114,4 @@ class RunIntentTool(private val context: Context, private val skillsProvider: Sk
     val error = if (isSkill) "$type not found. Try to run it as a skill" else "Tool not found"
     return mapOf("error" to error, "status" to "failed")
   }
-  }
+}
