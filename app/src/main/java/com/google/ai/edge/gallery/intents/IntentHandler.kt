@@ -5,6 +5,7 @@ import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri // Ajout de l'import Uri
 import android.provider.CalendarContract
 import android.provider.CalendarContract.Events
 import android.provider.CalendarContract.Instances
@@ -116,12 +117,23 @@ object IntentHandler {
           val jsonAdapter = moshi.adapter(SendEmailParams::class.java)
           val params = jsonAdapter.fromJson(parameters)
           if (params != null && params.resolvedEmail.isNotEmpty()) {
-            val intent =
-              Intent(Intent.ACTION_SENDTO, "mailto:${params.resolvedEmail}".toUri()).apply {
-                putExtra(Intent.EXTRA_SUBJECT, params.resolvedSubject)
-                putExtra(Intent.EXTRA_TEXT, params.resolvedText)
+            
+            // --- CORRECTION DU FORMATAGE DE L'URI POUR GMAIL ---
+            val baseUri = "mailto:${params.resolvedEmail}".toUri()
+            val uriWithParams = baseUri.buildUpon().apply {
+                if (params.resolvedSubject.isNotEmpty()) {
+                    appendQueryParameter("subject", params.resolvedSubject)
+                }
+                if (params.resolvedText.isNotEmpty()) {
+                    appendQueryParameter("body", params.resolvedText)
+                }
+            }.build()
+
+            val intent = Intent(Intent.ACTION_SENDTO, uriWithParams).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-              }
+            }
+            // ----------------------------------------------------
+
             context.startActivity(intent)
             "succeeded"
           } else {
