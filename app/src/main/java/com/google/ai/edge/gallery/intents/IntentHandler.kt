@@ -1,11 +1,12 @@
 package com.google.ai.edge.gallery.intents
 
 import android.Manifest
+import android.app.SearchManager
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri // Ajout de l'import Uri
+import android.net.Uri
 import android.provider.CalendarContract
 import android.provider.CalendarContract.Events
 import android.provider.CalendarContract.Instances
@@ -73,13 +74,21 @@ data class CalendarEventDto(
 @JsonClass(generateAdapter = true)
 data class ReadCalendarEventsResponse(val events: List<CalendarEventDto>)
 
+@JsonClass(generateAdapter = true)
+data class SearchWebParams(
+  val query: String? = null
+) {
+  val resolvedQuery: String get() = query ?: ""
+}
+
 enum class IntentAction(val action: String) {
   SEND_EMAIL("send_email"),
   SEND_SMS("send_sms"),
   CREATE_CALENDAR_EVENT("create_calendar_event"),
   READ_CALENDAR_EVENTS("read_calendar_events"),
   GET_CURRENT_DATE_AND_TIME("get_current_date_and_time"),
-  SCHEDULE_NOTIFICATION("schedule_notification");
+  SCHEDULE_NOTIFICATION("schedule_notification"),
+  SEARCH_WEB("search_web");
 
   companion object {
     fun from(action: String): IntentAction? = entries.find { it.action == action }
@@ -117,23 +126,19 @@ object IntentHandler {
           val jsonAdapter = moshi.adapter(SendEmailParams::class.java)
           val params = jsonAdapter.fromJson(parameters)
           if (params != null && params.resolvedEmail.isNotEmpty()) {
-            
-            // --- CORRECTION DU FORMATAGE DE L'URI POUR GMAIL ---
             val baseUri = "mailto:${params.resolvedEmail}".toUri()
             val uriWithParams = baseUri.buildUpon().apply {
-                if (params.resolvedSubject.isNotEmpty()) {
-                    appendQueryParameter("subject", params.resolvedSubject)
-                }
-                if (params.resolvedText.isNotEmpty()) {
-                    appendQueryParameter("body", params.resolvedText)
-                }
+              if (params.resolvedSubject.isNotEmpty()) {
+                appendQueryParameter("subject", params.resolvedSubject)
+              }
+              if (params.resolvedText.isNotEmpty()) {
+                appendQueryParameter("body", params.resolvedText)
+              }
             }.build()
 
             val intent = Intent(Intent.ACTION_SENDTO, uriWithParams).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+              addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            // ----------------------------------------------------
-
             context.startActivity(intent)
             "succeeded"
           } else {
@@ -210,6 +215,27 @@ object IntentHandler {
       }
       IntentAction.SCHEDULE_NOTIFICATION -> {
         scheduleNotification(context, parameters)
+      }
+      IntentAction.SEARCH_WEB -> {
+        try {
+          val moshi = Moshi.Builder().build()
+          val jsonAdapter = moshi.adapter(SearchWebParams::class.java)
+          val params = jsonAdapter.fromJson(parameters)
+          if (params != null && params.resolvedQuery.isNotEmpty()) {
+            val intent = Intent(Intent.ACTION_WEB_SEARCH).apply {
+              putExtra(SearchManager.QUERY, params.resolvedQuery)
+              addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "succeeded"
+          } else {
+            Log.e(TAG, "Failed to parse search_web parameters or missing query: $parameters")
+            "failed"
+          }
+        } catch (e: Exception) {
+          Log.e(TAG, "Failed to parse search_web parameters: $parameters", e)
+          "failed"
+        }
       }
       null -> "failed"
     }
