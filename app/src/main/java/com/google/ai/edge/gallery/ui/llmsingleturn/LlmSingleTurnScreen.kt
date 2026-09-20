@@ -28,6 +28,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -148,7 +149,7 @@ fun LlmSingleTurnScreen(
       )
     },
   ) { innerPadding ->
-    Box(
+    Column(
       modifier =
         Modifier.padding(
           top = innerPadding.calculateTopPadding(),
@@ -156,6 +157,9 @@ fun LlmSingleTurnScreen(
           end = innerPadding.calculateStartPadding(LocalLayoutDirection.current),
         )
     ) {
+      FileExplorerPanel(modifier = Modifier.fillMaxWidth())
+
+      Box(modifier = Modifier.weight(1f)) {
       val modelDownloaded = curDownloadStatus?.status == ModelDownloadStatusType.SUCCEEDED
       // Main UI after model is downloaded.
       var mainUiVisible by remember { mutableStateOf(modelDownloaded) }
@@ -231,6 +235,7 @@ fun LlmSingleTurnScreen(
           error = modelInitializationStatus?.error ?: "",
           onDismiss = { showErrorDialog = false },
         )
+      }
       }
     }
   }
