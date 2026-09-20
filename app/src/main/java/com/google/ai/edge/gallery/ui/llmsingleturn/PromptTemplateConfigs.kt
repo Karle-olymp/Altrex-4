@@ -118,6 +118,35 @@ enum class PromptTemplateType(
     },
   val examplePrompts: List<String> = listOf(),
 ) {
+  CODE_SNIPPET(
+    labelRes = R.string.prompt_lab_tab_code_snippet,
+    config =
+      PromptTemplateConfig(
+        inputEditors =
+          listOf(
+            PromptTemplateSingleSelectInputEditor(
+              key = "language",
+              labelRes = R.string.prompt_lab_label_language,
+              options = LanguageType.entries.map { it.toSelectOption() },
+              defaultOptionKey = LanguageType.JAVASCRIPT.key,
+            )
+          )
+      ),
+    genFullPrompt = { userInput, inputEditorValues ->
+      val language = inputEditorValues["language"] as String
+      buildAnnotatedString {
+        withStyle(GEMINI_GRADIENT_STYLE) { append("Write a $language code snippet to ") }
+        append(userInput)
+      }
+    },
+    examplePrompts =
+      listOf(
+        "Create an alert box that says \"Hello, World!\"",
+        "Declare an immutable variable named 'appName' with the value \"AI Gallery\"",
+        "Print the numbers from 1 to 5 using a for loop.",
+        "Write a function that returns the square of an integer input.",
+      ),
+  ),
   FREE_FORM(
     labelRes = R.string.prompt_lab_tab_free_form,
     config = PromptTemplateConfig(),
@@ -193,35 +222,6 @@ enum class PromptTemplateType(
       listOf(
         "The new Pixel phone features an advanced camera system with improved low-light performance and AI-powered editing tools. The display is brighter and more energy-efficient. It runs on the latest Tensor chip, offering faster processing and enhanced security features. Battery life has also been extended, providing all-day power for most users.",
         "Beginning this Friday, January 24, giant pandas Bao Li and Qing Bao are officially on view to the public at the Smithsonian’s National Zoo and Conservation Biology Institute (NZCBI). The 3-year-old bears arrived in Washington this past October, undergoing a quarantine period before making their debut. Under NZCBI’s new agreement with the CWCA, Qing Bao and Bao Li will remain in the United States for ten years, until April 2034, in exchange for an annual fee of \$1 million. The pair are still too young to breed, as pandas only reach sexual maturity between ages 4 and 7. “Kind of picture them as like awkward teenagers right now,” Lally told WUSA9. “We still have about two years before we would probably even see signs that they’re ready to start mating.”",
-      ),
-  ),
-  CODE_SNIPPET(
-    labelRes = R.string.prompt_lab_tab_code_snippet,
-    config =
-      PromptTemplateConfig(
-        inputEditors =
-          listOf(
-            PromptTemplateSingleSelectInputEditor(
-              key = "language",
-              labelRes = R.string.prompt_lab_label_language,
-              options = LanguageType.entries.map { it.toSelectOption() },
-              defaultOptionKey = LanguageType.JAVASCRIPT.key,
-            )
-          )
-      ),
-    genFullPrompt = { userInput, inputEditorValues ->
-      val language = inputEditorValues["language"] as String
-      buildAnnotatedString {
-        withStyle(GEMINI_GRADIENT_STYLE) { append("Write a $language code snippet to ") }
-        append(userInput)
-      }
-    },
-    examplePrompts =
-      listOf(
-        "Create an alert box that says \"Hello, World!\"",
-        "Declare an immutable variable named 'appName' with the value \"AI Gallery\"",
-        "Print the numbers from 1 to 5 using a for loop.",
-        "Write a function that returns the square of an integer input.",
       ),
   ),
 }
