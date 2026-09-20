@@ -114,6 +114,8 @@ fun PromptTemplatesPanel(
   onSend: (fullPrompt: String) -> Unit,
   onStopButtonClicked: (Model) -> Unit,
   modifier: Modifier = Modifier,
+  fileContentToInsert: String? = null,
+  onFileContentConsumed: () -> Unit = {},
 ) {
   val scope = rememberCoroutineScope()
   val uiState by viewModel.uiState.collectAsState()
@@ -122,6 +124,12 @@ fun PromptTemplatesPanel(
   val inProgress = uiState.inProgress
   var selectedTabIndex by remember { mutableIntStateOf(0) }
   var curTextInputContent by remember { mutableStateOf("") }
+  LaunchedEffect(fileContentToInsert) {
+    if (fileContentToInsert != null) {
+      curTextInputContent = fileContentToInsert
+      onFileContentConsumed()
+    }
+  }
   val inputEditorValues: SnapshotStateMap<String, Any> = remember {
     mutableStateMapOf(FULL_PROMPT_SWITCH_KEY to false)
   }
