@@ -27,7 +27,7 @@ import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.Category
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.Task
-import com.google.ai.edge.gallery.ui.llmchat.LlmChatModelHelper
+import com.google.ai.edge.gallery.runtime.runtimeHelper
 import com.google.ai.edge.litertlm.Contents
 import dagger.Module
 import dagger.Provides
@@ -63,7 +63,7 @@ class LlmSingleTurnTask @Inject constructor(@ApplicationContext private val cont
     systemInstruction: Contents?,
     onDone: (String) -> Unit,
   ) {
-    LlmChatModelHelper.initialize(
+    model.runtimeHelper.initialize(
       context = context,
       model = model,
       taskId = task.id,
@@ -80,7 +80,7 @@ class LlmSingleTurnTask @Inject constructor(@ApplicationContext private val cont
     model: Model,
     onDone: () -> Unit,
   ) {
-    LlmChatModelHelper.cleanUp(model = model, onDone = onDone)
+    model.runtimeHelper.cleanUp(model = model, onDone = onDone)
   }
 
   @Composable
