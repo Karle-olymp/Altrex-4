@@ -29,8 +29,10 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -51,11 +53,15 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.core.os.bundleOf
 import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.data.BuiltInTaskId
+import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.ModelDownloadStatusType
+import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.ui.common.ErrorDialog
 import com.google.ai.edge.gallery.ui.common.ModelPageAppBar
 import com.google.ai.edge.gallery.ui.common.chat.ModelDownloadStatusInfoPanel
+import com.google.ai.edge.gallery.ui.modelmanager.ModelDownloadStatus
+import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatus
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import com.google.ai.edge.gallery.ui.theme.customColors
@@ -160,83 +166,105 @@ fun LlmSingleTurnScreen(
       FileExplorerPanel(modifier = Modifier.fillMaxWidth())
 
       Box(modifier = Modifier.weight(1f)) {
-      val modelDownloaded = curDownloadStatus?.status == ModelDownloadStatusType.SUCCEEDED
-      // Main UI after model is downloaded.
-      var mainUiVisible by remember { mutableStateOf(modelDownloaded) }
-      LaunchedEffect(modelDownloaded) { mainUiVisible = modelDownloaded }
-      val animatedAlpha by animateFloatAsState(targetValue = if (mainUiVisible) 1.0f else 0f)
-      Box(
-        contentAlignment = Alignment.BottomCenter,
-        modifier =
-          Modifier.fillMaxSize()
-            // Just hide the UI without removing it from the screen so that the scroll syncing
-            // from ResponsePanel still works.
-            .graphicsLayer { alpha = animatedAlpha },
-      ) {
-        VerticalSplitView(
+        CodeModeMainContent(
+          task = task,
+          selectedModel = selectedModel,
+          viewModel = viewModel,
+          modelManagerViewModel = modelManagerViewModel,
+          curDownloadStatus = curDownloadStatus,
+          modelInitializationStatus = modelInitializationStatus,
+          showErrorDialog = showErrorDialog,
+          onDismissErrorDialog = { showErrorDialog = false },
+          innerPadding = innerPadding,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun CodeModeMainContent(
+  task: Task,
+  selectedModel: Model,
+  viewModel: LlmSingleTurnViewModel,
+  modelManagerViewModel: ModelManagerViewModel,
+  curDownloadStatus: ModelDownloadStatus?,
+  modelInitializationStatus: ModelInitializationStatus?,
+  showErrorDialog: Boolean,
+  onDismissErrorDialog: () -> Unit,
+  innerPadding: PaddingValues,
+) {
+  val modelDownloaded = curDownloadStatus?.status == ModelDownloadStatusType.SUCCEEDED
+  // Main UI after model is downloaded.
+  var mainUiVisible by remember { mutableStateOf(modelDownloaded) }
+  LaunchedEffect(modelDownloaded) { mainUiVisible = modelDownloaded }
+  val animatedAlpha by animateFloatAsState(targetValue = if (mainUiVisible) 1.0f else 0f)
+  Box(
+    contentAlignment = Alignment.BottomCenter,
+    modifier =
+      Modifier.fillMaxSize()
+        // Just hide the UI without removing it from the screen so that the scroll syncing
+        // from ResponsePanel still works.
+        .graphicsLayer { alpha = animatedAlpha },
+  ) {
+    VerticalSplitView(
+      modifier = Modifier.fillMaxSize(),
+      topView = {
+        PromptTemplatesPanel(
+          model = selectedModel,
+          viewModel = viewModel,
+          modelManagerViewModel = modelManagerViewModel,
+          onSend = { fullPrompt ->
+            viewModel.generateResponse(task = task, model = selectedModel, input = fullPrompt)
+
+            firebaseAnalytics?.logEvent(
+              GalleryEvent.GENERATE_ACTION.id,
+              bundleOf("capability_name" to task.id, "model_id" to selectedModel.name),
+            )
+          },
+          onStopButtonClicked = { model -> viewModel.stopResponse(model = model) },
           modifier = Modifier.fillMaxSize(),
-          topView = {
-            PromptTemplatesPanel(
+        )
+      },
+      bottomView = {
+        Box(
+          contentAlignment = Alignment.BottomCenter,
+          modifier =
+            Modifier.fillMaxSize().background(MaterialTheme.customColors.agentBubbleBgColor),
+        ) {
+          if (task.models.indexOf(selectedModel) >= 0) {
+            ResponsePanel(
+              task = task,
               model = selectedModel,
               viewModel = viewModel,
               modelManagerViewModel = modelManagerViewModel,
-              onSend = { fullPrompt ->
-                viewModel.generateResponse(task = task, model = selectedModel, input = fullPrompt)
-
-                firebaseAnalytics?.logEvent(
-                  GalleryEvent.GENERATE_ACTION.id,
-                  bundleOf("capability_name" to task.id, "model_id" to selectedModel.name),
-                )
-              },
-              onStopButtonClicked = { model -> viewModel.stopResponse(model = model) },
-              modifier = Modifier.fillMaxSize(),
-            )
-          },
-          bottomView = {
-            Box(
-              contentAlignment = Alignment.BottomCenter,
               modifier =
-                Modifier.fillMaxSize().background(MaterialTheme.customColors.agentBubbleBgColor),
-            ) {
-              if (task.models.indexOf(selectedModel) >= 0) {
-                ResponsePanel(
-                  task = task,
-                  model = selectedModel,
-                  viewModel = viewModel,
-                  modelManagerViewModel = modelManagerViewModel,
-                  modifier =
-                    Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding()),
-                )
-              }
-            }
-          },
-        )
-      }
+                Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding()),
+            )
+          }
+        }
+      },
+    )
+  }
 
-      // Download button for the selected model when the model is not downloaded.
-      //
-      // Put this after the main UI so that it's layered on top.
-      AnimatedVisibility(
-        visible = !modelDownloaded,
-        // Block pointer input to prevent user from interacting with the main UI below.
-        modifier = Modifier.pointerInput(Unit) {},
-        enter = scaleIn(initialScale = 0.9f) + fadeIn(),
-        exit = scaleOut(targetScale = 0.9f) + fadeOut(),
-      ) {
-        ModelDownloadStatusInfoPanel(
-          model = selectedModel,
-          task = task,
-          modelManagerViewModel = modelManagerViewModel,
-        )
-      }
+  // Download button for the selected model when the model is not downloaded.
+  //
+  // Put this after the main UI so that it's layered on top.
+  AnimatedVisibility(
+    visible = !modelDownloaded,
+    // Block pointer input to prevent user from interacting with the main UI below.
+    modifier = Modifier.pointerInput(Unit) {},
+    enter = scaleIn(initialScale = 0.9f) + fadeIn(),
+    exit = scaleOut(targetScale = 0.9f) + fadeOut(),
+  ) {
+    ModelDownloadStatusInfoPanel(
+      model = selectedModel,
+      task = task,
+      modelManagerViewModel = modelManagerViewModel,
+    )
+  }
 
-      if (showErrorDialog) {
-        ErrorDialog(
-          error = modelInitializationStatus?.error ?: "",
-          onDismiss = { showErrorDialog = false },
-        )
-      }
-      }
-    }
+  if (showErrorDialog) {
+    ErrorDialog(error = modelInitializationStatus?.error ?: "", onDismiss = onDismissErrorDialog)
   }
 }
