@@ -86,6 +86,7 @@ fun LlmSingleTurnScreen(
   val context = LocalContext.current
   var navigatingUp by remember { mutableStateOf(false) }
   var showErrorDialog by remember { mutableStateOf(false) }
+  var openedFileContent by remember { mutableStateOf<String?>(null) }
 
   val handleNavigateUp = {
     navigatingUp = true
@@ -163,7 +164,15 @@ fun LlmSingleTurnScreen(
           end = innerPadding.calculateStartPadding(LocalLayoutDirection.current),
         )
     ) {
-      FileExplorerPanel(modifier = Modifier.fillMaxWidth())
+      FileExplorerPanel(
+        modifier = Modifier.fillMaxWidth(),
+        onFileClicked = { file ->
+          val text = ProjectFolderManager.readTextFile(context, file.uri)
+          if (text != null) {
+            openedFileContent = "// ${file.name}\n$text"
+          }
+        },
+      )
 
       Box(modifier = Modifier.weight(1f)) {
         CodeModeMainContent(
@@ -176,6 +185,8 @@ fun LlmSingleTurnScreen(
           showErrorDialog = showErrorDialog,
           onDismissErrorDialog = { showErrorDialog = false },
           innerPadding = innerPadding,
+          fileContentToInsert = openedFileContent,
+          onFileContentConsumed = { openedFileContent = null },
         )
       }
     }
@@ -193,6 +204,8 @@ private fun CodeModeMainContent(
   showErrorDialog: Boolean,
   onDismissErrorDialog: () -> Unit,
   innerPadding: PaddingValues,
+  fileContentToInsert: String? = null,
+  onFileContentConsumed: () -> Unit = {},
 ) {
   val modelDownloaded = curDownloadStatus?.status == ModelDownloadStatusType.SUCCEEDED
   // Main UI after model is downloaded.
@@ -214,6 +227,8 @@ private fun CodeModeMainContent(
           model = selectedModel,
           viewModel = viewModel,
           modelManagerViewModel = modelManagerViewModel,
+          fileContentToInsert = fileContentToInsert,
+          onFileContentConsumed = onFileContentConsumed,
           onSend = { fullPrompt ->
             viewModel.generateResponse(task = task, model = selectedModel, input = fullPrompt)
 
