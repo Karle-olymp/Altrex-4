@@ -18,7 +18,7 @@ package com.google.ai.edge.gallery.ui.llmsingleturn
 
 import android.content.Context
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Widgets
+import androidx.compose.material.icons.outlined.Code
 import androidx.compose.runtime.Composable
 import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.customtasks.common.CustomTask
@@ -45,7 +45,7 @@ class LlmSingleTurnTask @Inject constructor(@ApplicationContext private val cont
       id = BuiltInTaskId.LLM_PROMPT_LAB,
       label = context.getString(R.string.task_label_prompt_lab),
       category = Category.LLM,
-      icon = Icons.Outlined.Widgets,
+      icon = Icons.Outlined.Code,
       models = mutableListOf(),
       description = context.getString(R.string.task_desc_prompt_lab),
       shortDescription = context.getString(R.string.task_short_desc_prompt_lab),
