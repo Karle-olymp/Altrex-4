@@ -64,4 +64,12 @@ object ProjectFolderManager {
       compareBy({ !it.isDirectory }, { (it.name ?: "").lowercase() })
     )
   }
+  /** Reads a text file's content. Returns null if it can't be read. */
+  fun readTextFile(context: Context, uri: Uri): String? {
+    return try {
+      context.contentResolver.openInputStream(uri)?.use { input -> input.bufferedReader().readText() }
+    } catch (e: Exception) {
+      null
+    }
+  }
 }
