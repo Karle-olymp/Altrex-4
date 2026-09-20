@@ -54,7 +54,7 @@ import androidx.compose.material.icons.automirrored.rounded.ListAlt
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Mms
-import androidx.compose.material.icons.outlined.Widgets
+import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Settings
@@ -395,9 +395,9 @@ fun GalleryNavHost(
             )
             Spacer(modifier = Modifier.width(16.dp))
             SquareDrawerItem(
-              label = "Prompt Lab",
-              description = "Single turn use cases",
-              icon = Icons.Outlined.Widgets,
+              label = "Code Mode",
+              description = "Generate, explain, and rewrite code snippets",
+              icon = Icons.Outlined.Code,
               onClick = {
                 scope.launch { drawerState.close() }
                 modelManagerUiState.tasks.find { it.id == BuiltInTaskId.LLM_PROMPT_LAB }?.let {
