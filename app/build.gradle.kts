@@ -100,6 +100,7 @@ externalNativeBuild {
 
 dependencies {
   implementation(libs.androidx.core.ktx)
+  implementation(libs.androidx.documentfile)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.activity.compose)
   implementation(platform(libs.androidx.compose.bom))
