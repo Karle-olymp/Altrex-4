@@ -60,7 +60,7 @@ import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.ui.common.ErrorDialog
 import com.google.ai.edge.gallery.ui.common.ModelPageAppBar
 import com.google.ai.edge.gallery.ui.common.chat.ModelDownloadStatusInfoPanel
-import com.google.ai.edge.gallery.ui.modelmanager.ModelDownloadStatus
+import com.google.ai.edge.gallery.data.ModelDownloadStatus
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatus
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
