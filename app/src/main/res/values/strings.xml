@@ -704,7 +704,7 @@
   <string name="task_short_desc_audio_scribe" translatable="true" description="Short description for the Audio Scribe task. [CHAR_LIMIT=45]">Transcribe and translate audio</string><!-- Description for the Prompt Lab task. [CHAR_LIMIT=100] -->
   <string name="task_desc_prompt_lab" translatable="true" description="Description for the Code Mode task. [CHAR_LIMIT=99]">Generate, explain, and rewrite code snippets with on-device large language models</string>
   <!-- Short description for the Prompt Lab task. [CHAR_LIMIT=35] -->
-  <string name="task_short_desc_prompt_lab" translatable="true" description="Short description for the Code Mode task. [CHAR_LIMIT=45]">Code generation & snippets</string>
+  <string name="task_short_desc_prompt_lab" translatable="true" description="Short description for the Code Mode task. [CHAR_LIMIT=45]">Code generation &amp; snippets</string>
   <!-- Description for the Agent Skills task. [CHAR_LIMIT=100] -->
   <string name="task_desc_agent_skills" translatable="true" description="Description for the Agent Skills task. [CHAR_LIMIT=106]">Chat with on-device large language models with skills and tools</string>
   <!-- Short description for the Agent Skills task. [CHAR_LIMIT=35] -->
