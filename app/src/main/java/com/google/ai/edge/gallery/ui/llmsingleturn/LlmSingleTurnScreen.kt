@@ -86,7 +86,7 @@ fun LlmSingleTurnScreen(
   val context = LocalContext.current
   var navigatingUp by remember { mutableStateOf(false) }
   var showErrorDialog by remember { mutableStateOf(false) }
-  var openedFileContent by remember { mutableStateOf<String?>(null) }
+  var openedFile by remember { mutableStateOf<OpenedFile?>(null) }
 
   val handleNavigateUp = {
     navigatingUp = true
@@ -169,7 +169,7 @@ fun LlmSingleTurnScreen(
         onFileClicked = { file ->
           val text = ProjectFolderManager.readTextFile(context, file.uri)
           if (text != null) {
-            openedFileContent = "// ${file.name}\n$text"
+            openedFile = OpenedFile(fileName = file.name ?: "file", content = text)
           }
         },
       )
@@ -185,8 +185,8 @@ fun LlmSingleTurnScreen(
           showErrorDialog = showErrorDialog,
           onDismissErrorDialog = { showErrorDialog = false },
           innerPadding = innerPadding,
-          fileContentToInsert = openedFileContent,
-          onFileContentConsumed = { openedFileContent = null },
+          openedFile = openedFile,
+          onOpenedFileCleared = { openedFile = null },
         )
       }
     }
@@ -204,8 +204,8 @@ private fun CodeModeMainContent(
   showErrorDialog: Boolean,
   onDismissErrorDialog: () -> Unit,
   innerPadding: PaddingValues,
-  fileContentToInsert: String? = null,
-  onFileContentConsumed: () -> Unit = {},
+  openedFile: OpenedFile? = null,
+  onOpenedFileCleared: () -> Unit = {},
 ) {
   val modelDownloaded = curDownloadStatus?.status == ModelDownloadStatusType.SUCCEEDED
   // Main UI after model is downloaded.
@@ -227,8 +227,8 @@ private fun CodeModeMainContent(
           model = selectedModel,
           viewModel = viewModel,
           modelManagerViewModel = modelManagerViewModel,
-          fileContentToInsert = fileContentToInsert,
-          onFileContentConsumed = onFileContentConsumed,
+          openedFile = openedFile,
+          onOpenedFileCleared = onOpenedFileCleared,
           onSend = { fullPrompt ->
             viewModel.generateResponse(task = task, model = selectedModel, input = fullPrompt)
 
