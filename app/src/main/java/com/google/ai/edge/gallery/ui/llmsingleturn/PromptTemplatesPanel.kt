@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -114,8 +116,8 @@ fun PromptTemplatesPanel(
   onSend: (fullPrompt: String) -> Unit,
   onStopButtonClicked: (Model) -> Unit,
   modifier: Modifier = Modifier,
-  fileContentToInsert: String? = null,
-  onFileContentConsumed: () -> Unit = {},
+  openedFile: OpenedFile? = null,
+  onOpenedFileCleared: () -> Unit = {},
 ) {
   val scope = rememberCoroutineScope()
   val uiState by viewModel.uiState.collectAsState()
@@ -124,12 +126,6 @@ fun PromptTemplatesPanel(
   val inProgress = uiState.inProgress
   var selectedTabIndex by remember { mutableIntStateOf(0) }
   var curTextInputContent by remember { mutableStateOf("") }
-  LaunchedEffect(fileContentToInsert) {
-    if (fileContentToInsert != null) {
-      curTextInputContent = fileContentToInsert
-      onFileContentConsumed()
-    }
-  }
   val inputEditorValues: SnapshotStateMap<String, Any> = remember {
     mutableStateMapOf(FULL_PROMPT_SWITCH_KEY to false)
   }
@@ -158,6 +154,37 @@ fun PromptTemplatesPanel(
   val bubbleBorderRadius = dimensionResource(R.dimen.chat_bubble_corner_radius)
 
   Column(modifier = modifier) {
+    // Chip showing the file opened from the project folder, if any.
+    if (openedFile != null) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier =
+          Modifier.fillMaxWidth()
+            .background(MaterialTheme.customColors.agentBubbleBgColor)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+      ) {
+        Icon(
+          imageVector = Icons.Outlined.Description,
+          contentDescription = null,
+          modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+          text = openedFile.fileName,
+          style = MaterialTheme.typography.bodyMedium,
+          maxLines = 1,
+          modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = onOpenedFileCleared, modifier = Modifier.size(28.dp)) {
+          Icon(
+            imageVector = Icons.Rounded.Close,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+          )
+        }
+      }
+    }
+
     // Scrollable tab row for all prompt templates.
     PrimaryScrollableTabRow(selectedTabIndex = selectedTabIndex) {
       promptTemplateTypes.forEachIndexed { index, templateType ->
@@ -392,7 +419,13 @@ fun PromptTemplatesPanel(
               enabled = !inProgress && curTextInputContent.isNotEmpty(),
               onClick = {
                 focusManager.clearFocus()
-                onSend(fullPrompt.text)
+                val promptToSend =
+                  if (openedFile != null) {
+                    "// ${openedFile.fileName}\n${openedFile.content}\n\n${fullPrompt.text}"
+                  } else {
+                    fullPrompt.text
+                  }
+                onSend(promptToSend)
               },
               colors =
                 IconButtonDefaults.iconButtonColors(
