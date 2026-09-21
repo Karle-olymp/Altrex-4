@@ -20,17 +20,22 @@ import android.content.ClipData
 import android.util.Log
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -60,6 +65,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.data.ConfigKeys
@@ -83,6 +89,7 @@ fun ResponsePanel(
   viewModel: LlmSingleTurnViewModel,
   modelManagerViewModel: ModelManagerViewModel,
   modifier: Modifier = Modifier,
+  openedFile: OpenedFile? = null,
 ) {
   val uiState by viewModel.uiState.collectAsState()
   val modelManagerUiState by modelManagerViewModel.uiState.collectAsState()
@@ -90,6 +97,8 @@ fun ResponsePanel(
   val initializing = uiState.preparing
   val selectedPromptTemplateType = uiState.selectedPromptTemplateType
   val responseScrollState = rememberScrollState()
+  val codeScrollState = rememberScrollState()
+  // 0 = Response tab, 1 = Code tab.
   var selectedOptionIndex by remember { mutableIntStateOf(0) }
   val clipboard = LocalClipboard.current
   val scope = rememberCoroutineScope()
@@ -101,7 +110,20 @@ fun ResponsePanel(
   // Select the "response" tab when prompt template changes.
   LaunchedEffect(selectedPromptTemplateType) { selectedOptionIndex = 0 }
 
-  // Update selected model and clean up previous model when page is settled on a model page.
+  // Switch to the "Code" tab as soon as a file is opened.
+  LaunchedEffect(openedFile) {
+    if (openedFile != null) {
+      selectedOptionIndex = 1
+    }
+  }
+
+  // Switch back to "Response" as soon as a generation starts.
+  LaunchedEffect(inProgress) {
+    if (inProgress) {
+      selectedOptionIndex = 0
+    }
+  }
+
   // Update selected model and clean up previous model when page is settled on a model page.
   LaunchedEffect(pagerState.settledPage) {
     val curSelectedModel = task.models.getOrNull(pagerState.settledPage) ?: return@LaunchedEffect
@@ -129,111 +151,204 @@ fun ResponsePanel(
     val response =
       uiState.responsesByModel[curPageModel.name]?.get(selectedPromptTemplateType.name) ?: ""
 
-    if (initializing) {
-      Box(
-        contentAlignment = Alignment.TopStart,
-        modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
-      ) {
-        MessageBodyLoading()
-      }
-    } else {
-      // Message when response is empty.
-      if (response.isEmpty()) {
+    Column(modifier = modifier.fillMaxSize()) {
+      // Compact Code/Response tab selector — only shown once a file has been opened.
+      if (openedFile != null) {
         Row(
-          modifier = Modifier.fillMaxSize(),
-          horizontalArrangement = Arrangement.Center,
-          verticalAlignment = Alignment.CenterVertically,
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-          Text(
-            stringResource(R.string.prompt_lab_response_placeholder),
-            modifier = Modifier.alpha(0.5f),
-            style = MaterialTheme.typography.labelMedium,
+          SegmentedTabButton(
+            label = "Code",
+            selected = selectedOptionIndex == 1,
+            onClick = { selectedOptionIndex = 1 },
+            modifier = Modifier.weight(1f),
+          )
+          SegmentedTabButton(
+            label = "Response",
+            selected = selectedOptionIndex == 0,
+            onClick = { selectedOptionIndex = 0 },
+            modifier = Modifier.weight(1f),
           )
         }
       }
-      // Response markdown.
-      else {
-        // Stores if the list is at the scrollable area's bottom.
-        //
-        // It will only be updated when the state holds for at least 500ms to improve user
-        // experience.
-        var isAtBottom by remember { mutableStateOf(true) }
-        LaunchedEffect(responseScrollState) {
-          snapshotFlow {
-              // Read the raw scroll state here
-              !responseScrollState.canScrollForward
-            }
-            .collectLatest { rawAtBottom ->
-              if (!rawAtBottom) {
-                delay(500)
-              }
-              // Update the actual state that drives your AnimatedVisibility
-              isAtBottom = rawAtBottom
-            }
-        }
 
-        Column(modifier = modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp)) {
-          if (selectedOptionIndex == 0) {
-            Box(contentAlignment = Alignment.BottomEnd, modifier = Modifier.weight(1f)) {
-              Column(modifier = Modifier.fillMaxSize().verticalScroll(responseScrollState)) {
-                BufferedFadingMarkdownText(
-                  text = response,
-                  inProgress = uiState.inProgress,
-                  modifier =
-                    Modifier.padding(top = 8.dp, bottom = 40.dp).semantics {
-                      // Only announce when message is complete.
-                      if (!inProgress) {
-                        liveRegion = LiveRegionMode.Polite
-                      }
-                    },
-                )
-              }
-              // Copy button.
-              IconButton(
-                onClick = {
-                  scope.launch {
-                    val clipData = ClipData.newPlainText("response", response)
-                    val clipEntry = ClipEntry(clipData = clipData)
-                    clipboard.setClipEntry(clipEntry = clipEntry)
+      Box(modifier = Modifier.weight(1f)) {
+        if (selectedOptionIndex == 1 && openedFile != null) {
+          // Code tab: read-only preview of the opened file.
+          Box(contentAlignment = Alignment.BottomEnd, modifier = Modifier.fillMaxSize()) {
+            Column(
+              modifier =
+                Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(codeScrollState)
+            ) {
+              Text(
+                text = openedFile.content,
+                style =
+                  MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                modifier = Modifier.padding(top = 8.dp, bottom = 40.dp),
+              )
+            }
+            IconButton(
+              onClick = {
+                scope.launch {
+                  val clipData = ClipData.newPlainText("code", openedFile.content)
+                  val clipEntry = ClipEntry(clipData = clipData)
+                  clipboard.setClipEntry(clipEntry = clipEntry)
+                }
+              },
+              colors =
+                IconButtonDefaults.iconButtonColors(
+                  containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                  contentColor = MaterialTheme.colorScheme.primary,
+                ),
+            ) {
+              Icon(
+                Icons.Outlined.ContentCopy,
+                contentDescription = stringResource(R.string.cd_copy_to_clipboard_icon),
+                modifier = Modifier.size(20.dp),
+              )
+            }
+          }
+        } else if (initializing) {
+          Box(
+            contentAlignment = Alignment.TopStart,
+            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+          ) {
+            MessageBodyLoading()
+          }
+        } else {
+          // Message when response is empty.
+          if (response.isEmpty()) {
+            Row(
+              modifier = Modifier.fillMaxSize(),
+              horizontalArrangement = Arrangement.Center,
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Text(
+                stringResource(R.string.prompt_lab_response_placeholder),
+                modifier = Modifier.alpha(0.5f),
+                style = MaterialTheme.typography.labelMedium,
+              )
+            }
+          }
+          // Response markdown.
+          else {
+            // Stores if the list is at the scrollable area's bottom.
+            //
+            // It will only be updated when the state holds for at least 500ms to improve user
+            // experience.
+            var isAtBottom by remember { mutableStateOf(true) }
+            LaunchedEffect(responseScrollState) {
+              snapshotFlow {
+                  // Read the raw scroll state here
+                  !responseScrollState.canScrollForward
+                }
+                .collectLatest { rawAtBottom ->
+                  if (!rawAtBottom) {
+                    delay(500)
                   }
-                },
-                colors =
-                  IconButtonDefaults.iconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    contentColor = MaterialTheme.colorScheme.primary,
-                  ),
-              ) {
-                Icon(
-                  Icons.Outlined.ContentCopy,
-                  contentDescription = stringResource(R.string.cd_copy_to_clipboard_icon),
-                  modifier = Modifier.size(20.dp),
-                )
-              }
+                  // Update the actual state that drives your AnimatedVisibility
+                  isAtBottom = rawAtBottom
+                }
+            }
 
-              // "Scroll to bottom" button, only shown when the list is not at the bottom.
-              Column(
-                modifier =
-                  Modifier.align(alignment = Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(bottom = 0.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-              ) {
-                ScrollToBottomButton(
-                  isAtBottom = isAtBottom,
+            Column(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp)) {
+              Box(contentAlignment = Alignment.BottomEnd, modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.fillMaxSize().verticalScroll(responseScrollState)) {
+                  BufferedFadingMarkdownText(
+                    text = response,
+                    inProgress = uiState.inProgress,
+                    modifier =
+                      Modifier.padding(top = 8.dp, bottom = 40.dp).semantics {
+                        // Only announce when message is complete.
+                        if (!inProgress) {
+                          liveRegion = LiveRegionMode.Polite
+                        }
+                      },
+                  )
+                }
+                // Copy button.
+                IconButton(
                   onClick = {
                     scope.launch {
-                      responseScrollState.animateScrollTo(
-                        responseScrollState.maxValue,
-                        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
-                      )
+                      val clipData = ClipData.newPlainText("response", response)
+                      val clipEntry = ClipEntry(clipData = clipData)
+                      clipboard.setClipEntry(clipEntry = clipEntry)
                     }
                   },
-                )
+                  colors =
+                    IconButtonDefaults.iconButtonColors(
+                      containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                      contentColor = MaterialTheme.colorScheme.primary,
+                    ),
+                ) {
+                  Icon(
+                    Icons.Outlined.ContentCopy,
+                    contentDescription = stringResource(R.string.cd_copy_to_clipboard_icon),
+                    modifier = Modifier.size(20.dp),
+                  )
+                }
+
+                // "Scroll to bottom" button, only shown when the list is not at the bottom.
+                Column(
+                  modifier =
+                    Modifier.align(alignment = Alignment.BottomCenter)
+                      .fillMaxWidth()
+                      .padding(bottom = 0.dp),
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                  ScrollToBottomButton(
+                    isAtBottom = isAtBottom,
+                    onClick = {
+                      scope.launch {
+                        responseScrollState.animateScrollTo(
+                          responseScrollState.maxValue,
+                          animationSpec =
+                            tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                        )
+                      }
+                    },
+                  )
+                }
               }
             }
           }
         }
       }
     }
+  }
+}
+
+@Composable
+private fun SegmentedTabButton(
+  label: String,
+  selected: Boolean,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  Box(
+    contentAlignment = Alignment.Center,
+    modifier =
+      modifier
+        .clip(RoundedCornerShape(50))
+        .background(
+          if (selected) MaterialTheme.colorScheme.secondaryContainer
+          else MaterialTheme.colorScheme.surfaceContainerLow
+        )
+        .border(
+          width = 1.dp,
+          color = MaterialTheme.colorScheme.surface,
+          shape = RoundedCornerShape(50),
+        )
+        .clickable(onClick = onClick)
+        .height(36.dp),
+  ) {
+    Text(
+      text = label,
+      style = MaterialTheme.typography.labelMedium,
+      color =
+        if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+    )
   }
 }
