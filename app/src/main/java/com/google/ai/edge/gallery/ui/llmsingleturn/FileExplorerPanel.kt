@@ -28,8 +28,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material3.HorizontalDivider
@@ -52,7 +55,7 @@ import androidx.documentfile.provider.DocumentFile
 
 /**
  * Lets the user pick a project folder (system folder picker) and browse its contents.
- * Read-only browsing for now — tapping a file does nothing yet, that comes next.
+ * The tree can be collapsed to save vertical space, and expanded again to switch files.
  */
 @Composable
 fun FileExplorerPanel(modifier: Modifier = Modifier, onFileClicked: (DocumentFile) -> Unit = {}) {
@@ -60,19 +63,27 @@ fun FileExplorerPanel(modifier: Modifier = Modifier, onFileClicked: (DocumentFil
   var rootFolder by remember {
     mutableStateOf(ProjectFolderManager.getSavedProjectFolder(context))
   }
+  var treeExpanded by remember { mutableStateOf(true) }
+  var rootChildren by remember(rootFolder) { mutableStateOf<List<DocumentFile>?>(null) }
+
+  LaunchedEffect(rootFolder) { rootChildren = rootFolder?.let { ProjectFolderManager.listChildren(it) } }
 
   val folderPickerLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
       if (uri != null) {
         ProjectFolderManager.saveProjectFolder(context, uri)
         rootFolder = DocumentFile.fromTreeUri(context, uri)
+        treeExpanded = true
       }
     }
 
   Column(modifier = modifier) {
     Row(
       verticalAlignment = Alignment.CenterVertically,
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+      modifier =
+        Modifier.fillMaxWidth()
+          .clickable(enabled = rootFolder != null) { treeExpanded = !treeExpanded }
+          .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
       Icon(imageVector = Icons.Outlined.Folder, contentDescription = null)
       Spacer(modifier = Modifier.width(8.dp))
@@ -83,14 +94,26 @@ fun FileExplorerPanel(modifier: Modifier = Modifier, onFileClicked: (DocumentFil
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier.weight(1f),
       )
+      if (rootFolder != null) {
+        Icon(
+          imageVector = if (treeExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+          contentDescription = null,
+          modifier = Modifier.padding(end = 4.dp),
+        )
+      }
       TextButton(onClick = { folderPickerLauncher.launch(null) }) {
         Text(if (rootFolder == null) "Select" else "Change")
       }
     }
-    if (rootFolder != null) {
+    if (rootFolder != null && treeExpanded) {
       HorizontalDivider()
       LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp)) {
-        item { FileTreeNode(file = rootFolder!!, depth = 0, onFileClicked = onFileClicked) }
+        val children = rootChildren
+        if (children != null) {
+          items(children) { child ->
+            FileTreeNode(file = child, depth = 0, onFileClicked = onFileClicked)
+          }
+        }
       }
     }
   }
@@ -98,7 +121,7 @@ fun FileExplorerPanel(modifier: Modifier = Modifier, onFileClicked: (DocumentFil
 
 @Composable
 private fun FileTreeNode(file: DocumentFile, depth: Int, onFileClicked: (DocumentFile) -> Unit) {
-  var expanded by remember(file.uri) { mutableStateOf(depth == 0) }
+  var expanded by remember(file.uri) { mutableStateOf(false) }
   var children by remember(file.uri) { mutableStateOf<List<DocumentFile>?>(null) }
 
   LaunchedEffect(file.uri, expanded) {
