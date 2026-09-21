@@ -26,6 +26,8 @@ private const val PREFS_NAME = "code_mode_project_prefs"
 private const val KEY_PROJECT_FOLDER_URI = "project_folder_uri"
 
 /** Manages the project folder picked by the user for Code Mode's file browser. */
+/** A file opened from the project folder, kept separate from the user's typed instruction. */
+data class OpenedFile(val fileName: String, val content: String)
 object ProjectFolderManager {
 
   /** Persists the picked folder (via SAF) so it survives app restarts. */
