@@ -255,6 +255,7 @@ private fun CodeModeMainContent(
               modelManagerViewModel = modelManagerViewModel,
               modifier =
                 Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding()),
+              openedFile = openedFile,
             )
           }
         }
