@@ -102,8 +102,9 @@ fun ResponsePanel(
   LaunchedEffect(selectedPromptTemplateType) { selectedOptionIndex = 0 }
 
   // Update selected model and clean up previous model when page is settled on a model page.
+  // Update selected model and clean up previous model when page is settled on a model page.
   LaunchedEffect(pagerState.settledPage) {
-    val curSelectedModel = task.models[pagerState.settledPage]
+    val curSelectedModel = task.models.getOrNull(pagerState.settledPage) ?: return@LaunchedEffect
     Log.d(
       TAG,
       "Pager settled on model '${curSelectedModel.name}' from '${model.name}'. Updating selected model.",
@@ -116,7 +117,10 @@ fun ResponsePanel(
 
   // Scroll pager when selected model changes.
   LaunchedEffect(modelManagerUiState.selectedModel) {
-    pagerState.animateScrollToPage(task.models.indexOf(model))
+    val targetPage = task.models.indexOf(model)
+    if (targetPage in task.models.indices) {
+      pagerState.animateScrollToPage(targetPage)
+    }
   }
 
   HorizontalPager(state = pagerState, userScrollEnabled = false) { pageIndex ->
