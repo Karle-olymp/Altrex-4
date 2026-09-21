@@ -29,39 +29,6 @@ enum class PromptTemplateInputEditorType {
   SINGLE_SELECT
 }
 
-enum class RewriteToneType(val key: String, @StringRes val labelRes: Int) {
-  FORMAL(key = "formal", labelRes = R.string.prompt_lab_tone_formal),
-  CASUAL(key = "casual", labelRes = R.string.prompt_lab_tone_casual),
-  FRIENDLY(key = "friendly", labelRes = R.string.prompt_lab_tone_friendly),
-  POLITE(key = "polite", labelRes = R.string.prompt_lab_tone_polite),
-  ENTHUSIASTIC(key = "enthusiastic", labelRes = R.string.prompt_lab_tone_enthusiastic),
-  CONCISE(key = "concise", labelRes = R.string.prompt_lab_tone_concise);
-
-  fun toSelectOption() = SelectOption(key = key, labelRes = labelRes)
-}
-
-enum class SummarizationType(val key: String, @StringRes val labelRes: Int) {
-  KEY_BULLET_POINT(
-    key = "key bullet points (3-5)",
-    labelRes = R.string.prompt_lab_summary_key_bullet_points,
-  ),
-  SHORT_PARAGRAPH(
-    key = "short paragraph (1-2 sentences)",
-    labelRes = R.string.prompt_lab_summary_short_paragraph,
-  ),
-  CONCISE_SUMMARY(
-    key = "concise summary (~50 words)",
-    labelRes = R.string.prompt_lab_summary_concise_summary,
-  ),
-  HEADLINE_TITLE(key = "headline / title", labelRes = R.string.prompt_lab_summary_headline_title),
-  ONE_SENTENCE_SUMMARY(
-    key = "one-sentence summary",
-    labelRes = R.string.prompt_lab_summary_one_sentence,
-  );
-
-  fun toSelectOption() = SelectOption(key = key, labelRes = labelRes)
-}
-
 enum class LanguageType(val key: String) {
   CPP(key = "C++"),
   JAVA(key = "Java"),
@@ -161,67 +128,6 @@ enum class PromptTemplateType(
         "Explain the difference between AI and machine learning in 2 sentences.",
         "Create a simple haiku about a cat sleeping in the sun.",
         "List 3 ways to make instant noodles taste better using common kitchen ingredients.",
-      ),
-  ),
-  REWRITE_TONE(
-    labelRes = R.string.prompt_lab_tab_rewrite_tone,
-    config =
-      PromptTemplateConfig(
-        inputEditors =
-          listOf(
-            PromptTemplateSingleSelectInputEditor(
-              key = "tone",
-              labelRes = R.string.prompt_lab_label_tone,
-              options = RewriteToneType.entries.map { it.toSelectOption() },
-              defaultOptionKey = RewriteToneType.FORMAL.key,
-            )
-          )
-      ),
-    genFullPrompt = { userInput, inputEditorValues ->
-      val tone = inputEditorValues["tone"] as String
-      buildAnnotatedString {
-        withStyle(GEMINI_GRADIENT_STYLE) {
-          append("Rewrite the following text using a ${tone.lowercase()} tone: ")
-        }
-        append(userInput)
-      }
-    },
-    examplePrompts =
-      listOf(
-        "Hey team, just wanted to remind everyone about the meeting tomorrow @ 10. Be there!",
-        "Our new software update includes several bug fixes and performance improvements.",
-        "Due to the fact that the weather was bad, we decided to postpone the event.",
-        "Please find attached the requested documentation for your perusal.",
-        "Welcome to the team. Review the onboarding materials.",
-      ),
-  ),
-  SUMMARIZE_TEXT(
-    labelRes = R.string.prompt_lab_tab_summarize_text,
-    config =
-      PromptTemplateConfig(
-        inputEditors =
-          listOf(
-            PromptTemplateSingleSelectInputEditor(
-              key = "style",
-              labelRes = R.string.prompt_lab_label_style,
-              options = SummarizationType.entries.map { it.toSelectOption() },
-              defaultOptionKey = SummarizationType.KEY_BULLET_POINT.key,
-            )
-          )
-      ),
-    genFullPrompt = { userInput, inputEditorValues ->
-      val style = inputEditorValues["style"] as String
-      buildAnnotatedString {
-        withStyle(GEMINI_GRADIENT_STYLE) {
-          append("Please summarize the following in ${style.lowercase()}: ")
-        }
-        append(userInput)
-      }
-    },
-    examplePrompts =
-      listOf(
-        "The new Pixel phone features an advanced camera system with improved low-light performance and AI-powered editing tools. The display is brighter and more energy-efficient. It runs on the latest Tensor chip, offering faster processing and enhanced security features. Battery life has also been extended, providing all-day power for most users.",
-        "Beginning this Friday, January 24, giant pandas Bao Li and Qing Bao are officially on view to the public at the Smithsonian’s National Zoo and Conservation Biology Institute (NZCBI). The 3-year-old bears arrived in Washington this past October, undergoing a quarantine period before making their debut. Under NZCBI’s new agreement with the CWCA, Qing Bao and Bao Li will remain in the United States for ten years, until April 2034, in exchange for an annual fee of \$1 million. The pair are still too young to breed, as pandas only reach sexual maturity between ages 4 and 7. “Kind of picture them as like awkward teenagers right now,” Lally told WUSA9. “We still have about two years before we would probably even see signs that they’re ready to start mating.”",
       ),
   ),
 }
