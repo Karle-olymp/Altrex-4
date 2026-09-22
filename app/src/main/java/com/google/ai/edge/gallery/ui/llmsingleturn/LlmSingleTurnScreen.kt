@@ -169,7 +169,7 @@ fun LlmSingleTurnScreen(
         onFileClicked = { file ->
           val text = ProjectFolderManager.readTextFile(context, file.uri)
           if (text != null) {
-            openedFile = OpenedFile(fileName = file.name ?: "file", content = text)
+            openedFile = OpenedFile(fileName = file.name ?: "file", uri = file.uri, content = text)
           }
         },
       )
@@ -187,6 +187,7 @@ fun LlmSingleTurnScreen(
           innerPadding = innerPadding,
           openedFile = openedFile,
           onOpenedFileCleared = { openedFile = null },
+          onFileContentSaved = { newContent -> openedFile = openedFile?.copy(content = newContent) },
         )
       }
     }
@@ -206,6 +207,7 @@ private fun CodeModeMainContent(
   innerPadding: PaddingValues,
   openedFile: OpenedFile? = null,
   onOpenedFileCleared: () -> Unit = {},
+  onFileContentSaved: (String) -> Unit = {},
 ) {
   val modelDownloaded = curDownloadStatus?.status == ModelDownloadStatusType.SUCCEEDED
   // Main UI after model is downloaded.
@@ -256,6 +258,7 @@ private fun CodeModeMainContent(
               modifier =
                 Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding()),
               openedFile = openedFile,
+              onFileContentSaved = onFileContentSaved,
             )
           }
         }
