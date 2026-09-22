@@ -161,6 +161,7 @@ fun PromptTemplatesPanel(
         modifier =
           Modifier.fillMaxWidth()
             .background(MaterialTheme.customColors.agentBubbleBgColor)
+            .clickable(onClick = onOpenedFileCleared)
             .padding(horizontal = 16.dp, vertical = 8.dp),
       ) {
         Icon(
@@ -175,17 +176,11 @@ fun PromptTemplatesPanel(
           maxLines = 1,
           modifier = Modifier.weight(1f),
         )
-        IconButton(onClick = onOpenedFileCleared, modifier = Modifier.size(28.dp)) {
-          Icon(
-            imageVector = Icons.Rounded.Close,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-          )
         }
-      }
     }
 
-    // Scrollable tab row for all prompt templates.
+    // Scrollable tab row for all prompt templates — hidden when there's only one.
+    if (promptTemplateTypes.size > 1) {
     PrimaryScrollableTabRow(selectedTabIndex = selectedTabIndex) {
       promptTemplateTypes.forEachIndexed { index, templateType ->
         Tab(
@@ -214,6 +209,7 @@ fun PromptTemplatesPanel(
           },
         )
       }
+    }
     }
 
     // Content.
@@ -297,10 +293,7 @@ fun PromptTemplatesPanel(
           modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp, horizontal = 16.dp),
         ) {
           // Full prompt switch.
-          if (
-            selectedPromptTemplateType != PromptTemplateType.FREE_FORM &&
-              curTextInputContent.isNotEmpty()
-          ) {
+          if (curTextInputContent.isNotEmpty() && fullPrompt.text != curTextInputContent) {
             Row(
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(4.dp),
