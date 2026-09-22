@@ -86,3 +86,11 @@ object ProjectFolderManager {
     }
   }
 }
+/** Creates an empty file directly inside the given folder. Returns it, or null on failure. */
+  fun createFile(parent: DocumentFile, fileName: String): DocumentFile? {
+    return try {
+      parent.createFile("application/octet-stream", fileName)
+    } catch (e: Exception) {
+      null
+    }
+  }
