@@ -67,6 +67,7 @@ import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import com.google.ai.edge.gallery.ui.theme.customColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.imePadding
 
 private const val TAG = "AGLlmSingleTurnScreen"
 
@@ -159,10 +160,11 @@ fun LlmSingleTurnScreen(
     Column(
       modifier =
         Modifier.padding(
-          top = innerPadding.calculateTopPadding(),
-          start = innerPadding.calculateStartPadding(LocalLayoutDirection.current),
-          end = innerPadding.calculateStartPadding(LocalLayoutDirection.current),
-        )
+            top = innerPadding.calculateTopPadding(),
+            start = innerPadding.calculateStartPadding(LocalLayoutDirection.current),
+            end = innerPadding.calculateStartPadding(LocalLayoutDirection.current),
+          )
+          .imePadding()
     ) {
       FileExplorerPanel(
         modifier = Modifier.fillMaxWidth(),
@@ -225,6 +227,25 @@ private fun CodeModeMainContent(
     VerticalSplitView(
       modifier = Modifier.fillMaxSize(),
       topView = {
+        Box(
+          contentAlignment = Alignment.BottomCenter,
+          modifier =
+            Modifier.fillMaxSize().background(MaterialTheme.customColors.agentBubbleBgColor),
+        ) {
+          if (task.models.indexOf(selectedModel) >= 0) {
+            ResponsePanel(
+              task = task,
+              model = selectedModel,
+              viewModel = viewModel,
+              modelManagerViewModel = modelManagerViewModel,
+              modifier = Modifier.fillMaxSize(),
+              openedFile = openedFile,
+              onFileContentSaved = onFileContentSaved,
+            )
+          }
+        }
+      },
+      bottomView = {
         PromptTemplatesPanel(
           model = selectedModel,
           viewModel = viewModel,
@@ -240,28 +261,9 @@ private fun CodeModeMainContent(
             )
           },
           onStopButtonClicked = { model -> viewModel.stopResponse(model = model) },
-          modifier = Modifier.fillMaxSize(),
-        )
-      },
-      bottomView = {
-        Box(
-          contentAlignment = Alignment.BottomCenter,
           modifier =
-            Modifier.fillMaxSize().background(MaterialTheme.customColors.agentBubbleBgColor),
-        ) {
-          if (task.models.indexOf(selectedModel) >= 0) {
-            ResponsePanel(
-              task = task,
-              model = selectedModel,
-              viewModel = viewModel,
-              modelManagerViewModel = modelManagerViewModel,
-              modifier =
-                Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding()),
-              openedFile = openedFile,
-              onFileContentSaved = onFileContentSaved,
-            )
-          }
-        }
+            Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding()),
+        )
       },
     )
   }
