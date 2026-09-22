@@ -79,6 +79,9 @@ import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.outlined.Save
+import androidx.compose.ui.graphics.SolidColor
 
 private const val TAG = "AGResponsePanel"
 
@@ -91,6 +94,7 @@ fun ResponsePanel(
   modelManagerViewModel: ModelManagerViewModel,
   modifier: Modifier = Modifier,
   openedFile: OpenedFile? = null,
+  onFileContentSaved: (String) -> Unit = {},
 ) {
   val uiState by viewModel.uiState.collectAsState()
   val modelManagerUiState by modelManagerViewModel.uiState.collectAsState()
@@ -176,38 +180,84 @@ fun ResponsePanel(
 
       Box(modifier = Modifier.weight(1f)) {
         if (selectedOptionIndex == 1 && openedFile != null) {
-          // Code tab: read-only preview of the opened file.
+          // Code tab: editable preview of the opened file.
+          var editedContent by remember(openedFile.uri) { mutableStateOf(openedFile.content) }
+          var lastSavedContent by remember(openedFile.uri) { mutableStateOf(openedFile.content) }
+          var saveError by remember(openedFile.uri) { mutableStateOf(false) }
+          val isDirty = editedContent != lastSavedContent
+
           Box(contentAlignment = Alignment.BottomEnd, modifier = Modifier.fillMaxSize()) {
             Column(
               modifier =
                 Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(codeScrollState)
             ) {
-              Text(
-                text = openedFile.content,
-                style =
-                  MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                modifier = Modifier.padding(top = 8.dp, bottom = 40.dp),
+              BasicTextField(
+                value = editedContent,
+                onValueChange = {
+                  editedContent = it
+                  saveError = false
+                },
+                textStyle =
+                  MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurface,
+                  ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 56.dp),
               )
             }
-            IconButton(
-              onClick = {
-                scope.launch {
-                  val clipData = ClipData.newPlainText("code", openedFile.content)
-                  val clipEntry = ClipEntry(clipData = clipData)
-                  clipboard.setClipEntry(clipEntry = clipEntry)
-                }
-              },
-              colors =
-                IconButtonDefaults.iconButtonColors(
-                  containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                  contentColor = MaterialTheme.colorScheme.primary,
-                ),
-            ) {
-              Icon(
-                Icons.Outlined.ContentCopy,
-                contentDescription = stringResource(R.string.cd_copy_to_clipboard_icon),
-                modifier = Modifier.size(20.dp),
-              )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 4.dp)) {
+              if (saveError) {
+                Text(
+                  text = "Save failed",
+                  style = MaterialTheme.typography.labelSmall,
+                  color = MaterialTheme.colorScheme.error,
+                  modifier = Modifier.align(Alignment.CenterVertically),
+                )
+              }
+              IconButton(
+                enabled = isDirty,
+                onClick = {
+                  val success =
+                    ProjectFolderManager.writeTextFile(context, openedFile.uri, editedContent)
+                  if (success) {
+                    lastSavedContent = editedContent
+                    saveError = false
+                    onFileContentSaved(editedContent)
+                  } else {
+                    saveError = true
+                  }
+                },
+                colors =
+                  IconButtonDefaults.iconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                  ),
+              ) {
+                Icon(Icons.Outlined.Save, contentDescription = "Save", modifier = Modifier.size(20.dp))
+              }
+              IconButton(
+                onClick = {
+                  scope.launch {
+                    val clipData = ClipData.newPlainText("code", editedContent)
+                    val clipEntry = ClipEntry(clipData = clipData)
+                    clipboard.setClipEntry(clipEntry = clipEntry)
+                  }
+                },
+                colors =
+                  IconButtonDefaults.iconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                  ),
+              ) {
+                Icon(
+                  Icons.Outlined.ContentCopy,
+                  contentDescription = stringResource(R.string.cd_copy_to_clipboard_icon),
+                  modifier = Modifier.size(20.dp),
+                )
+              }
             }
           }
         } else if (initializing) {
