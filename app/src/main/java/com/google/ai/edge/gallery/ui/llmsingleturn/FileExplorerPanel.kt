@@ -31,13 +31,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -54,8 +58,8 @@ import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
 
 /**
- * Lets the user pick a project folder (system folder picker) and browse its contents.
- * The tree can be collapsed to save vertical space, and expanded again to switch files.
+ * Lets the user pick a project folder (system folder picker), browse its contents, and create
+ * new files directly at the root of the project.
  */
 @Composable
 fun FileExplorerPanel(modifier: Modifier = Modifier, onFileClicked: (DocumentFile) -> Unit = {}) {
@@ -65,8 +69,11 @@ fun FileExplorerPanel(modifier: Modifier = Modifier, onFileClicked: (DocumentFil
   }
   var treeExpanded by remember { mutableStateOf(true) }
   var rootChildren by remember(rootFolder) { mutableStateOf<List<DocumentFile>?>(null) }
+  var showCreateFileDialog by remember { mutableStateOf(false) }
 
-  LaunchedEffect(rootFolder) { rootChildren = rootFolder?.let { ProjectFolderManager.listChildren(it) } }
+  LaunchedEffect(rootFolder) {
+    rootChildren = rootFolder?.let { ProjectFolderManager.listChildren(it) }
+  }
 
   val folderPickerLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -100,6 +107,9 @@ fun FileExplorerPanel(modifier: Modifier = Modifier, onFileClicked: (DocumentFil
           contentDescription = null,
           modifier = Modifier.padding(end = 4.dp),
         )
+        IconButton(onClick = { showCreateFileDialog = true }, modifier = Modifier.size(32.dp)) {
+          Icon(imageVector = Icons.Outlined.Add, contentDescription = "New file")
+        }
       }
       TextButton(onClick = { folderPickerLauncher.launch(null) }) {
         Text(if (rootFolder == null) "Select" else "Change")
@@ -116,6 +126,43 @@ fun FileExplorerPanel(modifier: Modifier = Modifier, onFileClicked: (DocumentFil
         }
       }
     }
+  }
+
+  if (showCreateFileDialog) {
+    var newFileName by remember { mutableStateOf("") }
+    AlertDialog(
+      onDismissRequest = { showCreateFileDialog = false },
+      title = { Text("New file") },
+      text = {
+        OutlinedTextField(
+          value = newFileName,
+          onValueChange = { newFileName = it },
+          singleLine = true,
+          placeholder = { Text("e.g. script.js") },
+        )
+      },
+      confirmButton = {
+        TextButton(
+          enabled = newFileName.isNotBlank(),
+          onClick = {
+            val folder = rootFolder
+            if (folder != null) {
+              val newFile = ProjectFolderManager.createFile(folder, newFileName.trim())
+              rootChildren = ProjectFolderManager.listChildren(folder)
+              if (newFile != null) {
+                onFileClicked(newFile)
+              }
+            }
+            showCreateFileDialog = false
+          },
+        ) {
+          Text("Create")
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showCreateFileDialog = false }) { Text("Cancel") }
+      },
+    )
   }
 }
 
