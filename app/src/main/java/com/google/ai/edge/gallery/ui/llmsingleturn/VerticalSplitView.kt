@@ -16,8 +16,6 @@
 
 package com.google.ai.edge.gallery.ui.llmsingleturn
 
-// import androidx.compose.ui.tooling.preview.Preview
-// import com.google.ai.edge.gallery.ui.theme.GalleryTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
@@ -50,9 +48,9 @@ fun VerticalSplitView(
   bottomView: @Composable () -> Unit,
   modifier: Modifier = Modifier,
   initialRatio: Float = 0.5f,
-  minTopHeight: Dp = 250.dp,
-  minBottomHeight: Dp = 200.dp,
-  handleThickness: Dp = 20.dp,
+  minTopHeight: Dp = 200.dp,
+  minBottomHeight: Dp = 150.dp,
+  handleThickness: Dp = 36.dp,
 ) {
   var splitRatio by remember { mutableFloatStateOf(initialRatio) }
   var columnHeightPx by remember { mutableFloatStateOf(0f) }
@@ -92,19 +90,13 @@ fun VerticalSplitView(
     ) {
       Box(
         modifier =
-          Modifier.width(32.dp)
-            .height(4.dp)
+          Modifier.width(48.dp)
+            .height(5.dp)
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
       )
     }
 
     Box(modifier = Modifier.fillMaxWidth().weight(1f - splitRatio)) { bottomView() }
   }
 }
-
-// @Preview(showBackground = true)
-// @Composable
-// fun VerticalSplitViewPreview() {
-//   GalleryTheme { VerticalSplitView(topView = { Text("top") }, bottomView = { Text("bottom") }) }
-// }
