@@ -27,7 +27,7 @@ private const val KEY_PROJECT_FOLDER_URI = "project_folder_uri"
 
 /** Manages the project folder picked by the user for Code Mode's file browser. */
 /** A file opened from the project folder, kept separate from the user's typed instruction. */
-data class OpenedFile(val fileName: String, val content: String)
+data class OpenedFile(val fileName: String, val uri: Uri, val content: String)
 object ProjectFolderManager {
 
   /** Persists the picked folder (via SAF) so it survives app restarts. */
@@ -72,6 +72,17 @@ object ProjectFolderManager {
       context.contentResolver.openInputStream(uri)?.use { input -> input.bufferedReader().readText() }
     } catch (e: Exception) {
       null
+    }
+  }
+  /** Overwrites a text file's content. Returns true on success. */
+  fun writeTextFile(context: Context, uri: Uri, content: String): Boolean {
+    return try {
+      context.contentResolver.openOutputStream(uri, "wt")?.use { output ->
+        output.write(content.toByteArray())
+      }
+      true
+    } catch (e: Exception) {
+      false
     }
   }
 }
