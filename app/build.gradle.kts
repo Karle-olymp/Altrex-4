@@ -158,7 +158,7 @@ dependencies {
 }
 
 protobuf {
-  protoc { artifact = "com.google.protobuf:protoc:4.26.1" }
+  protoc { path = "/data/data/com.termux/files/usr/bin/protoc" }
   generateProtoTasks {
     all().forEach { task ->
       task.builtins {
