@@ -49,7 +49,7 @@ android {
     buildConfigField("String", "FEEDBACK_API_KEY", "\"\"")
 externalNativeBuild {
       cmake {
-        abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+        abiFilters.addAll(listOf("arm64-v8a"))
         arguments += listOf(
           "-DLLAMA_BUILD_COMMON=ON",
           "-DCMAKE_BUILD_TYPE=Release"
@@ -58,7 +58,7 @@ externalNativeBuild {
       }
     }
     ndk {
-      abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+      abiFilters.addAll(listOf("arm64-v8a"))
     }
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -158,7 +158,14 @@ dependencies {
 }
 
 protobuf {
-  protoc { path = "/data/data/com.termux/files/usr/bin/protoc" }
+  protoc {
+    val termuxProtoc = File("/data/data/com.termux/files/usr/bin/protoc")
+    if (termuxProtoc.exists()) {
+      path = termuxProtoc.absolutePath
+    } else {
+      artifact = "com.google.protobuf:protoc:4.26.1"
+    }
+  }
   generateProtoTasks {
     all().forEach { task ->
       task.builtins {
