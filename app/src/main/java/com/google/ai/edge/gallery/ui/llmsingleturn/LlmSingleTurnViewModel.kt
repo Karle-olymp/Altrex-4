@@ -132,4 +132,82 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
       // Run inference.
       var firstRun = true
       var response = ""
-      model.runtimeHelper.runInference(
+      model.runtimeHelper.runInference(model = model,
+        input = promptToRun,
+        resultListener = { partialResult: String, done: Boolean, partialThinkingResult: String? ->
+          if (firstRun) {
+            setPreparing(false)
+            firstRun = false
+          }
+
+          // Incrementally update the streamed partial results.
+          response = processLlmResponse(response = "$response$partialResult")
+
+          // Update response.
+          updateResponse(
+            model = model,
+            promptTemplateType = uiState.value.selectedPromptTemplateType,
+            response = response,
+          )
+
+          if (done) {
+            addTurn(model = model, user = instruction, assistant = response)
+            setInProgress(false)
+          }
+        },
+        cleanUpListener = {
+          setPreparing(false)
+          setInProgress(false)
+        },
+        onError = { _: String ->
+          setPreparing(false)
+          setInProgress(false)
+        },
+        coroutineScope = viewModelScope,
+      )
+    }
+  }
+
+  fun selectPromptTemplate(model: Model, promptTemplateType: PromptTemplateType) {
+    Log.d(TAG, "selecting prompt template: ${promptTemplateType.name}")
+
+    // Clear response.
+    updateResponse(model = model, promptTemplateType = promptTemplateType, response = "")
+
+    this._uiState.update {
+      this.uiState.value.copy(selectedPromptTemplateType = promptTemplateType)
+    }
+  }
+
+  fun setInProgress(inProgress: Boolean) {
+    _uiState.update { _uiState.value.copy(inProgress = inProgress) }
+  }
+
+  fun setPreparing(preparing: Boolean) {
+    _uiState.update { _uiState.value.copy(preparing = preparing) }
+  }
+
+  fun updateResponse(model: Model, promptTemplateType: PromptTemplateType, response: String) {
+    _uiState.update { currentState ->
+      val currentResponses = currentState.responsesByModel
+      val modelResponses = currentResponses[model.name]?.toMutableMap() ?: mutableMapOf()
+      modelResponses[promptTemplateType.name] = response
+      val newResponses = currentResponses.toMutableMap()
+      newResponses[model.name] = modelResponses
+      currentState.copy(responsesByModel = newResponses)
+    }
+  }
+
+  fun stopResponse(model: Model) {
+    Log.d(TAG, "Stopping response for model ${model.name}...")
+    viewModelScope.launch(Dispatchers.Default) {
+      setInProgress(false)
+      model.runtimeHelper.stopResponse(model)
+    }
+  }
+
+  private fun createUiState(): LlmSingleTurnUiState {
+    val responsesByModel: MutableMap<String, Map<String, String>> = mutableMapOf()
+    return LlmSingleTurnUiState(responsesByModel = responsesByModel)
+  }
+}
