@@ -212,6 +212,8 @@ private fun CodeModeMainContent(
   onFileContentSaved: (String) -> Unit = {},
 ) {
   val modelDownloaded = curDownloadStatus?.status == ModelDownloadStatusType.SUCCEEDED
+  val context = LocalContext.current
+  val scope = rememberCoroutineScope()
   // Main UI after model is downloaded.
   var mainUiVisible by remember { mutableStateOf(modelDownloaded) }
   LaunchedEffect(modelDownloaded) { mainUiVisible = modelDownloaded }
@@ -253,7 +255,28 @@ private fun CodeModeMainContent(
           openedFile = openedFile,
           onOpenedFileCleared = onOpenedFileCleared,
           onSend = { fullPrompt ->
-            viewModel.generateResponse(task = task, model = selectedModel, input = fullPrompt)
+            val instruction =
+              if (openedFile != null) {
+                fullPrompt.removePrefix("// ${openedFile.fileName}\n${openedFile.content}\n\n")
+              } else {
+                fullPrompt
+              }
+            scope.launch(Dispatchers.IO) {
+              val projectContext =
+                ProjectContextBuilder.build(
+                  context = context,
+                  instruction = instruction,
+                  excludeUri = openedFile?.uri,
+                )
+              val finalInput =
+                if (projectContext.isNotEmpty()) "$projectContext\n\n$fullPrompt" else fullPrompt
+              viewModel.generateResponse(
+                task = task,
+                model = selectedModel,
+                input = finalInput,
+                instruction = instruction,
+              )
+            }
 
             firebaseAnalytics?.logEvent(
               GalleryEvent.GENERATE_ACTION.id,
