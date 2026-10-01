@@ -261,13 +261,19 @@ private fun CodeModeMainContent(
               } else {
                 fullPrompt
               }
+            viewModel.setInProgress(true)
+            viewModel.setPreparing(true)
             scope.launch(Dispatchers.IO) {
               val projectContext =
-                ProjectContextBuilder.build(
-                  context = context,
-                  instruction = instruction,
-                  excludeUri = openedFile?.uri,
-                )
+                try {
+                  ProjectContextBuilder.build(
+                    context = context,
+                    instruction = instruction,
+                    excludeUri = openedFile?.uri,
+                  )
+                } catch (e: Exception) {
+                  ""
+                }
               val finalInput =
                 if (projectContext.isNotEmpty()) "$projectContext\n\n$fullPrompt" else fullPrompt
               viewModel.generateResponse(
