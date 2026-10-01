@@ -2,14 +2,17 @@ package com.google.ai.edge.gallery.ui.llmsingleturn
 
 import android.content.Context
 import android.net.Uri
-import androidx.documentfile.provider.DocumentFile
+import android.provider.DocumentsContract
+import android.util.Log
 
 /** Builds a compact view of the project folder to prepend to the prompt. */
 object ProjectContextBuilder {
+  private const val TAG = "ProjectContextBuilder"
   private const val MAX_TREE_ENTRIES = 150
   private const val MAX_DEPTH = 4
   private const val MAX_EXTRA_FILES = 3
   private const val MAX_CHARS_PER_FILE = 6000
+  private const val CACHE_MS = 60_000L
 
   private val IGNORED_DIRS =
     setOf(".git", "node_modules", "build", ".gradle", ".idea", "dist", "__pycache__")
@@ -18,45 +21,58 @@ object ProjectContextBuilder {
     setOf(
       "kt", "java", "kts", "gradle", "xml", "json", "md", "txt", "js", "ts", "tsx", "jsx",
       "html", "css", "py", "c", "cpp", "h", "yml", "yaml", "toml", "properties", "sh", "sql",
-      "dart",
+      "dart", "lock",
     )
 
-  private class Entry(val path: String, val file: DocumentFile)
+  private class Node(val path: String, val name: String, val uri: Uri, val isDir: Boolean)
+
+  private class Child(val docId: String, val name: String, val isDir: Boolean)
+
+  @Volatile private var cacheKey: String? = null
+  @Volatile private var cacheTime = 0L
+  @Volatile private var cacheNodes: List<Node> = emptyList()
 
   fun build(context: Context, instruction: String, excludeUri: Uri?): String {
+    return try {
+      buildInternal(context, instruction, excludeUri)
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to build project context", e)
+      ""
+    }
+  }
+
+  private fun buildInternal(context: Context, instruction: String, excludeUri: Uri?): String {
     val root = ProjectFolderManager.getSavedProjectFolder(context) ?: return ""
-    val entries = mutableListOf<Entry>()
-    collect(root, "", 0, entries)
-    if (entries.isEmpty()) return ""
+    val nodes = getNodes(context, root.uri)
+    if (nodes.isEmpty()) return ""
 
     val sb = StringBuilder()
     sb.append("[Projet : ${root.name ?: "projet"}]\n")
     sb.append("Arborescence (tu n'as pas le contenu des fichiers non listés ci-dessous).\n")
     sb.append("Si tu as besoin d'un autre fichier, demande-le avec son nom exact.\n")
-    for (e in entries) {
-      sb.append(e.path)
-      if (e.file.isDirectory) sb.append("/")
+    for (n in nodes) {
+      sb.append(n.path)
+      if (n.isDir) sb.append("/")
       sb.append("\n")
     }
-    if (entries.size >= MAX_TREE_ENTRIES) sb.append("... (arborescence tronquée)\n")
+    if (nodes.size >= MAX_TREE_ENTRIES) sb.append("... (arborescence tronquée)\n")
 
     val lowerInstruction = instruction.lowercase()
     val mentioned =
-      entries
-        .filter { e ->
-          val name = e.file.name ?: return@filter false
-          if (!e.file.isFile || e.file.uri == excludeUri) return@filter false
-          val ext = name.substringAfterLast('.', "").lowercase()
+      nodes
+        .filter { n ->
+          if (n.isDir || n.uri == excludeUri) return@filter false
+          val ext = n.name.substringAfterLast('.', "").lowercase()
           if (ext !in TEXT_EXTENSIONS) return@filter false
-          val base = name.substringBeforeLast('.')
-          lowerInstruction.contains(name.lowercase()) ||
+          val base = n.name.substringBeforeLast('.')
+          lowerInstruction.contains(n.name.lowercase()) ||
             (base.length >= 4 && lowerInstruction.contains(base.lowercase()))
         }
         .take(MAX_EXTRA_FILES)
 
-    for (e in mentioned) {
-      val text = ProjectFolderManager.readTextFile(context, e.file.uri) ?: continue
-      sb.append("\n// Fichier : ${e.path}\n")
+    for (n in mentioned) {
+      val text = readCapped(context, n.uri) ?: continue
+      sb.append("\n// Fichier : ${n.path}\n")
       sb.append(text.take(MAX_CHARS_PER_FILE))
       if (text.length > MAX_CHARS_PER_FILE) sb.append("\n... (fichier tronqué)")
       sb.append("\n")
@@ -64,18 +80,70 @@ object ProjectContextBuilder {
     return sb.toString()
   }
 
-  private fun collect(folder: DocumentFile, prefix: String, depth: Int, out: MutableList<Entry>) {
-    if (depth >= MAX_DEPTH) return
-    for (child in ProjectFolderManager.listChildren(folder)) {
-      if (out.size >= MAX_TREE_ENTRIES) return
-      val name = child.name ?: continue
-      if (child.isDirectory) {
-        if (name in IGNORED_DIRS) continue
-        out.add(Entry("$prefix$name", child))
-        collect(child, "$prefix$name/", depth + 1, out)
-      } else {
-        out.add(Entry("$prefix$name", child))
+  private fun getNodes(context: Context, rootUri: Uri): List<Node> {
+    val key = rootUri.toString()
+    val now = System.currentTimeMillis()
+    if (key == cacheKey && now - cacheTime < CACHE_MS) return cacheNodes
+
+    val out = mutableListOf<Node>()
+    val queue = ArrayDeque<Triple<String, String, Int>>()
+    queue.add(Triple(DocumentsContract.getDocumentId(rootUri), "", 0))
+    while (queue.isNotEmpty() && out.size < MAX_TREE_ENTRIES) {
+      val (docId, prefix, depth) = queue.removeFirst()
+      for (child in listChildren(context, rootUri, docId)) {
+        if (out.size >= MAX_TREE_ENTRIES) break
+        if (child.isDir && child.name in IGNORED_DIRS) continue
+        val uri = DocumentsContract.buildDocumentUriUsingTree(rootUri, child.docId)
+        out.add(Node("$prefix${child.name}", child.name, uri, child.isDir))
+        if (child.isDir && depth + 1 < MAX_DEPTH) {
+          queue.add(Triple(child.docId, "$prefix${child.name}/", depth + 1))
+        }
       }
+    }
+    cacheKey = key
+    cacheTime = now
+    cacheNodes = out
+    return out
+  }
+
+  private fun listChildren(context: Context, rootUri: Uri, parentDocId: String): List<Child> {
+    val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(rootUri, parentDocId)
+    val result = mutableListOf<Child>()
+    context.contentResolver
+      .query(
+        childrenUri,
+        arrayOf(
+          DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+          DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+          DocumentsContract.Document.COLUMN_MIME_TYPE,
+        ),
+        null,
+        null,
+        null,
+      )
+      ?.use { c ->
+        while (c.moveToNext()) {
+          val id = c.getString(0) ?: continue
+          val name = c.getString(1) ?: continue
+          val mime = c.getString(2)
+          result.add(Child(id, name, mime == DocumentsContract.Document.MIME_TYPE_DIR))
+        }
+      }
+    return result.sortedWith(compareBy({ !it.isDir }, { it.name.lowercase() }))
+  }
+
+  /** Reads at most MAX_CHARS_PER_FILE + 1 characters, to avoid loading huge files. */
+  private fun readCapped(context: Context, uri: Uri): String? {
+    return try {
+      context.contentResolver.openInputStream(uri)?.use { input ->
+        input.bufferedReader().use { reader ->
+          val buf = CharArray(MAX_CHARS_PER_FILE + 1)
+          val n = reader.read(buf)
+          if (n <= 0) "" else String(buf, 0, n)
+        }
+      }
+    } catch (e: Exception) {
+      null
     }
   }
 }
