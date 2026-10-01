@@ -35,6 +35,12 @@ import kotlinx.coroutines.launch
 
 private const val TAG = "AGLlmSingleTurnVM"
 
+private const val MAX_HISTORY_TURNS = 4
+private const val MAX_USER_CHARS = 1000
+private const val MAX_ASSISTANT_CHARS = 2500
+
+private data class ChatTurn(val user: String, val assistant: String)
+
 data class LlmSingleTurnUiState(
   /** Indicates whether the runtime is currently processing a message. */
   val inProgress: Boolean = false,
@@ -56,7 +62,38 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
   private val _uiState = MutableStateFlow(createUiState())
   val uiState = _uiState.asStateFlow()
 
-  fun generateResponse(task: Task, model: Model, input: String) {
+  // model name -> recent turns, replayed in each prompt because the conversation is reset.
+  private val history = mutableMapOf<String, MutableList<ChatTurn>>()
+
+  @Synchronized
+  private fun buildPromptWithHistory(model: Model, input: String): String {
+    val turns = history[model.name].orEmpty()
+    if (turns.isEmpty()) return input
+    return buildString {
+      append("Conversation précédente :\n")
+      for (t in turns) {
+        append("Utilisateur : ${t.user}\n")
+        append("Assistant : ${t.assistant}\n\n")
+      }
+      append("Nouvelle demande :\n")
+      append(input)
+    }
+  }
+
+  @Synchronized
+  private fun addTurn(model: Model, user: String, assistant: String) {
+    if (assistant.isBlank()) return
+    val list = history.getOrPut(model.name) { mutableListOf() }
+    list.add(ChatTurn(user.take(MAX_USER_CHARS), assistant.take(MAX_ASSISTANT_CHARS)))
+    while (list.size > MAX_HISTORY_TURNS) list.removeAt(0)
+  }
+
+  @Synchronized
+  fun clearHistory(model: Model) {
+    history.remove(model.name)
+  }
+
+  fun generateResponse(task: Task, model: Model, input: String, instruction: String = input) {
     viewModelScope.launch(Dispatchers.Default) {
       setInProgress(true)
       setPreparing(true)
@@ -90,85 +127,9 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
       )
       delay(500)
 
+      val promptToRun = buildPromptWithHistory(model = model, input = input)
+
       // Run inference.
       var firstRun = true
       var response = ""
       model.runtimeHelper.runInference(
-        model = model,
-        input = input,
-        resultListener = { partialResult: String, done: Boolean, partialThinkingResult: String? ->
-          if (firstRun) {
-            setPreparing(false)
-            firstRun = false
-          }
-
-          // Incrementally update the streamed partial results.
-          response = processLlmResponse(response = "$response$partialResult")
-
-          // Update response.
-          updateResponse(
-            model = model,
-            promptTemplateType = uiState.value.selectedPromptTemplateType,
-            response = response,
-          )
-
-          if (done) {
-            setInProgress(false)
-          }
-        },
-        cleanUpListener = {
-          setPreparing(false)
-          setInProgress(false)
-        },
-        onError = { _: String ->
-          setPreparing(false)
-          setInProgress(false)
-        },
-        coroutineScope = viewModelScope,
-      )
-    }
-  }
-
-  fun selectPromptTemplate(model: Model, promptTemplateType: PromptTemplateType) {
-    Log.d(TAG, "selecting prompt template: ${promptTemplateType.name}")
-
-    // Clear response.
-    updateResponse(model = model, promptTemplateType = promptTemplateType, response = "")
-
-    this._uiState.update {
-      this.uiState.value.copy(selectedPromptTemplateType = promptTemplateType)
-    }
-  }
-
-  fun setInProgress(inProgress: Boolean) {
-    _uiState.update { _uiState.value.copy(inProgress = inProgress) }
-  }
-
-  fun setPreparing(preparing: Boolean) {
-    _uiState.update { _uiState.value.copy(preparing = preparing) }
-  }
-
-  fun updateResponse(model: Model, promptTemplateType: PromptTemplateType, response: String) {
-    _uiState.update { currentState ->
-      val currentResponses = currentState.responsesByModel
-      val modelResponses = currentResponses[model.name]?.toMutableMap() ?: mutableMapOf()
-      modelResponses[promptTemplateType.name] = response
-      val newResponses = currentResponses.toMutableMap()
-      newResponses[model.name] = modelResponses
-      currentState.copy(responsesByModel = newResponses)
-    }
-  }
-
-  fun stopResponse(model: Model) {
-    Log.d(TAG, "Stopping response for model ${model.name}...")
-    viewModelScope.launch(Dispatchers.Default) {
-      setInProgress(false)
-      model.runtimeHelper.stopResponse(model)
-    }
-  }
-
-  private fun createUiState(): LlmSingleTurnUiState {
-    val responsesByModel: MutableMap<String, Map<String, String>> = mutableMapOf()
-    return LlmSingleTurnUiState(responsesByModel = responsesByModel)
-  }
-}
