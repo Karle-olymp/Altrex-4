@@ -82,6 +82,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.ui.graphics.SolidColor
+import android.net.Uri
+import androidx.compose.material.icons.outlined.Check
 
 private const val TAG = "AGResponsePanel"
 
@@ -113,6 +115,8 @@ fun ResponsePanel(
   val context = LocalContext.current
 
   // Select the "response" tab when prompt template changes.
+  // Code block proposed by the model, pending review in the Code tab (not saved yet).
+  var pendingApply by remember { mutableStateOf<Pair<Uri, String>?>(null) }
   LaunchedEffect(selectedPromptTemplateType) { selectedOptionIndex = 0 }
 
   // Switch to the "Code" tab as soon as a file is opened.
@@ -181,8 +185,13 @@ fun ResponsePanel(
       Box(modifier = Modifier.weight(1f)) {
         if (selectedOptionIndex == 1 && openedFile != null) {
           // Code tab: editable preview of the opened file.
-          var editedContent by remember(openedFile.uri) { mutableStateOf(openedFile.content) }
-          var lastSavedContent by remember(openedFile.uri) { mutableStateOf(openedFile.content) }
+          val pendingContent = pendingApply?.takeIf { it.first == openedFile.uri }?.second
+          var editedContent by
+            remember(openedFile.uri, pendingContent) {
+              mutableStateOf(pendingContent ?: openedFile.content)
+            }
+          var lastSavedContent by
+            remember(openedFile.uri, pendingContent) { mutableStateOf(openedFile.content) }
           var saveError by remember(openedFile.uri) { mutableStateOf(false) }
           val isDirty = editedContent != lastSavedContent
 
@@ -224,6 +233,7 @@ fun ResponsePanel(
                     lastSavedContent = editedContent
                     saveError = false
                     onFileContentSaved(editedContent)
+                    pendingApply = null
                   } else {
                     saveError = true
                   }
@@ -341,6 +351,28 @@ fun ResponsePanel(
                 }
 
                 // "Scroll to bottom" button, only shown when the list is not at the bottom.
+                // Apply button: puts the model's code block into the opened file's editor.
+                val codeBlock = remember(response) { extractLargestCodeBlock(response) }
+                if (openedFile != null && codeBlock != null && !inProgress) {
+                  IconButton(
+                    onClick = {
+                      pendingApply = Pair(openedFile.uri, codeBlock)
+                      selectedOptionIndex = 1
+                    },
+                    modifier = Modifier.padding(end = 52.dp),
+                    colors =
+                      IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        contentColor = MaterialTheme.colorScheme.primary,
+                      ),
+                  ) {
+                    Icon(
+                      Icons.Outlined.Check,
+                      contentDescription = "Apply to file",
+                      modifier = Modifier.size(20.dp),
+                    )
+                  }
+                }
                 Column(
                   modifier =
                     Modifier.align(alignment = Alignment.BottomCenter)
@@ -402,4 +434,12 @@ private fun SegmentedTabButton(
         else MaterialTheme.colorScheme.onSurfaceVariant,
     )
   }
+}
+private fun extractLargestCodeBlock(text: String): String? {
+  val regex = Regex("```[^\\n`]*\\n(.*?)```", RegexOption.DOT_MATCHES_ALL)
+  return regex
+    .findAll(text)
+    .map { it.groupValues[1].trimEnd('\n') + "\n" }
+    .maxByOrNull { it.length }
+    ?.takeIf { it.isNotBlank() }
 }
