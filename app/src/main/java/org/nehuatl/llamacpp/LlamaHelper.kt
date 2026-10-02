@@ -131,7 +131,7 @@ class LlamaHelper(
 
         val params = mutableMapOf<String, Any>(
             "prompt" to prompt,
-            "n_predict" to 512,
+            "n_predict" to 2048,
             "stop" to listOf("<|im_end|>", "<|endoftext|>"),
             "emit_partial_completion" to partialCompletion,
         )
