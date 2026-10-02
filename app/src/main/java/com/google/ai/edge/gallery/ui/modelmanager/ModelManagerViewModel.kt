@@ -1240,9 +1240,11 @@ constructor(
     val llmSupportAudio = info.llmConfig.supportAudio
     val llmSupportThinking = info.llmConfig.supportThinking
     val llmSupportSpeculativeDecoding = info.llmConfig.supportSpeculativeDecoding
+    val isGguf = info.fileName.endsWith(".gguf")
     val configs: MutableList<Config> =
       createLlmChatConfigs(
-          defaultMaxToken = llmMaxToken,
+          defaultMaxToken = if (isGguf) maxOf(llmMaxToken, 8192) else llmMaxToken,
+          defaultMaxContextLength = if (isGguf) 16384 else null,
           defaultTopK = info.llmConfig.defaultTopk,
           defaultTopP = info.llmConfig.defaultTopp,
           defaultTemperature = info.llmConfig.defaultTemperature,
