@@ -313,6 +313,13 @@ private fun CodeModeMainContent(
               bundleOf("capability_name" to task.id, "model_id" to selectedModel.name),
             )
           },
+          onStopButtonClicked = { model -> viewModel.stopResponse(model = model) },
+          modifier =
+            Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding()),
+        )
+      },
+    )
+  }
 
   // Download button for the selected model when the model is not downloaded.
   //
