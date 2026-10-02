@@ -414,7 +414,8 @@ fun PromptTemplatesPanel(
                 focusManager.clearFocus()
                 val promptToSend =
                   if (openedFile != null) {
-                    "// ${openedFile.fileName}\n${openedFile.content}\n\n${fullPrompt.text}"
+                    ProjectContextBuilder.fileBlock(openedFile.fileName, openedFile.content) +
+                      fullPrompt.text
                   } else {
                     fullPrompt.text
                   }
