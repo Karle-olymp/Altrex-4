@@ -259,7 +259,9 @@ private fun CodeModeMainContent(
           onSend = { fullPrompt ->
             val instruction =
               if (openedFile != null) {
-                fullPrompt.removePrefix("// ${openedFile.fileName}\n${openedFile.content}\n\n")
+                fullPrompt.removePrefix(
+                  ProjectContextBuilder.fileBlock(openedFile.fileName, openedFile.content)
+                )
               } else {
                 fullPrompt
               }
