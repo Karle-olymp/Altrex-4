@@ -32,16 +32,26 @@ object ProjectContextBuilder {
   @Volatile private var cacheTime = 0L
   @Volatile private var cacheNodes: List<Node> = emptyList()
 
-  fun build(context: Context, instruction: String, excludeUri: Uri?): String {
+  fun build(
+    context: Context,
+    instruction: String,
+    excludeUri: Uri?,
+    maxChars: Int = Int.MAX_VALUE,
+  ): String {
     return try {
-      buildInternal(context, instruction, excludeUri)
+      buildInternal(context, instruction, excludeUri, maxChars)
     } catch (e: Exception) {
       Log.e(TAG, "Failed to build project context", e)
       ""
     }
   }
 
-  private fun buildInternal(context: Context, instruction: String, excludeUri: Uri?): String {
+  private fun buildInternal(
+    context: Context,
+    instruction: String,
+    excludeUri: Uri?,
+    maxChars: Int,
+  ): String {
     val root = ProjectFolderManager.getSavedProjectFolder(context) ?: return ""
     val nodes = getNodes(context, root.uri)
     if (nodes.isEmpty()) return ""
@@ -77,7 +87,7 @@ object ProjectContextBuilder {
       if (text.length > MAX_CHARS_PER_FILE) sb.append("\n... (fichier tronqué)")
       sb.append("\n")
     }
-    return sb.toString()
+    return sb.toString().take(maxChars)
   }
 
   private fun getNodes(context: Context, rootUri: Uri): List<Node> {
