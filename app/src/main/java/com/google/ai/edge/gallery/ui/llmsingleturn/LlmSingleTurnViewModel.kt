@@ -66,16 +66,27 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
   private val history = mutableMapOf<String, MutableList<ChatTurn>>()
 
   @Synchronized
-  private fun buildPromptWithHistory(model: Model, input: String): String {
+  private fun buildPromptWithHistory(model: Model, input: String, maxChars: Int): String {
     val turns = history[model.name].orEmpty()
-    if (turns.isEmpty()) return input
+    val intro = "Conversation précédente :\n"
+    val outro =
+      "Réponds uniquement à la nouvelle demande, sans écrire « Assistant : ».\nNouvelle demande :\n"
+    var remaining = maxChars - input.length - intro.length - outro.length
+    val kept = mutableListOf<ChatTurn>()
+    for (t in turns.asReversed()) {
+      val cost = t.user.length + t.assistant.length + 30
+      if (cost > remaining) break
+      kept.add(0, t)
+      remaining -= cost
+    }
+    if (kept.isEmpty()) return input
     return buildString {
-      append("Conversation précédente :\n")
-      for (t in turns) {
+      append(intro)
+      for (t in kept) {
         append("Utilisateur : ${t.user}\n")
         append("Assistant : ${t.assistant}\n\n")
       }
-      append("Nouvelle demande :\n")
+      append(outro)
       append(input)
     }
   }
@@ -83,6 +94,8 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
   @Synchronized
   private fun addTurn(model: Model, user: String, assistant: String) {
     if (assistant.isBlank()) return
+    // Do not remember degenerate outputs (e.g. endless repeated characters).
+    if (Regex("(.)\\1{30,}").containsMatchIn(assistant)) return
     val list = history.getOrPut(model.name) { mutableListOf() }
     list.add(ChatTurn(user.take(MAX_USER_CHARS), assistant.take(MAX_ASSISTANT_CHARS)))
     while (list.size > MAX_HISTORY_TURNS) list.removeAt(0)
@@ -93,7 +106,13 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
     history.remove(model.name)
   }
 
-  fun generateResponse(task: Task, model: Model, input: String, instruction: String = input) {
+  fun generateResponse(
+    task: Task,
+    model: Model,
+    input: String,
+    instruction: String = input,
+    maxPromptChars: Int = Int.MAX_VALUE,
+  ) {
     viewModelScope.launch(Dispatchers.Default) {
       setInProgress(true)
       setPreparing(true)
@@ -127,7 +146,8 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
       )
       delay(500)
 
-      val promptToRun = buildPromptWithHistory(model = model, input = input)
+      val promptToRun =
+        buildPromptWithHistory(model = model, input = input, maxChars = maxPromptChars)
 
       // Run inference.
       var firstRun = true
