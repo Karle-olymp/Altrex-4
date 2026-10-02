@@ -151,7 +151,8 @@ class LlamaHelper(
         }
 
         completionJob = scope.launch {
-            val formattedPrompt = "<|im_start|>system\n${getDefaultSystemPrompt()}<|im_end|>\n<|im_start|>user\n$prompt<|im_end|>\n<|im_start|>assistant\n\n\n"
+            val thinkOff = "<" + "think>\n\n<" + "/think>\n\n"
+            val formattedPrompt = "<|im_start|>system\n${getDefaultSystemPrompt()}<|im_end|>\n<|im_start|>user\n$prompt<|im_end|>\n<|im_start|>assistant\n" + thinkOff
             params["prompt"] = formattedPrompt
             sharedFlow.tryEmit(LLMEvent.Started(prompt))
             llama.launchCompletion(
@@ -195,7 +196,7 @@ class LlamaHelper(
         const val DEFAULT_CONTEXT_SIZE = 2048
 
         fun getDefaultSystemPrompt(): String {
-            return "You are a helpful assistant."
+            return "Tu es un assistant de programmation. Réponds toujours en français, de façon concise."
         }
     }
 }
