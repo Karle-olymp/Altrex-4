@@ -32,6 +32,12 @@ object ProjectContextBuilder {
   @Volatile private var cacheTime = 0L
   @Volatile private var cacheNodes: List<Node> = emptyList()
 
+  /** Header + numbered content of the opened file, as sent to the model. */
+  fun fileBlock(fileName: String, content: String): String {
+    val numbered = content.lines().mapIndexed { i, line -> "${i + 1} | $line" }.joinToString("\n")
+    return "// $fileName (les numéros « N | » sont ajoutés pour te repérer, " +
+      "ils ne font pas partie du fichier)\n$numbered\n\n"
+  }
   fun build(
     context: Context,
     instruction: String,
