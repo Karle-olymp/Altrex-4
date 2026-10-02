@@ -68,6 +68,8 @@ import com.google.ai.edge.gallery.ui.theme.customColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.imePadding
+import com.google.ai.edge.gallery.data.ConfigKeys
+import com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN
 
 private const val TAG = "AGLlmSingleTurnScreen"
 
@@ -261,26 +263,48 @@ private fun CodeModeMainContent(
               } else {
                 fullPrompt
               }
+            // ~3 caractères par token ; on garde ~600 tokens pour la réponse.
+            val maxTokens =
+              selectedModel.getIntConfigValue(ConfigKeys.MAX_TOKENS, DEFAULT_MAX_TOKEN)
+            val promptBudget = (maxTokens - 600).coerceAtLeast(0) * 3
             viewModel.setInProgress(true)
             viewModel.setPreparing(true)
             scope.launch(Dispatchers.IO) {
+              val editorHeader =
+                if (openedFile != null && promptBudget > 1500) {
+                  val emptyNote = if (openedFile.content.isBlank()) " (actuellement vide)" else ""
+                  "[Consignes] Fichier ouvert : « ${openedFile.fileName} »$emptyNote, " +
+                    "son contenu t'est fourni. Pour le créer ou le modifier, réponds avec le " +
+                    "contenu COMPLET dans UN SEUL bloc de code, puis 2 phrases au plus."
+                } else {
+                  ""
+                }
+              val contextBudget = promptBudget - fullPrompt.length - editorHeader.length
               val projectContext =
-                try {
-                  ProjectContextBuilder.build(
-                    context = context,
-                    instruction = instruction,
-                    excludeUri = openedFile?.uri,
-                  )
-                } catch (e: Exception) {
+                if (contextBudget > 400) {
+                  try {
+                    ProjectContextBuilder.build(
+                      context = context,
+                      instruction = instruction,
+                      excludeUri = openedFile?.uri,
+                      maxChars = contextBudget,
+                    )
+                  } catch (e: Exception) {
+                    ""
+                  }
+                } else {
                   ""
                 }
               val finalInput =
-                if (projectContext.isNotEmpty()) "$projectContext\n\n$fullPrompt" else fullPrompt
+                listOf(editorHeader, projectContext, fullPrompt)
+                  .filter { it.isNotEmpty() }
+                  .joinToString("\n\n")
               viewModel.generateResponse(
                 task = task,
                 model = selectedModel,
                 input = finalInput,
                 instruction = instruction,
+                maxPromptChars = promptBudget,
               )
             }
 
@@ -289,13 +313,6 @@ private fun CodeModeMainContent(
               bundleOf("capability_name" to task.id, "model_id" to selectedModel.name),
             )
           },
-          onStopButtonClicked = { model -> viewModel.stopResponse(model = model) },
-          modifier =
-            Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding()),
-        )
-      },
-    )
-  }
 
   // Download button for the selected model when the model is not downloaded.
   //
