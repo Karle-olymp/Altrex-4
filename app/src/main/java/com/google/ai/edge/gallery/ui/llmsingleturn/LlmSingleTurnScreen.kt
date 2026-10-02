@@ -275,9 +275,11 @@ private fun CodeModeMainContent(
               val editorHeader =
                 if (openedFile != null && promptBudget > 1500) {
                   val emptyNote = if (openedFile.content.isBlank()) " (actuellement vide)" else ""
-                  "[Consignes] Fichier ouvert : « ${openedFile.fileName} »$emptyNote, " +
-                    "son contenu t'est fourni. Pour le créer ou le modifier, réponds avec le " +
-                    "contenu COMPLET dans UN SEUL bloc de code, puis 2 phrases au plus."
+                  "[Consignes] Fichier ouvert : « ${openedFile.fileName} »$emptyNote. " +
+                    "Ses lignes sont préfixées « N | » : utilise ces numéros pour te repérer, " +
+                    "mais ne les recopie jamais dans ta réponse. Pour créer ou modifier le " +
+                    "fichier, réponds avec le contenu COMPLET, sans numéros, dans UN SEUL " +
+                    "bloc de code, puis 2 phrases au plus."
                 } else {
                   ""
                 }
