@@ -54,6 +54,11 @@ object AgentRunner {
     return calls.toList()
   }
 
+  private fun appendRootListing(context: Context, feedback: StringBuilder) {
+    val root = FileActions.listDir(context, "") ?: return
+    feedback.append("Voici la racine du projet :\n${root.joinToString("\n")}\n\n")
+  }
+
   fun generate(
     scope: CoroutineScope,
     context: Context,
@@ -66,6 +71,7 @@ object AgentRunner {
     round: Int = 0,
     responsePrefix: String = "",
   ) {
+    if (round == 0) viewModel.clearResponse(model)
     viewModel.generateResponse(
       task = task,
       model = model,
@@ -96,6 +102,7 @@ object AgentRunner {
                   if (text == null) {
                     log.append("✗ Introuvable : $shown\n")
                     feedback.append("Fichier introuvable : $shown\n")
+                    appendRootListing(context, feedback)
                   } else {
                     log.append("📄 Lu : $shown\n")
                     feedback.append(
@@ -108,6 +115,7 @@ object AgentRunner {
                   if (names == null) {
                     log.append("✗ Dossier introuvable : $shown\n")
                     feedback.append("Dossier introuvable : $shown\n")
+                    appendRootListing(context, feedback)
                   } else {
                     log.append("📂 Listé : $shown (${names.size} éléments)\n")
                     feedback.append("Contenu du dossier $shown :\n${names.joinToString("\n")}\n\n")
