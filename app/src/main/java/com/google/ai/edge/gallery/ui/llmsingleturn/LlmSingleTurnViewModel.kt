@@ -35,7 +35,7 @@ import kotlinx.coroutines.launch
 
 private const val TAG = "AGLlmSingleTurnVM"
 
-private const val MAX_HISTORY_TURNS = 4
+private const val MAX_HISTORY_TURNS = 2
 private const val MAX_USER_CHARS = 1000
 private const val MAX_ASSISTANT_CHARS = 2500
 
