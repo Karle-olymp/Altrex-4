@@ -338,16 +338,7 @@ fun PromptTemplatesPanel(
 
           Spacer(modifier = Modifier.weight(1f))
 
-          // Button to copy full prompt.
-          if (curTextInputContent.isNotEmpty()) {
-            OutlinedIconButton(
-              onClick = {
-                scope.launch {
-                  val clipData = ClipData.newPlainText("prompt", fullPrompt)
-                  val clipEntry = ClipEntry(clipData = clipData)
-                  clipboard.setClipEntry(clipEntry = clipEntry)
-                }
-              },
+          
               colors =
                 IconButtonDefaults.iconButtonColors(
                   containerColor = MaterialTheme.customColors.agentBubbleBgColor,
@@ -367,27 +358,7 @@ fun PromptTemplatesPanel(
             }
           }
 
-          // Add example prompt button.
-          OutlinedIconButton(
-            enabled = !inProgress,
-            onClick = { showExamplePromptBottomSheet = true },
-            colors =
-              IconButtonDefaults.iconButtonColors(
-                containerColor = MaterialTheme.customColors.agentBubbleBgColor,
-                disabledContainerColor =
-                  MaterialTheme.customColors.agentBubbleBgColor.copy(alpha = 0.4f),
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
-              ),
-            border = BorderStroke(width = 1.dp, color = MaterialTheme.colorScheme.surface),
-            modifier = Modifier.size(ICON_BUTTON_SIZE),
-          ) {
-            Icon(
-              Icons.Rounded.Add,
-              contentDescription = stringResource(R.string.cd_add_example_prompt_icon),
-              modifier = Modifier.size(20.dp),
-            )
-          }
+          
 
           val modelInitializing =
             modelInitializationStatus?.status == ModelInitializationStatusType.INITIALIZING
