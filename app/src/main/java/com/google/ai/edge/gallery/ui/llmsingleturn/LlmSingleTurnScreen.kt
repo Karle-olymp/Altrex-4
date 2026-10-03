@@ -1,3 +1,4 @@
+
 /*
  * Copyright 2025 Google LLC
  *
@@ -67,6 +68,7 @@ import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import com.google.ai.edge.gallery.ui.theme.customColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.layout.imePadding
 import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN
@@ -131,6 +133,22 @@ fun LlmSingleTurnScreen(
   val modelInitializationStatus = modelManagerUiState.modelInitializationStatus[selectedModel.name]
   LaunchedEffect(modelInitializationStatus) {
     showErrorDialog = modelInitializationStatus?.status == ModelInitializationStatusType.ERROR
+  }
+
+  // Keep the opened file in sync when files change on disk (agent actions, undo...).
+  val projectTick = ProjectEvents.tick.intValue
+  LaunchedEffect(projectTick) {
+    val f = openedFile
+    if (f != null) {
+      val gone = withContext(Dispatchers.IO) { !FileActions.fileExists(context, f.uri) }
+      if (gone) {
+        openedFile = null
+      } else {
+        val fresh =
+          withContext(Dispatchers.IO) { FileActions.readIfChanged(context, f.uri, f.content) }
+        if (fresh != null) openedFile = f.copy(content = fresh)
+      }
+    }
   }
 
   Scaffold(
@@ -265,7 +283,7 @@ private fun CodeModeMainContent(
               } else {
                 fullPrompt
               }
-            // ~3 caractères par token ; on garde ~600 tokens pour la réponse.
+            // ~3 caractères par token ; on garde ~2100 tokens pour la réponse.
             val maxTokens =
               selectedModel.getIntConfigValue(ConfigKeys.MAX_TOKENS, DEFAULT_MAX_TOKEN)
             val promptBudget = (maxTokens - 2100).coerceAtLeast(0) * 3
@@ -273,43 +291,55 @@ private fun CodeModeMainContent(
             viewModel.setPreparing(true)
             scope.launch(Dispatchers.IO) {
               val fence = "`".repeat(3)
+              val agent = AgentSettings.autoMode
+              val openedNote =
+                if (openedFile != null) {
+                  val emptyNote = if (openedFile.content.isBlank()) " (actuellement vide)" else ""
+                  " Fichier ouvert : « ${openedFile.fileName} »$emptyNote ; chaque ligne est " +
+                    "précédée de son numéro et de « | » pour te repérer : ne recopie jamais " +
+                    "ces préfixes dans ta réponse."
+                } else {
+                  ""
+                }
               val editorHeader =
-                if (promptBudget > 1500) {
-                  val openedNote =
-                    if (openedFile != null) {
-                      val emptyNote =
-                        if (openedFile.content.isBlank()) " (actuellement vide)" else ""
-                      " Fichier ouvert : « ${openedFile.fileName} »$emptyNote ; chaque ligne est " +
-                        "précédée de son numéro et de « | » pour te repérer : ne recopie jamais " +
-                        "ces préfixes dans ta réponse."
-                    } else {
-                      ""
-                    }
+                if (promptBudget <= 1500) {
+                  ""
+                } else if (agent) {
+                  "[Consignes] Tu es un agent de code intégré à un éditeur.$openedNote " +
+                    "Tu agis sur le projet en écrivant, sur une ligne seule :\n" +
+                    "ACTION: lire chemin/fichier\n" +
+                    "ACTION: lister chemin/dossier (le point . désigne la racine)\n" +
+                    "ACTION: supprimer chemin/fichier\n" +
+                    "Pour créer ou modifier un fichier, écris un bloc " +
+                    "${fence}file:chemin/nom.ext puis le contenu COMPLET puis $fence.\n" +
+                    "L'application exécute tes actions et te renvoie les résultats. " +
+                    "N'invente jamais le contenu d'un fichier non lu : lis-le d'abord avec " +
+                    "ACTION: lire. Ne mélange pas lecture et écriture dans la même réponse. " +
+                    "Quand la tâche est finie, réponds sans ACTION, en 2 phrases."
+                } else {
                   "[Consignes] Tu es un assistant de code intégré à un éditeur.$openedNote " +
                     "Pour créer ou modifier un fichier du projet, écris UN bloc par fichier, " +
                     "avec le chemin relatif, puis le contenu COMPLET du fichier :\n" +
                     "${fence}file:chemin/nom.ext\ncontenu complet\n$fence\n" +
                     "Ne dis jamais que tu as créé ou modifié un fichier : l'utilisateur doit " +
                     "confirmer. Ajoute 2 phrases d'explication au plus."
-                } else {
-                  ""
                 }
-              val contextBudget = promptBudget - fullPrompt.length - editorHeader.length
               val includeTree =
                 Regex(
                     "fichier|dossier|projet|arborescence|cré|cree|ouvr|supprim|renomm|liste|file|folder",
                     RegexOption.IGNORE_CASE,
                   )
                   .containsMatchIn(instruction)
+              val contextBudget = promptBudget - fullPrompt.length - editorHeader.length
               val projectContext =
                 if (contextBudget > 400) {
                   try {
                     ProjectContextBuilder.build(
-                      includeTree = includeTree,
                       context = context,
                       instruction = instruction,
                       excludeUri = openedFile?.uri,
                       maxChars = contextBudget,
+                      includeTree = includeTree,
                     )
                   } catch (e: Exception) {
                     ""
@@ -321,12 +351,15 @@ private fun CodeModeMainContent(
                 listOf(editorHeader, projectContext, fullPrompt)
                   .filter { it.isNotEmpty() }
                   .joinToString("\n\n")
-              viewModel.generateResponse(
+              AgentRunner.generate(
+                scope = scope,
+                context = context,
+                viewModel = viewModel,
                 task = task,
                 model = selectedModel,
                 input = finalInput,
                 instruction = instruction,
-                maxPromptChars = promptBudget,
+                promptBudget = promptBudget,
               )
             }
 
