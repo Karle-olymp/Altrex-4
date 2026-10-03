@@ -272,14 +272,24 @@ private fun CodeModeMainContent(
             viewModel.setInProgress(true)
             viewModel.setPreparing(true)
             scope.launch(Dispatchers.IO) {
+              val fence = "`".repeat(3)
               val editorHeader =
-                if (openedFile != null && promptBudget > 1500) {
-                  val emptyNote = if (openedFile.content.isBlank()) " (actuellement vide)" else ""
-                  "[Consignes] Fichier ouvert : « ${openedFile.fileName} »$emptyNote. " +
-                    "Ses lignes sont préfixées « N | » : utilise ces numéros pour te repérer, " +
-                    "mais ne les recopie jamais dans ta réponse. Pour créer ou modifier le " +
-                    "fichier, réponds avec le contenu COMPLET, sans numéros, dans UN SEUL " +
-                    "bloc de code, puis 2 phrases au plus."
+                if (promptBudget > 1500) {
+                  val openedNote =
+                    if (openedFile != null) {
+                      val emptyNote =
+                        if (openedFile.content.isBlank()) " (actuellement vide)" else ""
+                      " Fichier ouvert : « ${openedFile.fileName} »$emptyNote ; ses lignes sont " +
+                        "préfixées « N | » pour te repérer, ne recopie jamais ces numéros."
+                    } else {
+                      ""
+                    }
+                  "[Consignes] Tu es un assistant de code intégré à un éditeur.$openedNote " +
+                    "Pour créer ou modifier un fichier du projet, écris UN bloc par fichier, " +
+                    "avec le chemin relatif, puis le contenu COMPLET du fichier :\n" +
+                    "${fence}file:chemin/nom.ext\ncontenu complet\n$fence\n" +
+                    "Ne dis jamais que tu as créé ou modifié un fichier : l'utilisateur doit " +
+                    "confirmer. Ajoute 2 phrases d'explication au plus."
                 } else {
                   ""
                 }
