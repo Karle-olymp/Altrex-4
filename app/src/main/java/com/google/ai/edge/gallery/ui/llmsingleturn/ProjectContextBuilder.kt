@@ -18,11 +18,10 @@ object ProjectContextBuilder {
   private val IGNORED_DIRS =
     setOf(".git", "node_modules", "build", ".gradle", ".idea", "dist", "__pycache__")
 
-  private val TEXT_EXTENSIONS =
+  private val BINARY_EXTENSIONS =
     setOf(
-      "kt", "java", "kts", "gradle", "xml", "json", "md", "txt", "js", "ts", "tsx", "jsx",
-      "html", "css", "py", "c", "cpp", "h", "yml", "yaml", "toml", "properties", "sh", "sql",
-      "dart", "lock",
+      "png", "jpg", "jpeg", "gif", "webp", "ico", "zip", "jar", "aar", "apk", "so", "bin", "pdf",
+      "ttf", "otf", "woff", "woff2", "mp3", "mp4", "gguf", "class", "dex", "keystore",
     )
 
   private class Node(val path: String, val name: String, val uri: Uri, val isDir: Boolean)
@@ -92,7 +91,7 @@ object ProjectContextBuilder {
         .filter { n ->
           if (n.isDir || n.uri == excludeUri) return@filter false
           val ext = n.name.substringAfterLast('.', "").lowercase()
-          if (ext !in TEXT_EXTENSIONS) return@filter false
+          if (ext in BINARY_EXTENSIONS) return@filter false
           val base = n.name.substringBeforeLast('.')
           lowerInstruction.contains(n.name.lowercase()) ||
             (base.length >= 4 && lowerInstruction.contains(base.lowercase()))
