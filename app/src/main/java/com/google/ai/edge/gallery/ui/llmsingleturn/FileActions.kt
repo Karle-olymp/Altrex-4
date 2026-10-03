@@ -67,11 +67,14 @@ object FileActions {
     if (lines.isNotEmpty() && lines.first().contains("sont ajoutés pour te repérer")) {
       lines = lines.drop(1)
     }
-    val numbered = Regex("^\\s*\\d+\\s*\\|\\s?(.*)$")
+    // Strip "12 | " or "N | " prefixes when most lines have one.
+    val numbered = Regex("^\\s*(?:\\d+|N)\\s*\\|\\s?(.*)$", RegexOption.IGNORE_CASE)
     val nonBlank = lines.filter { it.isNotBlank() }
-    if (nonBlank.isNotEmpty() && nonBlank.all { numbered.matches(it) }) {
+    val matching = nonBlank.count { numbered.matches(it) }
+    if (nonBlank.isNotEmpty() && matching * 10 >= nonBlank.size * 6) {
       lines = lines.map { numbered.matchEntire(it)?.groupValues?.get(1) ?: it }
     }
+    lines = lines.dropLastWhile { it.isBlank() }
     return lines.joinToString("\n") + "\n"
   }
 
