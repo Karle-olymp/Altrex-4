@@ -364,36 +364,7 @@ fun ResponsePanel(
                       },
                   )
                 }
-                
-                  colors =
-                    IconButtonDefaults.iconButtonColors(
-                      containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                      contentColor = MaterialTheme.colorScheme.primary,
-                    ),
-                ) {
-                  Icon(
-                    Icons.Outlined.ContentCopy,
-                    contentDescription = stringResource(R.string.cd_copy_to_clipboard_icon),
-                    modifier = Modifier.size(20.dp),
-                  )
-                }
-
                 // "Scroll to bottom" button, only shown when the list is not at the bottom.
-                
-                    modifier = Modifier.padding(end = 52.dp),
-                    colors =
-                      IconButtonDefaults.iconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        contentColor = MaterialTheme.colorScheme.primary,
-                      ),
-                  ) {
-                    Icon(
-                      Icons.Outlined.Check,
-                      contentDescription = "Apply to file",
-                      modifier = Modifier.size(20.dp),
-                    )
-                  }
-                }
                 Column(
                   modifier =
                     Modifier.align(alignment = Alignment.BottomCenter)
@@ -455,26 +426,4 @@ private fun SegmentedTabButton(
         else MaterialTheme.colorScheme.onSurfaceVariant,
     )
   }
-}
-private fun extractLargestCodeBlock(text: String): String? {
-  val regex = Regex("```[^\\n`]*\\n(.*?)```", RegexOption.DOT_MATCHES_ALL)
-  return regex
-    .findAll(text)
-    .map { it.groupValues[1].trimEnd('\n') + "\n" }
-    .maxByOrNull { it.length }
-    ?.takeIf { it.isNotBlank() }
-}
-private fun cleanForApply(block: String, fileName: String?): String {
-  var lines = block.trimEnd('\n').lines()
-  // The model sometimes echoes the "// fileName" header line.
-  if (fileName != null && lines.isNotEmpty() && lines.first().trim().startsWith("// $fileName")) {
-    lines = lines.drop(1)
-  }
-  // Strip "N | " line numbers if the model copied them.
-  val numbered = Regex("^\\s*\\d+\\s*\\|\\s?(.*)$")
-  val nonBlank = lines.filter { it.isNotBlank() }
-  if (nonBlank.isNotEmpty() && nonBlank.all { numbered.matches(it) }) {
-    lines = lines.map { numbered.matchEntire(it)?.groupValues?.get(1) ?: it }
-  }
-  return lines.joinToString("\n") + "\n"
 }
