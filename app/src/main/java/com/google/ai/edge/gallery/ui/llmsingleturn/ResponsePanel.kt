@@ -314,6 +314,28 @@ fun ResponsePanel(
             }
 
             Column(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp)) {
+              ResponseActionsBar(
+                response = response,
+                inProgress = inProgress,
+                openedFileUri = openedFile?.uri,
+                onCopy = {
+                  scope.launch {
+                    clipboard.setClipEntry(
+                      ClipEntry(clipData = ClipData.newPlainText("response", response))
+                    )
+                  }
+                },
+                onApplyToEditor = { code ->
+                  openedFile?.let { pendingApply = Pair(it.uri, code) }
+                  selectedOptionIndex = 1
+                },
+                onFileChanged = { uri, content ->
+                  if (uri == openedFile?.uri) {
+                    onFileContentSaved(content)
+                    pendingApply = null
+                  }
+                },
+              )
               Box(contentAlignment = Alignment.BottomEnd, modifier = Modifier.weight(1f)) {
                 Column(modifier = Modifier.fillMaxSize().verticalScroll(responseScrollState)) {
                   BufferedFadingMarkdownText(
@@ -328,15 +350,7 @@ fun ResponsePanel(
                       },
                   )
                 }
-                // Copy button.
-                IconButton(
-                  onClick = {
-                    scope.launch {
-                      val clipData = ClipData.newPlainText("response", response)
-                      val clipEntry = ClipEntry(clipData = clipData)
-                      clipboard.setClipEntry(clipEntry = clipEntry)
-                    }
-                  },
+                
                   colors =
                     IconButtonDefaults.iconButtonColors(
                       containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -351,17 +365,7 @@ fun ResponsePanel(
                 }
 
                 // "Scroll to bottom" button, only shown when the list is not at the bottom.
-                // Apply button: puts the model's code block into the opened file's editor.
-                val codeBlock =
-                  remember(response, openedFile?.fileName) {
-                    extractLargestCodeBlock(response)?.let { cleanForApply(it, openedFile?.fileName) }
-                  }
-                if (openedFile != null && codeBlock != null && !inProgress) {
-                  IconButton(
-                    onClick = {
-                      pendingApply = Pair(openedFile.uri, codeBlock)
-                      selectedOptionIndex = 1
-                    },
+                
                     modifier = Modifier.padding(end = 52.dp),
                     colors =
                       IconButtonDefaults.iconButtonColors(
