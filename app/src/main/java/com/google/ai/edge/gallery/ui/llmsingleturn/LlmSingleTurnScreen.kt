@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2025 Google LLC
  *
@@ -306,15 +305,17 @@ private fun CodeModeMainContent(
                   ""
                 } else if (agent) {
                   "[Consignes] Tu es un agent de code intégré à un éditeur.$openedNote " +
-                    "Tu agis sur le projet en écrivant, sur une ligne seule :\n" +
-                    "ACTION: lire chemin/fichier\n" +
-                    "ACTION: lister chemin/dossier (le point . désigne la racine)\n" +
-                    "ACTION: supprimer chemin/fichier\n" +
+                    "Tu agis sur le projet en écrivant, sur une ligne seule (exemples) :\n" +
+                    "ACTION: lister .\n" +
+                    "ACTION: lire README.md\n" +
+                    "ACTION: supprimer notes/ancien.txt\n" +
+                    "(le point . désigne la racine ; remplace les exemples par les vrais chemins). " +
                     "Pour créer ou modifier un fichier, écris un bloc " +
                     "${fence}file:chemin/nom.ext puis le contenu COMPLET puis $fence.\n" +
                     "L'application exécute tes actions et te renvoie les résultats. " +
-                    "N'invente jamais le contenu d'un fichier non lu : lis-le d'abord avec " +
-                    "ACTION: lire. Ne mélange pas lecture et écriture dans la même réponse. " +
+                    "Les fichiers que l'utilisateur nomme te sont déjà fournis dans le message : " +
+                    "ne les relis pas. N'invente jamais le contenu d'un fichier non lu. " +
+                    "Ne mélange pas lecture et écriture dans la même réponse. " +
                     "Quand la tâche est finie, réponds sans ACTION, en 2 phrases."
                 } else {
                   "[Consignes] Tu es un assistant de code intégré à un éditeur.$openedNote " +
