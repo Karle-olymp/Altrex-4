@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Undo
 import androidx.compose.material3.FilledTonalButton
@@ -54,15 +55,16 @@ fun ResponseActionsBar(
   val tick = ProjectEvents.tick.intValue
   val canUndo = remember(tick) { FileActions.canUndo() }
 
+  val auto = AgentSettings.autoMode
   val actions =
-    remember(response, inProgress) {
-      if (inProgress) emptyList() else FileActions.parse(response)
+    remember(response, inProgress, auto) {
+      if (inProgress || auto) emptyList() else FileActions.parse(response)
     }
   val codeBlock =
     remember(response, inProgress) {
       if (inProgress) null else FileActions.largestCodeBlock(response)
     }
-  val showApplyToEditor = actions.isEmpty() && openedFileUri != null && codeBlock != null
+  val showApplyToEditor = !auto && actions.isEmpty() && openedFileUri != null && codeBlock != null
 
   var results by remember(response) { mutableStateOf<Map<String, FileActionResult>>(emptyMap()) }
   var existsMap by remember(actions) { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
@@ -98,6 +100,27 @@ fun ResponseActionsBar(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
+          )
+        }
+        Text(
+          text = if (auto) "Agent auto" else "Manuel",
+          style = MaterialTheme.typography.labelSmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        IconButton(
+          onClick = { AgentSettings.autoMode = !AgentSettings.autoMode },
+          colors =
+            IconButtonDefaults.iconButtonColors(
+              containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+              contentColor =
+                if (auto) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+        ) {
+          Icon(
+            Icons.Outlined.SmartToy,
+            contentDescription = "Basculer le mode agent automatique",
+            modifier = Modifier.size(20.dp),
           )
         }
         if (canUndo) {
