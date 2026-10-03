@@ -8,8 +8,8 @@ import android.util.Log
 /** Builds a compact view of the project folder to prepend to the prompt. */
 object ProjectContextBuilder {
   private const val TAG = "ProjectContextBuilder"
-  private const val MAX_TREE_ENTRIES = 150
-  private const val MAX_DEPTH = 4
+  private const val MAX_TREE_ENTRIES = 60
+  private const val MAX_DEPTH = 3
   private const val MAX_EXTRA_FILES = 3
   private const val MAX_CHARS_PER_FILE = 6000
   private const val CACHE_MS = 60_000L
@@ -34,14 +34,20 @@ object ProjectContextBuilder {
 
   /** Header + numbered content of the opened file, as sent to the model. */
   fun fileBlock(fileName: String, content: String): String {
-    val numbered = content.lines().mapIndexed { i, line -> "${i + 1} | $line" }.joinToString("\n")
-    return "// $fileName (les numéros « N | » sont ajoutés pour te repérer, " +
-      "ils ne font pas partie du fichier)\n$numbered\n\n"
+    val numbered =
+      content
+        .removeSuffix("\n")
+        .lines()
+        .mapIndexed { i, line -> "${i + 1} | $line" }
+        .joinToString("\n")
+    return "// $fileName (chaque ligne est précédée de son numéro et de « | » : ces préfixes " +
+      "sont ajoutés pour te repérer, ils ne font pas partie du fichier)\n$numbered\n\n"
   }
   fun invalidateCache() {
     cacheKey = null
   }
   fun build(
+    includeTree: Boolean = true,
     context: Context,
     instruction: String,
     excludeUri: Uri?,
@@ -56,6 +62,7 @@ object ProjectContextBuilder {
   }
 
   private fun buildInternal(
+    includeTree: Boolean = true,
     context: Context,
     instruction: String,
     excludeUri: Uri?,
@@ -66,15 +73,17 @@ object ProjectContextBuilder {
     if (nodes.isEmpty()) return ""
 
     val sb = StringBuilder()
-    sb.append("[Projet : ${root.name ?: "projet"}]\n")
-    sb.append("Arborescence (tu n'as pas le contenu des fichiers non listés ci-dessous).\n")
-    sb.append("Si tu as besoin d'un autre fichier, demande-le avec son nom exact.\n")
-    for (n in nodes) {
-      sb.append(n.path)
-      if (n.isDir) sb.append("/")
-      sb.append("\n")
+    if (includeTree) {
+      sb.append("[Projet : ${root.name ?: "projet"}]\n")
+      sb.append("Arborescence (tu n'as pas le contenu des fichiers non listés ci-dessous).\n")
+      sb.append("Si tu as besoin d'un autre fichier, demande-le avec son nom exact.\n")
+      for (n in nodes) {
+        sb.append(n.path)
+        if (n.isDir) sb.append("/")
+        sb.append("\n")
+      }
+      if (nodes.size >= MAX_TREE_ENTRIES) sb.append("... (arborescence tronquée)\n")
     }
-    if (nodes.size >= MAX_TREE_ENTRIES) sb.append("... (arborescence tronquée)\n")
 
     val lowerInstruction = instruction.lowercase()
     val mentioned =
