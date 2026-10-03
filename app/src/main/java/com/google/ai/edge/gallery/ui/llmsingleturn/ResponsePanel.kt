@@ -286,7 +286,7 @@ fun ResponsePanel(
               }
             }
           }
-        } else if (initializing) {
+        } else if (initializing && response.isEmpty()) {
           Box(
             contentAlignment = Alignment.TopStart,
             modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
