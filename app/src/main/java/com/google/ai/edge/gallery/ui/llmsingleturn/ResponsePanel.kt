@@ -190,11 +190,13 @@ fun ResponsePanel(
           // Code tab: editable preview of the opened file.
           val pendingContent = pendingApply?.takeIf { it.first == openedFile.uri }?.second
           var editedContent by
-            remember(openedFile.uri, pendingContent) {
+            remember(openedFile.uri, pendingContent, openedFile.content) {
               mutableStateOf(pendingContent ?: openedFile.content)
             }
           var lastSavedContent by
-            remember(openedFile.uri, pendingContent) { mutableStateOf(openedFile.content) }
+            remember(openedFile.uri, pendingContent, openedFile.content) {
+              mutableStateOf(openedFile.content)
+            }
           var saveError by remember(openedFile.uri) { mutableStateOf(false) }
           val isDirty = editedContent != lastSavedContent
 
