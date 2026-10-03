@@ -153,6 +153,7 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
 
       // Run inference.
       var firstRun = true
+      var finished = false
       var response = ""
       model.runtimeHelper.runInference(model = model,
         input = promptToRun,
@@ -172,7 +173,9 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
             response = responsePrefix + response,
           )
 
-          if (done) {
+          // The runtime can report "done" twice (end of generation, then job cancellation).
+          if (done && !finished) {
+            finished = true
             addTurn(model = model, user = instruction, assistant = response)
             // onDone returns true when it starts another generation (agent loop).
             val continued = onDone?.invoke(response) ?: false
@@ -197,6 +200,14 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
   fun currentResponse(model: Model): String =
     uiState.value.responsesByModel[model.name]?.get(uiState.value.selectedPromptTemplateType.name)
       ?: ""
+
+  fun clearResponse(model: Model) {
+    updateResponse(
+      model = model,
+      promptTemplateType = uiState.value.selectedPromptTemplateType,
+      response = "",
+    )
+  }
 
   fun appendToResponse(model: Model, text: String) {
     updateResponse(
