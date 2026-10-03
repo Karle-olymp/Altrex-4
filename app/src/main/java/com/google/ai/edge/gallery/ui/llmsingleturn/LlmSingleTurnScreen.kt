@@ -279,8 +279,9 @@ private fun CodeModeMainContent(
                     if (openedFile != null) {
                       val emptyNote =
                         if (openedFile.content.isBlank()) " (actuellement vide)" else ""
-                      " Fichier ouvert : « ${openedFile.fileName} »$emptyNote ; ses lignes sont " +
-                        "préfixées « N | » pour te repérer, ne recopie jamais ces numéros."
+                      " Fichier ouvert : « ${openedFile.fileName} »$emptyNote ; chaque ligne est " +
+                        "précédée de son numéro et de « | » pour te repérer : ne recopie jamais " +
+                        "ces préfixes dans ta réponse."
                     } else {
                       ""
                     }
@@ -294,10 +295,17 @@ private fun CodeModeMainContent(
                   ""
                 }
               val contextBudget = promptBudget - fullPrompt.length - editorHeader.length
+              val includeTree =
+                Regex(
+                    "fichier|dossier|projet|arborescence|cré|cree|ouvr|supprim|renomm|liste|file|folder",
+                    RegexOption.IGNORE_CASE,
+                  )
+                  .containsMatchIn(instruction)
               val projectContext =
                 if (contextBudget > 400) {
                   try {
                     ProjectContextBuilder.build(
+                      includeTree = includeTree,
                       context = context,
                       instruction = instruction,
                       excludeUri = openedFile?.uri,
