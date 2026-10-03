@@ -338,28 +338,6 @@ fun PromptTemplatesPanel(
 
           Spacer(modifier = Modifier.weight(1f))
 
-          
-              colors =
-                IconButtonDefaults.iconButtonColors(
-                  containerColor = MaterialTheme.customColors.agentBubbleBgColor,
-                  disabledContainerColor =
-                    MaterialTheme.customColors.agentBubbleBgColor.copy(alpha = 0.4f),
-                  contentColor = MaterialTheme.colorScheme.onSurface,
-                  disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
-                ),
-              border = BorderStroke(width = 1.dp, color = MaterialTheme.colorScheme.surface),
-              modifier = Modifier.size(ICON_BUTTON_SIZE),
-            ) {
-              Icon(
-                Icons.Outlined.ContentCopy,
-                contentDescription = stringResource(R.string.cd_copy_to_clipboard_icon),
-                modifier = Modifier.size(20.dp),
-              )
-            }
-          }
-
-          
-
           val modelInitializing =
             modelInitializationStatus?.status == ModelInitializationStatusType.INITIALIZING
           if (inProgress && !modelInitializing && !uiState.preparing) {
