@@ -38,6 +38,9 @@ object ProjectContextBuilder {
     return "// $fileName (les numéros « N | » sont ajoutés pour te repérer, " +
       "ils ne font pas partie du fichier)\n$numbered\n\n"
   }
+  fun invalidateCache() {
+    cacheKey = null
+  }
   fun build(
     context: Context,
     instruction: String,
