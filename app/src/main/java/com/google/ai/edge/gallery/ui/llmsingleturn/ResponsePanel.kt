@@ -84,6 +84,9 @@ import androidx.compose.material.icons.outlined.Save
 import androidx.compose.ui.graphics.SolidColor
 import android.net.Uri
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.text.style.TextAlign
 
 private const val TAG = "AGResponsePanel"
 
@@ -196,24 +199,35 @@ fun ResponsePanel(
           val isDirty = editedContent != lastSavedContent
 
           Box(contentAlignment = Alignment.BottomEnd, modifier = Modifier.fillMaxSize()) {
-            Column(
+            val codeTextStyle =
+              MaterialTheme.typography.bodySmall.copy(
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurface,
+              )
+            val lineCount = editedContent.count { it == '\n' } + 1
+            val horizontalScrollState = rememberScrollState()
+            Row(
               modifier =
                 Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(codeScrollState)
             ) {
-              BasicTextField(
-                value = editedContent,
-                onValueChange = {
-                  editedContent = it
-                  saveError = false
-                },
-                textStyle =
-                  MaterialTheme.typography.bodySmall.copy(
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurface,
-                  ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 56.dp),
+              Text(
+                text = (1..lineCount).joinToString("\n"),
+                style = codeTextStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                textAlign = TextAlign.End,
+                modifier = Modifier.padding(top = 8.dp, bottom = 56.dp, end = 8.dp),
               )
+              Box(modifier = Modifier.weight(1f).horizontalScroll(horizontalScrollState)) {
+                BasicTextField(
+                  value = editedContent,
+                  onValueChange = {
+                    editedContent = it
+                    saveError = false
+                  },
+                  textStyle = codeTextStyle,
+                  cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                  modifier = Modifier.widthIn(min = 280.dp).padding(top = 8.dp, bottom = 56.dp),
+                )
+              }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 4.dp)) {
               if (saveError) {
