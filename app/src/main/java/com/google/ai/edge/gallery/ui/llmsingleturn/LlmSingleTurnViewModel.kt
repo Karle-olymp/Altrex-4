@@ -112,6 +112,8 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
     input: String,
     instruction: String = input,
     maxPromptChars: Int = Int.MAX_VALUE,
+    responsePrefix: String = "",
+    onDone: ((String) -> Boolean)? = null,
   ) {
     viewModelScope.launch(Dispatchers.Default) {
       setInProgress(true)
@@ -167,12 +169,16 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
           updateResponse(
             model = model,
             promptTemplateType = uiState.value.selectedPromptTemplateType,
-            response = response,
+            response = responsePrefix + response,
           )
 
           if (done) {
             addTurn(model = model, user = instruction, assistant = response)
-            setInProgress(false)
+            // onDone returns true when it starts another generation (agent loop).
+            val continued = onDone?.invoke(response) ?: false
+            if (!continued) {
+              setInProgress(false)
+            }
           }
         },
         cleanUpListener = {
@@ -186,6 +192,18 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
         coroutineScope = viewModelScope,
       )
     }
+  }
+
+  fun currentResponse(model: Model): String =
+    uiState.value.responsesByModel[model.name]?.get(uiState.value.selectedPromptTemplateType.name)
+      ?: ""
+
+  fun appendToResponse(model: Model, text: String) {
+    updateResponse(
+      model = model,
+      promptTemplateType = uiState.value.selectedPromptTemplateType,
+      response = currentResponse(model) + text,
+    )
   }
 
   fun selectPromptTemplate(model: Model, promptTemplateType: PromptTemplateType) {
