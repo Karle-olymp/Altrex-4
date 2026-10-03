@@ -71,7 +71,7 @@ fun FileExplorerPanel(modifier: Modifier = Modifier, onFileClicked: (DocumentFil
   var rootChildren by remember(rootFolder) { mutableStateOf<List<DocumentFile>?>(null) }
   var showCreateFileDialog by remember { mutableStateOf(false) }
 
-  LaunchedEffect(rootFolder) {
+  LaunchedEffect(rootFolder, ProjectEvents.tick.intValue) {
     rootChildren = rootFolder?.let { ProjectFolderManager.listChildren(it) }
   }
 
@@ -171,8 +171,9 @@ private fun FileTreeNode(file: DocumentFile, depth: Int, onFileClicked: (Documen
   var expanded by remember(file.uri) { mutableStateOf(false) }
   var children by remember(file.uri) { mutableStateOf<List<DocumentFile>?>(null) }
 
-  LaunchedEffect(file.uri, expanded) {
-    if (expanded && file.isDirectory && children == null) {
+  val refreshTick = ProjectEvents.tick.intValue
+  LaunchedEffect(file.uri, expanded, refreshTick) {
+    if (expanded && file.isDirectory) {
       children = ProjectFolderManager.listChildren(file)
     }
   }
