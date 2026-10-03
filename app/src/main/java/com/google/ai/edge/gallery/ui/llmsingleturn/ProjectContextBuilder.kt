@@ -8,8 +8,9 @@ import android.util.Log
 /** Builds a compact view of the project folder to prepend to the prompt. */
 object ProjectContextBuilder {
   private const val TAG = "ProjectContextBuilder"
-  private const val MAX_TREE_ENTRIES = 60
-  private const val MAX_DEPTH = 3
+  private const val MAX_TREE_ENTRIES = 150
+  private const val MAX_TREE_SHOWN = 60
+  private const val MAX_DEPTH = 4
   private const val MAX_EXTRA_FILES = 3
   private const val MAX_CHARS_PER_FILE = 6000
   private const val CACHE_MS = 60_000L
@@ -43,18 +44,19 @@ object ProjectContextBuilder {
     return "// $fileName (chaque ligne est précédée de son numéro et de « | » : ces préfixes " +
       "sont ajoutés pour te repérer, ils ne font pas partie du fichier)\n$numbered\n\n"
   }
+
   fun invalidateCache() {
     cacheKey = null
   }
   fun build(
-    includeTree: Boolean = true,
     context: Context,
     instruction: String,
     excludeUri: Uri?,
     maxChars: Int = Int.MAX_VALUE,
+    includeTree: Boolean = true,
   ): String {
     return try {
-      buildInternal(context, instruction, excludeUri, maxChars)
+      buildInternal(context, instruction, excludeUri, maxChars, includeTree)
     } catch (e: Exception) {
       Log.e(TAG, "Failed to build project context", e)
       ""
@@ -62,11 +64,11 @@ object ProjectContextBuilder {
   }
 
   private fun buildInternal(
-    includeTree: Boolean = true,
     context: Context,
     instruction: String,
     excludeUri: Uri?,
     maxChars: Int,
+    includeTree: Boolean,
   ): String {
     val root = ProjectFolderManager.getSavedProjectFolder(context) ?: return ""
     val nodes = getNodes(context, root.uri)
@@ -76,13 +78,12 @@ object ProjectContextBuilder {
     if (includeTree) {
       sb.append("[Projet : ${root.name ?: "projet"}]\n")
       sb.append("Arborescence (tu n'as pas le contenu des fichiers non listés ci-dessous).\n")
-      sb.append("Si tu as besoin d'un autre fichier, demande-le avec son nom exact.\n")
-      for (n in nodes) {
+      for (n in nodes.take(MAX_TREE_SHOWN)) {
         sb.append(n.path)
         if (n.isDir) sb.append("/")
         sb.append("\n")
       }
-      if (nodes.size >= MAX_TREE_ENTRIES) sb.append("... (arborescence tronquée)\n")
+      if (nodes.size > MAX_TREE_SHOWN) sb.append("... (arborescence tronquée)\n")
     }
 
     val lowerInstruction = instruction.lowercase()
