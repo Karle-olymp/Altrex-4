@@ -305,18 +305,14 @@ private fun CodeModeMainContent(
                   ""
                 } else if (agent) {
                   "[Consignes] Tu es un agent de code intégré à un éditeur.$openedNote " +
-                    "Tu agis sur le projet en écrivant, sur une ligne seule (exemples) :\n" +
-                    "ACTION: lister .\n" +
-                    "ACTION: lire README.md\n" +
-                    "ACTION: supprimer notes/ancien.txt\n" +
-                    "(le point . désigne la racine ; remplace les exemples par les vrais chemins). " +
+                    "Pour agir sur le projet, écris sur une ligne seule : le mot ACTION: suivi de " +
+                    "lire, lister ou supprimer, puis le chemin RÉEL d'un fichier ou dossier " +
+                    "existant (le point . désigne la racine). " +
                     "Pour créer ou modifier un fichier, écris un bloc " +
                     "${fence}file:chemin/nom.ext puis le contenu COMPLET puis $fence.\n" +
-                    "L'application exécute tes actions et te renvoie les résultats. " +
-                    "Les fichiers que l'utilisateur nomme te sont déjà fournis dans le message : " +
-                    "ne les relis pas. N'invente jamais le contenu d'un fichier non lu. " +
-                    "Ne mélange pas lecture et écriture dans la même réponse. " +
-                    "Quand la tâche est finie, réponds sans ACTION, en 2 phrases."
+                    "Les fichiers que l'utilisateur nomme te sont déjà fournis : ne les relis pas. " +
+                    "N'invente jamais un chemin ni un contenu. Une seule sorte d'action par " +
+                    "réponse. Quand tu as terminé, réponds en 2 phrases, sans ACTION."
                 } else {
                   "[Consignes] Tu es un assistant de code intégré à un éditeur.$openedNote " +
                     "Pour créer ou modifier un fichier du projet, écris UN bloc par fichier, " +
