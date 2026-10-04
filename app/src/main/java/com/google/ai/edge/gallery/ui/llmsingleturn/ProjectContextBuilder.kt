@@ -9,10 +9,10 @@ import android.util.Log
 object ProjectContextBuilder {
   private const val TAG = "ProjectContextBuilder"
   private const val MAX_TREE_ENTRIES = 150
-  private const val MAX_TREE_SHOWN = 60
+  private const val MAX_TREE_SHOWN = 40
   private const val MAX_DEPTH = 4
   private const val MAX_EXTRA_FILES = 3
-  private const val MAX_CHARS_PER_FILE = 6000
+  private const val MAX_CHARS_PER_FILE = 4000
   private const val CACHE_MS = 60_000L
 
   private val IGNORED_DIRS =
@@ -46,6 +46,18 @@ object ProjectContextBuilder {
 
   fun invalidateCache() {
     cacheKey = null
+  }
+
+  /** Returns the project path of the only file called [name] (case-insensitive), else null. */
+  fun findByName(context: Context, name: String): String? {
+    return try {
+      val root = ProjectFolderManager.getSavedProjectFolder(context) ?: return null
+      val matches =
+        getNodes(context, root.uri).filter { !it.isDir && it.name.equals(name, ignoreCase = true) }
+      if (matches.size == 1) matches[0].path else null
+    } catch (e: Exception) {
+      null
+    }
   }
   fun build(
     context: Context,
