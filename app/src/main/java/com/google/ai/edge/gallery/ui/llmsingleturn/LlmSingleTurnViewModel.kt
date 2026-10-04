@@ -36,8 +36,8 @@ import kotlinx.coroutines.launch
 private const val TAG = "AGLlmSingleTurnVM"
 
 private const val MAX_HISTORY_TURNS = 2
-private const val MAX_USER_CHARS = 1000
-private const val MAX_ASSISTANT_CHARS = 2500
+private const val MAX_USER_CHARS = 400
+private const val MAX_ASSISTANT_CHARS = 800
 
 private data class ChatTurn(val user: String, val assistant: String)
 
@@ -101,6 +101,11 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
     while (list.size > MAX_HISTORY_TURNS) list.removeAt(0)
   }
 
+  /** Records a finished exchange in the history (used by the agent loop). */
+  fun recordTurn(model: Model, user: String, assistant: String) {
+    addTurn(model = model, user = user, assistant = assistant)
+  }
+
   @Synchronized
   fun clearHistory(model: Model) {
     history.remove(model.name)
@@ -113,6 +118,7 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
     instruction: String = input,
     maxPromptChars: Int = Int.MAX_VALUE,
     responsePrefix: String = "",
+    useHistory: Boolean = true,
     onDone: ((String) -> Boolean)? = null,
   ) {
     viewModelScope.launch(Dispatchers.Default) {
@@ -149,7 +155,11 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
       delay(500)
 
       val promptToRun =
-        buildPromptWithHistory(model = model, input = input, maxChars = maxPromptChars)
+        if (useHistory) {
+          buildPromptWithHistory(model = model, input = input, maxChars = maxPromptChars)
+        } else {
+          input
+        }
 
       // Run inference.
       var firstRun = true
@@ -176,10 +186,14 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
           // The runtime can report "done" twice (end of generation, then job cancellation).
           if (done && !finished) {
             finished = true
-            addTurn(model = model, user = instruction, assistant = response)
-            // onDone returns true when it starts another generation (agent loop).
+            // onDone returns true when the agent loop takes over (it records the history itself).
             val continued = onDone?.invoke(response) ?: false
             if (!continued) {
+              val clean =
+                response
+                  .replace(Regex("(?im)^[\\s*_`>\\-]*ACTION\\s*:.*$"), "")
+                  .trim()
+              addTurn(model = model, user = instruction, assistant = clean)
               setInProgress(false)
             }
           }
