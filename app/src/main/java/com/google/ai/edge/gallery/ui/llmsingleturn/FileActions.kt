@@ -244,6 +244,48 @@ object FileActions {
     }
   }
 
+  /** Replaces lines [startLine]..[endLine] (1-based, inclusive) of a text file by [newText]. */
+  fun replaceLines(
+    context: Context,
+    path: String,
+    startLine: Int,
+    endLine: Int,
+    newText: String,
+  ): FileActionResult {
+    try {
+      val f = resolve(context, path) ?: return fail("Introuvable : $path")
+      if (!f.isFile) return fail("« $path » n'est pas un fichier")
+      val text = readAll(context, f.uri) ?: return fail("Lecture impossible : $path")
+      val hadTrailingNewline = text.endsWith("\n") || text.isEmpty()
+      val lines = text.removeSuffix("\n").split("\n").toMutableList()
+      if (startLine < 1 || startLine > lines.size + 1) {
+        return fail("start_line hors limites : le fichier a ${lines.size} lignes")
+      }
+      val removeCount = (endLine - startLine + 1).coerceAtLeast(0)
+      val endIdx = (startLine - 1 + removeCount).coerceAtMost(lines.size)
+      val replacement =
+        if (newText.isEmpty()) {
+          emptyList<String>()
+        } else {
+          stripNumberPrefixes(newText.removeSuffix("\n").split("\n"))
+        }
+      lines.subList(startLine - 1, endIdx).clear()
+      lines.addAll(startLine - 1, replacement)
+      val content = lines.joinToString("\n") + if (hadTrailingNewline) "\n" else ""
+      return write(context, path, content, record = true)
+    } catch (e: Exception) {
+      return fail(e.message ?: "Erreur inconnue")
+    }
+  }
+
+  private fun stripNumberPrefixes(lines: List<String>): List<String> {
+    val numbered = Regex("^\\s*(?:\\d+|N)\\s*\\|\\s?(.*)$", RegexOption.IGNORE_CASE)
+    val nonBlank = lines.filter { it.isNotBlank() }
+    val matching = nonBlank.count { numbered.matches(it) }
+    if (nonBlank.isEmpty() || matching * 10 < nonBlank.size * 6) return lines
+    return lines.map { numbered.matchEntire(it)?.groupValues?.get(1) ?: it }
+  }
+
   /** Deletes a text file (its content is kept so that the deletion can be undone). */
   fun delete(context: Context, path: String): FileActionResult {
     try {
