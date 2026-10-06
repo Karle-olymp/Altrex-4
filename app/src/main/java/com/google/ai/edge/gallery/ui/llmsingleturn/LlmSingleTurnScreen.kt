@@ -300,19 +300,10 @@ private fun CodeModeMainContent(
                 } else {
                   ""
                 }
+              // Manual mode only: in agent mode the instructions live in the system prompt.
               val editorHeader =
-                if (promptBudget <= 1500) {
+                if (agent || promptBudget <= 1500) {
                   ""
-                } else if (agent) {
-                  "[Consignes] Tu es un agent de code intégré à un éditeur.$openedNote " +
-                    "Pour agir sur le projet, écris sur une ligne seule : le mot ACTION: suivi de " +
-                    "lire, lister ou supprimer, puis le chemin RÉEL d'un fichier ou dossier " +
-                    "existant (le point . désigne la racine). " +
-                    "Pour créer ou modifier un fichier, écris un bloc " +
-                    "${fence}file:chemin/nom.ext puis le contenu COMPLET puis $fence.\n" +
-                    "Les fichiers que l'utilisateur nomme te sont déjà fournis : ne les relis pas. " +
-                    "N'invente jamais un chemin ni un contenu. Une seule sorte d'action par " +
-                    "réponse. Quand tu as terminé, réponds en 2 phrases, sans ACTION."
                 } else {
                   "[Consignes] Tu es un assistant de code intégré à un éditeur.$openedNote " +
                     "Pour créer ou modifier un fichier du projet, écris UN bloc par fichier, " +
@@ -327,7 +318,9 @@ private fun CodeModeMainContent(
                     RegexOption.IGNORE_CASE,
                   )
                   .containsMatchIn(instruction)
-              val contextBudget = promptBudget - fullPrompt.length - editorHeader.length
+              // The agent system prompt (tool definitions) takes about 3000 characters.
+              val reserved = if (agent) 3000 else 0
+              val contextBudget = promptBudget - fullPrompt.length - editorHeader.length - reserved
               val projectContext =
                 if (contextBudget > 400) {
                   try {
@@ -344,20 +337,34 @@ private fun CodeModeMainContent(
                 } else {
                   ""
                 }
-              val finalInput =
-                listOf(editorHeader, projectContext, fullPrompt)
-                  .filter { it.isNotEmpty() }
-                  .joinToString("\n\n")
-              AgentRunner.generate(
-                scope = scope,
-                context = context,
-                viewModel = viewModel,
-                task = task,
-                model = selectedModel,
-                input = finalInput,
-                instruction = instruction,
-                promptBudget = promptBudget,
-              )
+              if (agent) {
+                val userMessage =
+                  listOf(projectContext, fullPrompt).filter { it.isNotEmpty() }.joinToString("\n\n")
+                AgentRunner.run(
+                  scope = scope,
+                  context = context,
+                  viewModel = viewModel,
+                  task = task,
+                  model = selectedModel,
+                  userMessage = userMessage,
+                  instruction = instruction,
+                  openedFileName = openedFile?.fileName,
+                  promptBudget = promptBudget,
+                )
+              } else {
+                val finalInput =
+                  listOf(editorHeader, projectContext, fullPrompt)
+                    .filter { it.isNotEmpty() }
+                    .joinToString("\n\n")
+                AgentRunner.generate(
+                  viewModel = viewModel,
+                  task = task,
+                  model = selectedModel,
+                  input = finalInput,
+                  instruction = instruction,
+                  promptBudget = promptBudget,
+                )
+              }
             }
 
             firebaseAnalytics?.logEvent(
