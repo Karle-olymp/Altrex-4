@@ -152,7 +152,13 @@ class LlamaHelper(
 
         completionJob = scope.launch {
             val thinkOff = "<" + "think>\n\n<" + "/think>\n\n"
-            val formattedPrompt = "<|im_start|>system\n${getDefaultSystemPrompt()}<|im_end|>\n<|im_start|>user\n$prompt<|im_end|>\n<|im_start|>assistant\n" + thinkOff
+            val formattedPrompt =
+                if (prompt.startsWith("<|im_start|>")) {
+                    // Already a complete ChatML conversation (tool-calling agent): use it as is.
+                    prompt
+                } else {
+                    "<|im_start|>system\n${getDefaultSystemPrompt()}<|im_end|>\n<|im_start|>user\n$prompt<|im_end|>\n<|im_start|>assistant\n" + thinkOff
+                }
             params["prompt"] = formattedPrompt
             sharedFlow.tryEmit(LLMEvent.Started(prompt))
             llama.launchCompletion(
