@@ -21,6 +21,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.gallery.common.processLlmResponse
 import com.google.ai.edge.gallery.data.Model
+import com.google.ai.edge.gallery.data.RuntimeType
 import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.data.awaitInitialization
 import com.google.ai.edge.gallery.runtime.runtimeHelper
@@ -174,7 +175,14 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
           }
 
           // Incrementally update the streamed partial results.
-          response = processLlmResponse(response = "$response$partialResult")
+          // llama.cpp already returns real newlines: do not rewrite "\\n" sequences in code.
+          val merged = "$response$partialResult"
+          response =
+            if (model.runtimeType == RuntimeType.LLAMA_CPP) {
+              merged
+            } else {
+              processLlmResponse(response = merged)
+            }
 
           // Update response.
           updateResponse(
