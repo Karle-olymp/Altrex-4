@@ -54,6 +54,7 @@ import androidx.core.os.bundleOf
 import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.Model
+import com.google.ai.edge.gallery.data.RuntimeType
 import com.google.ai.edge.gallery.data.ModelDownloadStatusType
 import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.firebaseAnalytics
@@ -102,9 +103,11 @@ fun LlmSingleTurnScreen(
     navigatingUp = true
     navigateUp()
 
-    // clean up all models.
+    // clean up all models, except llama.cpp ones: they stay loaded so that coming back to a space
+    // (Code, Sécurité) does not pay the long model load again. The OS reclaims the memory.
     scope.launch(Dispatchers.Default) {
       for (model in task.models) {
+        if (model.runtimeType == RuntimeType.LLAMA_CPP) continue
         modelManagerViewModel.cleanupModel(context = context, task = task, model = model)
       }
     }
@@ -333,7 +336,7 @@ private fun CodeModeMainContent(
               val reserved = if (agent) 3000 else 0
               val contextBudget = promptBudget - fullPrompt.length - editorHeader.length - reserved
               val projectContext =
-                if (contextBudget > 400) {
+                if (contextBudget > 400 && !securityMode) {
                   try {
                     ProjectContextBuilder.build(
                       context = context,
@@ -350,7 +353,20 @@ private fun CodeModeMainContent(
                 }
               if (agent) {
                 val userMessage =
-                  listOf(projectContext, fullPrompt).filter { it.isNotEmpty() }.joinToString("\n\n")
+                  if (securityMode) {
+                    // Keep the prompt small: only the request and the name of the opened file.
+                    val openedNote =
+                      if (openedFile != null) {
+                        "[Fichier ouvert dans l'éditeur : « ${openedFile.fileName} »]\n"
+                      } else {
+                        ""
+                      }
+                    openedNote + instruction
+                  } else {
+                    listOf(projectContext, fullPrompt)
+                      .filter { it.isNotEmpty() }
+                      .joinToString("\n\n")
+                  }
                 AgentRunner.run(
                   scope = scope,
                   context = context,
