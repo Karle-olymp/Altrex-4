@@ -24,6 +24,12 @@ class LlamaHelper(
     private var tokenCount = 0
     private var allText = ""
 
+    // Timing of the last generation (read by the agent to show where the time goes).
+    @Volatile private var predictStartMs = 0L
+    @Volatile var lastPrefillMs = 0L
+    @Volatile var lastGenMs = 0L
+    @Volatile var lastTokens = 0
+
     private fun getParcelFileDescriptor(pathOrUri: String): android.os.ParcelFileDescriptor? {
         val file = File(pathOrUri)
         if (file.exists() && file.isFile) {
@@ -98,6 +104,9 @@ class LlamaHelper(
                     llama.startEngine(config) {
                         allText += it
                         tokenCount++
+                        if (tokenCount == 1) {
+                            lastPrefillMs = System.currentTimeMillis() - predictStartMs
+                        }
                         sharedFlow.tryEmit(LLMEvent.Ongoing(it, tokenCount))
                     }
                 } catch (e: Exception) {
@@ -128,6 +137,8 @@ class LlamaHelper(
         val startTime = System.currentTimeMillis()
         tokenCount = 0
         allText = ""
+        predictStartMs = startTime
+        lastPrefillMs = 0L
 
         val params = mutableMapOf<String, Any>(
             "prompt" to prompt,
@@ -166,6 +177,8 @@ class LlamaHelper(
                 params = params
             )
             val duration = System.currentTimeMillis() - startTime
+            lastGenMs = (duration - lastPrefillMs).coerceAtLeast(0L)
+            lastTokens = tokenCount
             sharedFlow.tryEmit(LLMEvent.Done(allText, tokenCount, duration))
         }
     }
