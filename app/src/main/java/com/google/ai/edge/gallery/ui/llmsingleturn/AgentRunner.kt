@@ -13,18 +13,18 @@ import kotlinx.coroutines.launch
  * (list / read / write / edit / delete files), the app runs them, sends the results back, and the
  * loop continues until the model answers without a tool call.
  */
-object AgentRunner {
-  private const val MAX_STEPS = 6
-  private const val MAX_SESSION_MESSAGES = 6
+/** What the agent loop needs to know about a "space": its tools, its prompt and its executor. */
+data class AgentProfile(
+  val id: String,
+  val specs: List<AgentToolSpec>,
+  val instructions: (openedFileName: String?) -> String,
+  val execute: (context: Context, call: AgentToolCall, readCap: Int) -> ToolOutcome,
+  /** If the user's request matches this and the model called no tool, a note is appended. */
+  val noToolHint: Regex? = null,
+)
 
-  // Past exchanges (compact), per model.
-  private val sessions = HashMap<String, MutableList<AgentMsg>>()
-
-  fun clearSession(model: Model) {
-    synchronized(sessions) { sessions.remove(model.name) }
-  }
-
-  private fun instructions(openedFileName: String?): String {
+object AgentProfiles {
+  private fun codeInstructions(openedFileName: String?): String {
     val opened =
       if (openedFileName != null) {
         " Fichier ouvert dans l'éditeur : « $openedFileName » (son contenu est dans le message)."
@@ -37,6 +37,30 @@ object AgentRunner {
       "déjà dans le message. Les lignes lues sont préfixées par leur numéro et « | » : ne " +
       "recopie jamais ces préfixes. Pour changer quelques lignes, utilise replace_lines plutôt " +
       "que de réécrire tout le fichier. Quand tu as fini, réponds en 2 phrases au maximum.$opened"
+  }
+
+  val CODE =
+    AgentProfile(
+      id = "code",
+      specs = CodeTools.specs,
+      instructions = { name -> codeInstructions(name) },
+      execute = { context, call, cap -> CodeTools.execute(context, call, cap) },
+      noToolHint =
+        Regex("cré|cree|supprim|modifi|remplac|renomm|écri|ecri|ajout|efface", RegexOption.IGNORE_CASE),
+    )
+}
+
+object AgentRunner {
+  private const val MAX_STEPS = 6
+  private const val MAX_SESSION_MESSAGES = 6
+
+  // Past exchanges (compact), per model.
+  private val sessions = HashMap<String, MutableList<AgentMsg>>()
+
+  private fun sessionKey(model: Model, profile: AgentProfile) = model.name + "|" + profile.id
+
+  fun clearSession(model: Model) {
+    synchronized(sessions) { sessions.keys.removeAll { it.startsWith(model.name + "|") } }
   }
 
   /** Manual mode: one generation, no tools. */
@@ -69,10 +93,12 @@ object AgentRunner {
     instruction: String,
     openedFileName: String?,
     promptBudget: Int,
+    profile: AgentProfile = AgentProfiles.CODE,
   ) {
     viewModel.clearResponse(model)
-    val system = ToolCalling.systemPrompt(CodeTools.specs, instructions(openedFileName))
-    val past = synchronized(sessions) { sessions[model.name]?.toList() ?: emptyList() }
+    val system = ToolCalling.systemPrompt(profile.specs, profile.instructions(openedFileName))
+    val past =
+      synchronized(sessions) { sessions[sessionKey(model, profile)]?.toList() ?: emptyList() }
     val messages = ArrayList<AgentMsg>(past)
     messages.add(AgentMsg("user", userMessage))
     step(
@@ -88,6 +114,7 @@ object AgentRunner {
       promptBudget = promptBudget,
       stepNo = 0,
       displayPrefix = "",
+      profile = profile,
     )
   }
 
@@ -128,6 +155,7 @@ object AgentRunner {
     promptBudget: Int,
     stepNo: Int,
     displayPrefix: String,
+    profile: AgentProfile,
   ) {
     val prompt = ToolCalling.buildPrompt(system, fit(system, messages, pastCount, promptBudget))
     viewModel.generateResponse(
@@ -155,6 +183,7 @@ object AgentRunner {
             stepNo = stepNo,
             displayPrefix = displayPrefix,
             response = response,
+            profile = profile,
           )
         }
         true
@@ -176,14 +205,22 @@ object AgentRunner {
     stepNo: Int,
     displayPrefix: String,
     response: String,
+    profile: AgentProfile,
   ) {
     val calls = ToolCalling.parseToolCalls(response)
     val visible = ToolCalling.stripToolCalls(response)
 
     if (calls.isEmpty()) {
-      // Final answer.
-      setDisplay(viewModel, model, displayPrefix + visible)
-      saveSession(model, instruction, displayPrefix, visible)
+      // Final answer. If the user asked for an action and the model used no tool at all, say so.
+      val hint = profile.noToolHint
+      val noToolNote =
+        if (stepNo == 0 && hint != null && hint.containsMatchIn(instruction)) {
+          "\n\nℹ Aucun outil n'a été exécuté : rien n'a été lu, modifié ni analysé par l'app."
+        } else {
+          ""
+        }
+      setDisplay(viewModel, model, displayPrefix + visible + noToolNote)
+      saveSession(model, profile, instruction, displayPrefix, visible)
       viewModel.setInProgress(false)
       return
     }
@@ -193,7 +230,7 @@ object AgentRunner {
     val used = calls.take(4)
     val cap = ((promptBudget - 3000) / (used.size * 2)).coerceIn(1500, 6000)
     for (c in used) {
-      val outcome = CodeTools.execute(context, c, cap)
+      val outcome = profile.execute(context, c, cap)
       log.append(outcome.log).append("\n")
       results.add(outcome.result)
     }
@@ -213,7 +250,7 @@ object AgentRunner {
       if (stillRunning) {
         setDisplay(viewModel, model, newDisplay + "\n\n(Limite de $MAX_STEPS étapes atteinte.)")
       }
-      saveSession(model, instruction, newDisplay, "")
+      saveSession(model, profile, instruction, newDisplay, "")
       viewModel.setInProgress(false)
       return
     }
@@ -232,14 +269,21 @@ object AgentRunner {
       promptBudget = promptBudget,
       stepNo = stepNo + 1,
       displayPrefix = newDisplay + "\n\n",
+      profile = profile,
     )
   }
 
   // Keeps a compact record of the exchange for the next requests.
-  private fun saveSession(model: Model, instruction: String, actions: String, answer: String) {
+  private fun saveSession(
+    model: Model,
+    profile: AgentProfile,
+    instruction: String,
+    actions: String,
+    answer: String,
+  ) {
     val summary = (actions.trim() + "\n" + answer.trim()).trim().take(800)
     synchronized(sessions) {
-      val list = sessions.getOrPut(model.name) { ArrayList() }
+      val list = sessions.getOrPut(sessionKey(model, profile)) { ArrayList() }
       list.add(AgentMsg("user", instruction.take(400)))
       list.add(AgentMsg("assistant", summary))
       while (list.size > MAX_SESSION_MESSAGES) list.removeAt(0)
