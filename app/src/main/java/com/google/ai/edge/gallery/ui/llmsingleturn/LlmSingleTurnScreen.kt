@@ -64,6 +64,8 @@ import com.google.ai.edge.gallery.data.ModelDownloadStatus
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatus
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
+import com.google.ai.edge.gallery.ui.security.SecurityAgent
+import com.google.ai.edge.gallery.ui.security.SecurityBar
 import com.google.ai.edge.gallery.ui.theme.customColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -80,9 +82,13 @@ fun LlmSingleTurnScreen(
   navigateUp: () -> Unit,
   modifier: Modifier = Modifier,
   onMenuClicked: (() -> Unit)? = null,
+  taskId: String = BuiltInTaskId.LLM_PROMPT_LAB,
   viewModel: LlmSingleTurnViewModel = hiltViewModel(),
 ) {
-  val task = modelManagerViewModel.getTaskById(id = BuiltInTaskId.LLM_PROMPT_LAB)!!
+  val task = modelManagerViewModel.getTaskById(id = taskId)!!
+  val securityMode = taskId == BuiltInTaskId.LLM_SECURITY
+  // The Sécurité space always runs the agent (tools), never the manual mode.
+  LaunchedEffect(securityMode) { if (securityMode) AgentSettings.autoMode = true }
   val modelManagerUiState by modelManagerViewModel.uiState.collectAsState()
   val uiState by viewModel.uiState.collectAsState()
   val selectedModel = modelManagerUiState.selectedModel
@@ -185,6 +191,9 @@ fun LlmSingleTurnScreen(
           )
           .imePadding()
     ) {
+      if (securityMode) {
+        SecurityBar()
+      }
       FileExplorerPanel(
         modifier = Modifier.fillMaxWidth(),
         onFileClicked = { file ->
@@ -206,6 +215,7 @@ fun LlmSingleTurnScreen(
           showErrorDialog = showErrorDialog,
           onDismissErrorDialog = { showErrorDialog = false },
           innerPadding = innerPadding,
+          securityMode = securityMode,
           openedFile = openedFile,
           onOpenedFileCleared = { openedFile = null },
           onFileContentSaved = { newContent -> openedFile = openedFile?.copy(content = newContent) },
@@ -226,6 +236,7 @@ private fun CodeModeMainContent(
   showErrorDialog: Boolean,
   onDismissErrorDialog: () -> Unit,
   innerPadding: PaddingValues,
+  securityMode: Boolean = false,
   openedFile: OpenedFile? = null,
   onOpenedFileCleared: () -> Unit = {},
   onFileContentSaved: (String) -> Unit = {},
@@ -290,7 +301,7 @@ private fun CodeModeMainContent(
             viewModel.setPreparing(true)
             scope.launch(Dispatchers.IO) {
               val fence = "`".repeat(3)
-              val agent = AgentSettings.autoMode
+              val agent = securityMode || AgentSettings.autoMode
               val openedNote =
                 if (openedFile != null) {
                   val emptyNote = if (openedFile.content.isBlank()) " (actuellement vide)" else ""
@@ -350,6 +361,7 @@ private fun CodeModeMainContent(
                   instruction = instruction,
                   openedFileName = openedFile?.fileName,
                   promptBudget = promptBudget,
+                  profile = if (securityMode) SecurityAgent.profile else AgentProfiles.CODE,
                 )
               } else {
                 val finalInput =
