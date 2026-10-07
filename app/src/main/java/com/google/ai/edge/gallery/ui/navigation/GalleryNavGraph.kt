@@ -55,6 +55,7 @@ import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Mms
 import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Settings
@@ -414,6 +415,31 @@ fun GalleryNavHost(
                     )
                 ),
             )
+          }
+          Spacer(modifier = Modifier.height(16.dp))
+          Row(modifier = Modifier.fillMaxWidth()) {
+            SquareDrawerItem(
+              label = "Sécurité",
+              description = "Analyse de code avec SecurCode",
+              icon = Icons.Outlined.Shield,
+              onClick = {
+                scope.launch { drawerState.close() }
+                modelManagerUiState.tasks.find { it.id == BuiltInTaskId.LLM_SECURITY }?.let {
+                  navigateToTaskScreen(it)
+                }
+              },
+              modifier = Modifier.weight(1f),
+              iconBrush =
+                linearGradient(
+                  colors =
+                    listOf(
+                      MaterialTheme.customColors.taskBgGradientColors[1][0],
+                      MaterialTheme.customColors.taskBgGradientColors[1][1],
+                    )
+                ),
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.weight(1f))
           }
         }
       }
