@@ -31,6 +31,10 @@ object SecurCodeClient {
   private const val MAX_DEPTH = 10
   private const val PAGE_SIZE = 10
 
+  // true: the app shows the report itself and ends the turn (fast, no hallucination).
+  // false: the report goes back to the model, which writes its own summary (slower).
+  private const val DIRECT_REPORT = true
+
   private val SKIP_PARTS = listOf("node_modules/", ".git/", "dist/")
   private val BINARY_EXT =
     listOf(
@@ -50,6 +54,10 @@ object SecurCodeClient {
   @Volatile private var cache: Cached? = null
 
   private fun fail(message: String, log: String) = ToolOutcome("Erreur : $message", "✗ $log")
+
+  /** Error the model cannot fix itself: shown to the user as is, without another generation. */
+  private fun failEnd(message: String, userLog: String) =
+    ToolOutcome("Erreur : $message", userLog, endTurn = true)
 
   private fun addFile(input: ScanInput, path: String, bytes: ByteArray) {
     if (input.files.size >= MAX_FILES || input.totalBytes + bytes.size > MAX_TOTAL_BYTES) {
@@ -177,37 +185,54 @@ object SecurCodeClient {
   private fun pageOutcome(c: Cached, page: Int): ToolOutcome {
     val from = (page - 1) * PAGE_SIZE
     if (from >= c.vulns.size) {
-      return ToolOutcome(
-        "Il n'y a plus de failles à afficher (total : ${c.vulns.size}).",
-        "🛡 SecurCode : fin de la liste",
-      )
+      val text = "Il n'y a plus de failles à afficher (total : ${c.vulns.size})."
+      return ToolOutcome(text, "🛡 SecurCode : $text", endTurn = DIRECT_REPORT)
     }
     val items = c.vulns.subList(from, minOf(from + PAGE_SIZE, c.vulns.size))
-    val sb = StringBuilder()
-    sb.append(c.header).append("\n\n")
-    sb.append("Failles ${from + 1} à ${from + items.size} sur ${c.vulns.size} :\n")
+    val body = StringBuilder()
     items.forEachIndexed { i, v ->
       val category = v.optString("category", "")
       val verify = if (category == "XSS" || category == "AI_DEEP") ", à vérifier" else ""
       val line = v.optInt("lineNumber", 0)
       val location = v.optString("filePath", "?") + if (line > 0) ":$line" else ""
-      sb.append("${from + i + 1}. [${v.optString("severity", "?")}] ")
-      sb.append(v.optString("title", "(sans titre)")).append(" — ").append(location)
-      sb.append(" ($category$verify)")
+      body.append("${from + i + 1}. [${v.optString("severity", "?")}] ")
+      body.append(v.optString("title", "(sans titre)")).append(" — ").append(location)
+      body.append(" ($category$verify)")
       val masked = v.optString("matchedTextMasked", "")
-      if (masked.isNotEmpty()) sb.append(" valeur masquée : ").append(masked)
+      if (masked.isNotEmpty()) body.append(" valeur masquée : ").append(masked)
       val rec = v.optString("recommendation", "")
-      if (rec.isNotEmpty()) sb.append("\n   Conseil : ").append(rec.take(180))
-      sb.append("\n")
+      if (rec.isNotEmpty()) body.append("\n   Conseil : ").append(rec.take(180))
+      body.append("\n")
     }
     val remaining = c.vulns.size - (from + items.size)
+    val range = "Failles ${from + 1} à ${from + items.size} sur ${c.vulns.size} :\n"
+    val caveat = "Les failles XSS et AI_DEEP sont des pistes à vérifier, pas des certitudes."
+
+    // Text for the model.
+    val forModel = StringBuilder()
+    forModel.append(c.header).append("\n\n").append(range).append(body)
     if (remaining > 0) {
-      sb.append("\nIl reste $remaining failles : rappelle securcode_scan avec la même cible et page=")
-      sb.append(page + 1).append(" (sans refaire de scan).")
+      forModel.append("\nIl reste $remaining failles : rappelle securcode_scan avec la même cible et page=")
+      forModel.append(page + 1).append(" (sans refaire de scan).")
     }
-    sb.append("\nLes failles XSS et AI_DEEP sont des pistes à vérifier, pas des certitudes.")
-    val log = "🛡 SecurCode : failles ${from + 1}–${from + items.size} / ${c.vulns.size}"
-    return ToolOutcome(sb.toString(), log)
+    forModel.append("\n").append(caveat)
+
+    // Text for the user: the app's own, exact rendering of the report.
+    val forUser = StringBuilder()
+    forUser.append("🛡 ").append(c.header).append("\n\n")
+    if (c.vulns.isEmpty()) {
+      forUser.append("Aucune faille détectée.")
+    } else {
+      forUser.append(range).append(body)
+      if (remaining > 0) {
+        forUser.append("\nIl reste $remaining failles : écris « page ${page + 1} » pour la suite.")
+      }
+      forUser.append("\n").append(caveat)
+    }
+    val log =
+      if (DIRECT_REPORT) forUser.toString().trimEnd()
+      else "🛡 SecurCode : failles ${from + 1}–${from + items.size} / ${c.vulns.size}"
+    return ToolOutcome(forModel.toString(), log, endTurn = DIRECT_REPORT)
   }
 
   fun scan(context: Context, args: JSONObject): ToolOutcome {
@@ -217,9 +242,9 @@ object SecurCodeClient {
       FileActions.normalizeDir(raw) ?: return fail("chemin invalide : $raw", "securcode_scan : chemin invalide")
     val root =
       ProjectFolderManager.getSavedProjectFolder(context)
-        ?: return fail(
+        ?: return failEnd(
           "aucun dossier de projet n'est choisi. L'utilisateur doit en choisir un.",
-          "securcode_scan : aucun dossier de projet",
+          "✗ Aucun dossier de projet choisi : utilise « Select » en haut de l'écran.",
         )
     val projectId = root.uri.toString()
     val cacheKey = "$projectId|$rel"
@@ -240,16 +265,16 @@ object SecurCodeClient {
     val key = SecurCodeSettings.getApiKey(context)
     if (key == null) {
       SecurCodeSettings.keyDialogRequest.value = true
-      return fail(
-        "aucune clé API SecurCode n'est enregistrée. Une fenêtre s'ouvre pour que l'utilisateur la saisisse ; dis-lui de relancer sa demande ensuite.",
-        "🔑 Clé API SecurCode requise",
+      return failEnd(
+        "aucune clé API SecurCode n'est enregistrée.",
+        "🔑 Clé API SecurCode requise : saisis-la dans la fenêtre, puis renvoie ta demande.",
       )
     }
     if (!SecurCodeSettings.isConsented(context, projectId)) {
       SecurCodeSettings.pendingConsent.value = ConsentRequest(projectId, root.name ?: "projet")
-      return fail(
-        "l'envoi de ce projet à SecurCode n'est pas autorisé. Une fenêtre de confirmation s'affiche ; dis à l'utilisateur de répondre puis de relancer sa demande. Ne prétends pas avoir analysé quoi que ce soit.",
-        "🔒 Autorisation d'envoi requise",
+      return failEnd(
+        "l'envoi de ce projet à SecurCode n'est pas autorisé.",
+        "🔒 Autorisation d'envoi requise : réponds dans la fenêtre, puis renvoie ta demande.",
       )
     }
 
@@ -302,9 +327,9 @@ object SecurCodeClient {
       val stream = if (code in 200..299) conn.inputStream else conn.errorStream
       text = stream?.use { it.bufferedReader().readText() } ?: ""
     } catch (e: IOException) {
-      return fail(
+      return failEnd(
         "réseau indisponible ou délai dépassé (${e.message}).",
-        "✗ SecurCode : réseau indisponible",
+        "✗ SecurCode injoignable (réseau ou délai dépassé) : vérifie ta connexion et réessaie.",
       )
     } finally {
       conn.disconnect()
@@ -320,15 +345,15 @@ object SecurCodeClient {
       return when (code) {
         401 -> {
           SecurCodeSettings.keyDialogRequest.value = true
-          fail(
-            "clé API SecurCode invalide ou révoquée. Une fenêtre s'ouvre pour la remplacer.",
-            "✗ SecurCode : clé invalide ou révoquée",
+          failEnd(
+            "clé API SecurCode invalide ou révoquée.",
+            "✗ Clé SecurCode invalide ou révoquée : remplace-la dans la fenêtre, puis renvoie ta demande.",
           )
         }
         429 ->
-          fail(
-            "quota quotidien SecurCode atteint (réinitialisé à minuit UTC). Ne relance pas de scan aujourd'hui.",
-            "✗ SecurCode : quota quotidien atteint",
+          failEnd(
+            "quota quotidien SecurCode atteint (réinitialisé à minuit UTC).",
+            "✗ Quota quotidien SecurCode atteint (20 analyses par jour) : réessaie demain.",
           )
         400 -> fail("requête refusée par SecurCode : $apiMessage", "✗ SecurCode : requête refusée")
         else -> fail("erreur SecurCode ($code) $apiMessage".trim(), "✗ SecurCode : erreur $code")
@@ -368,6 +393,7 @@ object SecurCodeClient {
     cache = c
 
     val outcome = pageOutcome(c, 1)
+    if (DIRECT_REPORT) return outcome
     val log =
       "🛡 SecurCode : score ${if (score >= 0) score else "?"}/100 — $counts" +
         (if (quotaText.isNotEmpty()) " ($quotaText)" else "") +
