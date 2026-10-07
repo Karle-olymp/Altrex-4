@@ -184,6 +184,12 @@ object SecurCodeClient {
 
   private fun pageOutcome(c: Cached, page: Int): ToolOutcome {
     val from = (page - 1) * PAGE_SIZE
+    // A clean scan: show the score and say so (this is not "no more pages").
+    if (c.vulns.isEmpty()) {
+      val clean = c.header + "\n\nAucune faille détectée."
+      val log = if (DIRECT_REPORT) "🛡 $clean" else "🛡 SecurCode : aucune faille détectée"
+      return ToolOutcome(clean, log, endTurn = DIRECT_REPORT)
+    }
     if (from >= c.vulns.size) {
       val text = "Il n'y a plus de failles à afficher (total : ${c.vulns.size})."
       return ToolOutcome(text, "🛡 SecurCode : $text", endTurn = DIRECT_REPORT)
@@ -220,15 +226,11 @@ object SecurCodeClient {
     // Text for the user: the app's own, exact rendering of the report.
     val forUser = StringBuilder()
     forUser.append("🛡 ").append(c.header).append("\n\n")
-    if (c.vulns.isEmpty()) {
-      forUser.append("Aucune faille détectée.")
-    } else {
-      forUser.append(range).append(body)
-      if (remaining > 0) {
-        forUser.append("\nIl reste $remaining failles : écris « page ${page + 1} » pour la suite.")
-      }
-      forUser.append("\n").append(caveat)
+    forUser.append(range).append(body)
+    if (remaining > 0) {
+      forUser.append("\nIl reste $remaining failles : écris « page ${page + 1} » pour la suite.")
     }
+    forUser.append("\n").append(caveat)
     val log =
       if (DIRECT_REPORT) forUser.toString().trimEnd()
       else "🛡 SecurCode : failles ${from + 1}–${from + items.size} / ${c.vulns.size}"
