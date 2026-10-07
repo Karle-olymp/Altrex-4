@@ -1,8 +1,10 @@
 package com.google.ai.edge.gallery.ui.llmsingleturn
 
 import android.content.Context
+import android.util.Log
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.Task
+import com.google.ai.edge.gallery.runtime.LlamaCppModelInstance
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -96,7 +98,9 @@ object AgentRunner {
     profile: AgentProfile = AgentProfiles.CODE,
   ) {
     viewModel.clearResponse(model)
-    val system = ToolCalling.systemPrompt(profile.specs, profile.instructions(openedFileName))
+    // The system prompt must stay identical between requests so that the engine can reuse its
+    // cached prefix: the opened file is announced in the user message, never here.
+    val system = ToolCalling.systemPrompt(profile.specs, profile.instructions(null))
     val past =
       synchronized(sessions) { sessions[sessionKey(model, profile)]?.toList() ?: emptyList() }
     val messages = ArrayList<AgentMsg>(past)
@@ -219,7 +223,7 @@ object AgentRunner {
         } else {
           ""
         }
-      setDisplay(viewModel, model, displayPrefix + visible + noToolNote)
+      setDisplay(viewModel, model, displayPrefix + visible + noToolNote + timingNote(model))
       saveSession(model, profile, instruction, displayPrefix, visible)
       viewModel.setInProgress(false)
       return
@@ -227,12 +231,14 @@ object AgentRunner {
 
     val log = StringBuilder()
     val results = ArrayList<String>()
+    var endTurn = false
     val used = calls.take(4)
     val cap = ((promptBudget - 3000) / (used.size * 2)).coerceIn(1500, 6000)
     for (c in used) {
       val outcome = profile.execute(context, c, cap)
       log.append(outcome.log).append("\n")
       results.add(outcome.result)
+      if (outcome.endTurn) endTurn = true
     }
     messages.add(AgentMsg("assistant", response.trim()))
     messages.add(ToolCalling.toolResponseMessage(results))
@@ -243,6 +249,13 @@ object AgentRunner {
         if (visible.isNotEmpty()) append(visible).append("\n\n")
         append(log.toString().trimEnd())
       }
+    if (endTurn) {
+      // The app has the full answer (error, user action needed, report): no second generation.
+      setDisplay(viewModel, model, newDisplay + timingNote(model))
+      saveSession(model, profile, instruction, newDisplay, "")
+      viewModel.setInProgress(false)
+      return
+    }
     setDisplay(viewModel, model, newDisplay)
 
     val stillRunning = viewModel.uiState.value.inProgress
@@ -274,6 +287,19 @@ object AgentRunner {
   }
 
   // Keeps a compact record of the exchange for the next requests.
+  /** Where the time went on the last generation (llama.cpp only), for the user and for logcat. */
+  private fun timingNote(model: Model): String {
+    val helper = (model.instance as? LlamaCppModelInstance)?.llamaHelper ?: return ""
+    val tokens = helper.lastTokens
+    if (tokens <= 0) return ""
+    val prefillS = helper.lastPrefillMs / 1000f
+    val genS = helper.lastGenMs / 1000f
+    val rate = if (helper.lastGenMs > 0) tokens * 1000f / helper.lastGenMs else 0f
+    Log.i("AgentRunner", "timing: prefill=${helper.lastPrefillMs}ms gen=$tokens tokens in ${helper.lastGenMs}ms")
+    return "\n\n⏱ " + "%.1f".format(prefillS) + " s avant le 1er mot · $tokens tokens en " +
+      "%.1f".format(genS) + " s (" + "%.1f".format(rate) + "/s)"
+  }
+
   private fun saveSession(
     model: Model,
     profile: AgentProfile,
