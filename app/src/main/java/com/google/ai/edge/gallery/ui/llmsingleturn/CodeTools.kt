@@ -2,8 +2,11 @@ package com.google.ai.edge.gallery.ui.llmsingleturn
 
 import android.content.Context
 
-/** Result of a tool: text sent back to the model + a short line shown to the user. */
-data class ToolOutcome(val result: String, val log: String)
+/**
+ * Result of a tool: text sent back to the model + a line shown to the user. When [endTurn] is true
+ * the agent stops there and shows [log] as the answer (no further model generation needed).
+ */
+data class ToolOutcome(val result: String, val log: String, val endTurn: Boolean = false)
 
 /** Project file tools exposed to the model (list, read, write, edit lines, delete). */
 object CodeTools {
