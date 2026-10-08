@@ -110,6 +110,7 @@ import com.google.ai.edge.gallery.ui.common.chat.ModelDownloadStatusInfoPanel
 import com.google.ai.edge.gallery.ui.home.HomeScreen
 import com.google.ai.edge.gallery.ui.home.PromoScreenGm4
 import com.google.ai.edge.gallery.ui.home.SettingsDialog
+import com.google.ai.edge.gallery.ui.home.AltrexDrawer
 import com.google.ai.edge.gallery.ui.home.SquareDrawerItem
 import com.google.ai.edge.gallery.ui.llamacpp.LlamaCppTestScreen
 import com.google.ai.edge.gallery.ui.modelmanager.GlobalModelManager
@@ -239,210 +240,24 @@ fun GalleryNavHost(
   ModalNavigationDrawer(
     drawerState = drawerState,
     drawerContent = {
-      ModalDrawerSheet {
-        Column(modifier = Modifier.padding(16.dp)) {
-          Row(modifier = Modifier.fillMaxWidth()) {
-            SquareDrawerItem(
-              label = stringResource(R.string.drawer_settings_label),
-              description = stringResource(R.string.drawer_settings_description),
-              icon = Icons.Rounded.Settings,
-              onClick = {
-                showSettingsDialog = true
-                scope.launch { drawerState.close() }
-              },
-              modifier = Modifier.weight(1f),
-              iconBrush =
-                linearGradient(
-                  colors =
-                    listOf(
-                      MaterialTheme.customColors.taskBgGradientColors[2][0],
-                      MaterialTheme.customColors.taskBgGradientColors[2][1],
-                    )
-                ),
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            SquareDrawerItem(
-              label = stringResource(R.string.drawer_models_label),
-              description = stringResource(R.string.drawer_models_description),
-              icon = Icons.AutoMirrored.Rounded.ListAlt,
-              onClick = {
-                scope.launch { drawerState.close() }
-                scope.launch {
-                  delay(50)
-                  navController.navigate(ROUTE_MODEL_MANAGER)
-                }
-              },
-              modifier = Modifier.weight(1f),
-              iconBrush =
-                linearGradient(
-                  colors =
-                    listOf(
-                      MaterialTheme.customColors.taskBgGradientColors[1][0],
-                      MaterialTheme.customColors.taskBgGradientColors[1][1],
-                    )
-                ),
-            )
+      AltrexDrawer(
+        isOpen = drawerState.targetValue == DrawerValue.Open,
+        onOpenTask = { taskId ->
+          scope.launch { drawerState.close() }
+          modelManagerUiState.tasks.find { it.id == taskId }?.let { navigateToTaskScreen(it) }
+        },
+        onOpenModels = {
+          scope.launch { drawerState.close() }
+          scope.launch {
+            delay(50)
+            navController.navigate(ROUTE_MODEL_MANAGER)
           }
-          Spacer(modifier = Modifier.height(16.dp))
-          Row(modifier = Modifier.fillMaxWidth()) {
-            SquareDrawerItem(
-              label = "llama.cpp Test",
-              description = "Native GGUF engine",
-              icon = Icons.Rounded.Code,
-              onClick = {
-                scope.launch { drawerState.close() }
-                scope.launch {
-                  delay(50)
-                  navController.navigate(ROUTE_LLAMA_CPP_TEST)
-                }
-              },
-              modifier = Modifier.weight(1f),
-              iconBrush =
-                linearGradient(
-                  colors =
-                    listOf(
-                      MaterialTheme.customColors.taskBgGradientColors[0][0],
-                      MaterialTheme.customColors.taskBgGradientColors[0][1],
-                    )
-                ),
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            SquareDrawerItem(
-              label = "AI Chat",
-              description = "Chat with an on-device LLM",
-              icon = Icons.Outlined.Forum,
-              onClick = {
-                scope.launch { drawerState.close() }
-                modelManagerUiState.tasks.find { it.id == BuiltInTaskId.LLM_CHAT }?.let {
-                  navigateToTaskScreen(it)
-                }
-              },
-              modifier = Modifier.weight(1f),
-              iconBrush =
-                linearGradient(
-                  colors =
-                    listOf(
-                      MaterialTheme.customColors.taskBgGradientColors[3][0],
-                      MaterialTheme.customColors.taskBgGradientColors[3][1],
-                    )
-                ),
-            )
-          }
-          Spacer(modifier = Modifier.height(16.dp))
-          Row(modifier = Modifier.fillMaxWidth()) {
-            SquareDrawerItem(
-              label = "Ask Image",
-              description = "Ask questions about images",
-              icon = Icons.Outlined.Mms,
-              onClick = {
-                scope.launch { drawerState.close() }
-                modelManagerUiState.tasks.find { it.id == BuiltInTaskId.LLM_ASK_IMAGE }?.let {
-                  navigateToTaskScreen(it)
-                }
-              },
-              modifier = Modifier.weight(1f),
-              iconBrush =
-                linearGradient(
-                  colors =
-                    listOf(
-                      MaterialTheme.customColors.taskBgGradientColors[0][0],
-                      MaterialTheme.customColors.taskBgGradientColors[0][1],
-                    )
-                ),
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            SquareDrawerItem(
-              label = "Audio Scribe",
-              description = "Transcribe and translate audio",
-              icon = Icons.Outlined.Mic,
-              onClick = {
-                scope.launch { drawerState.close() }
-                modelManagerUiState.tasks.find { it.id == BuiltInTaskId.LLM_ASK_AUDIO }?.let {
-                  navigateToTaskScreen(it)
-                }
-              },
-              modifier = Modifier.weight(1f),
-              iconBrush =
-                linearGradient(
-                  colors =
-                    listOf(
-                      MaterialTheme.customColors.taskBgGradientColors[1][0],
-                      MaterialTheme.customColors.taskBgGradientColors[1][1],
-                    )
-                ),
-            )
-          }
-          Spacer(modifier = Modifier.height(16.dp))
-          Row(modifier = Modifier.fillMaxWidth()) {
-            SquareDrawerItem(
-              label = "Agent Skills",
-              description = "Complete agentic tasks with chat",
-              icon = Icons.Rounded.Flag,
-              onClick = {
-                scope.launch { drawerState.close() }
-                modelManagerUiState.tasks.find { it.id == BuiltInTaskId.LLM_AGENT_CHAT }?.let {
-                  navigateToTaskScreen(it)
-                }
-              },
-              modifier = Modifier.weight(1f),
-              iconBrush =
-                linearGradient(
-                  colors =
-                    listOf(
-                      MaterialTheme.customColors.taskBgGradientColors[3][0],
-                      MaterialTheme.customColors.taskBgGradientColors[3][1],
-                    )
-                ),
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            SquareDrawerItem(
-              label = "Code Mode",
-              description = "Generate, explain, and rewrite code snippets",
-              icon = Icons.Outlined.Code,
-              onClick = {
-                scope.launch { drawerState.close() }
-                modelManagerUiState.tasks.find { it.id == BuiltInTaskId.LLM_PROMPT_LAB }?.let {
-                  navigateToTaskScreen(it)
-                }
-              },
-              modifier = Modifier.weight(1f),
-              iconBrush =
-                linearGradient(
-                  colors =
-                    listOf(
-                      MaterialTheme.customColors.taskBgGradientColors[2][0],
-                      MaterialTheme.customColors.taskBgGradientColors[2][1],
-                    )
-                ),
-            )
-          }
-          Spacer(modifier = Modifier.height(16.dp))
-          Row(modifier = Modifier.fillMaxWidth()) {
-            SquareDrawerItem(
-              label = "Sécurité",
-              description = "Analyse de code avec SecurCode",
-              icon = Icons.Outlined.Shield,
-              onClick = {
-                scope.launch { drawerState.close() }
-                modelManagerUiState.tasks.find { it.id == BuiltInTaskId.LLM_SECURITY }?.let {
-                  navigateToTaskScreen(it)
-                }
-              },
-              modifier = Modifier.weight(1f),
-              iconBrush =
-                linearGradient(
-                  colors =
-                    listOf(
-                      MaterialTheme.customColors.taskBgGradientColors[1][0],
-                      MaterialTheme.customColors.taskBgGradientColors[1][1],
-                    )
-                ),
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Spacer(modifier = Modifier.weight(1f))
-          }
-        }
-      }
+        },
+        onOpenSettings = {
+          showSettingsDialog = true
+          scope.launch { drawerState.close() }
+        },
+      )
     },
     gesturesEnabled = drawerState.isOpen,
   ) {
