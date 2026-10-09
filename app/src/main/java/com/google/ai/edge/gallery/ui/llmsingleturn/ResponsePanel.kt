@@ -177,7 +177,7 @@ fun ResponsePanel(
             modifier = Modifier.weight(1f),
           )
           SegmentedTabButton(
-            label = "Response",
+            label = "Réponse",
             selected = selectedOptionIndex == 0,
             onClick = { selectedOptionIndex = 0 },
             modifier = Modifier.weight(1f),
