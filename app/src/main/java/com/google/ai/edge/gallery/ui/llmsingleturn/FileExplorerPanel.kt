@@ -95,7 +95,7 @@ fun FileExplorerPanel(modifier: Modifier = Modifier, onFileClicked: (DocumentFil
       Icon(imageVector = Icons.Outlined.Folder, contentDescription = null)
       Spacer(modifier = Modifier.width(8.dp))
       Text(
-        text = rootFolder?.name ?: "No project folder selected",
+        text = rootFolder?.name ?: "Aucun dossier de projet",
         style = MaterialTheme.typography.bodyMedium,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
@@ -112,7 +112,7 @@ fun FileExplorerPanel(modifier: Modifier = Modifier, onFileClicked: (DocumentFil
         }
       }
       TextButton(onClick = { folderPickerLauncher.launch(null) }) {
-        Text(if (rootFolder == null) "Select" else "Change")
+        Text(if (rootFolder == null) "Choisir" else "Changer")
       }
     }
     if (rootFolder != null && treeExpanded) {
