@@ -377,7 +377,9 @@ fun MessageInputText(
               modifier =
                 Modifier.padding(horizontal = 12.dp)
                   .padding(vertical = 8.dp)
-                  .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+                  .clip(RoundedCornerShape(24.dp))
+                  .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                  .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(24.dp))
             ) {
               // First row: text field for input.
               Row(
