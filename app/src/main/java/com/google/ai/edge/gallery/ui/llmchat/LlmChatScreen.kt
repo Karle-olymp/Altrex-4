@@ -75,7 +75,7 @@ fun LlmChatModeToggle(
     modifier =
       modifier
         .fillMaxWidth()
-        .padding(horizontal = 16.dp, vertical = 6.dp),
+        .padding(horizontal = 16.dp, vertical = 4.dp),
     horizontalArrangement = Arrangement.Center,
     verticalAlignment = Alignment.CenterVertically,
   ) {
@@ -84,13 +84,13 @@ fun LlmChatModeToggle(
         selected = selectedMode == ChatMode.GENERAL,
         onClick = { onModeSelected(ChatMode.GENERAL) },
         shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-        label = { Text("General Chat") },
+        label = { Text("Général") },
       )
       SegmentedButton(
         selected = selectedMode == ChatMode.CODE,
         onClick = { onModeSelected(ChatMode.CODE) },
         shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-        label = { Text("Code Mode") },
+        label = { Text("Code") },
       )
     }
   }
