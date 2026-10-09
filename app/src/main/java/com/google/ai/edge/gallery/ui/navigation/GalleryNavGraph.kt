@@ -93,6 +93,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.R
@@ -199,6 +200,15 @@ fun GalleryNavHost(
   // Close the menu when back button is pressed.
   BackHandler(drawerState.isOpen) { scope.launch { drawerState.close() } }
 
+  // For the side menu: which space is open, and which model is currently loaded in memory.
+  val navBackStackEntry by navController.currentBackStackEntryAsState()
+  val currentTaskId = navBackStackEntry?.arguments?.getString("taskId")
+  val loadedModelName =
+    modelManagerUiState.tasks
+      .flatMap { it.models }
+      .firstOrNull { it.instance != null }
+      ?.let { it.displayName.ifEmpty { it.name } }
+
   val navigateToTaskScreen: (Task) -> Unit = { task ->
     val defaultModel =
       task.models.firstOrNull { model ->
@@ -242,6 +252,8 @@ fun GalleryNavHost(
     drawerContent = {
       AltrexDrawer(
         isOpen = drawerState.targetValue == DrawerValue.Open,
+        currentTaskId = currentTaskId,
+        loadedModelName = loadedModelName,
         onOpenTask = { taskId ->
           scope.launch { drawerState.close() }
           modelManagerUiState.tasks.find { it.id == taskId }?.let { navigateToTaskScreen(it) }
