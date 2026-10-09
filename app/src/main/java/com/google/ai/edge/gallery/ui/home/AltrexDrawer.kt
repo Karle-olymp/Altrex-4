@@ -113,6 +113,8 @@ private val TOOLS =
 @Composable
 fun AltrexDrawer(
   isOpen: Boolean,
+  currentTaskId: String?,
+  loadedModelName: String?,
   onOpenTask: (String) -> Unit,
   onOpenModels: () -> Unit,
   onOpenSettings: () -> Unit,
@@ -124,36 +126,43 @@ fun AltrexDrawer(
     ) {
       StaggerIn(index = 0, trigger = isOpen) { DrawerHeader() }
 
-      StaggerIn(index = 1, trigger = isOpen) { SectionLabel("ESPACES") }
+      StaggerIn(index = 1, trigger = isOpen) { LoadedModelChip(loadedModelName) }
+
+      StaggerIn(index = 2, trigger = isOpen) { SectionLabel("ESPACES") }
       SPACES.forEachIndexed { i, entry ->
-        StaggerIn(index = 2 + i, trigger = isOpen) {
-          SpaceCard(entry = entry, onClick = { onOpenTask(entry.taskId) })
+        StaggerIn(index = 3 + i, trigger = isOpen) {
+          SpaceCard(
+            entry = entry,
+            active = entry.taskId == currentTaskId,
+            onClick = { onOpenTask(entry.taskId) },
+          )
         }
         Spacer(modifier = Modifier.height(10.dp))
       }
 
       Spacer(modifier = Modifier.height(8.dp))
-      StaggerIn(index = 5, trigger = isOpen) { SectionLabel("OUTILS") }
+      StaggerIn(index = 6, trigger = isOpen) { SectionLabel("OUTILS") }
       TOOLS.forEachIndexed { i, entry ->
-        StaggerIn(index = 6 + i, trigger = isOpen) {
+        StaggerIn(index = 7 + i, trigger = isOpen) {
           ToolRow(
             title = entry.title,
             subtitle = entry.subtitle,
             icon = entry.icon,
+            active = entry.taskId == currentTaskId,
             onClick = { onOpenTask(entry.taskId) },
           )
         }
       }
 
       Spacer(modifier = Modifier.height(12.dp))
-      StaggerIn(index = 9, trigger = isOpen) {
+      StaggerIn(index = 10, trigger = isOpen) {
         Box(
           modifier =
             Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outlineVariant)
         )
       }
       Spacer(modifier = Modifier.height(8.dp))
-      StaggerIn(index = 10, trigger = isOpen) {
+      StaggerIn(index = 11, trigger = isOpen) {
         ToolRow(
           title = "Modèles",
           subtitle = "Importer, choisir et gérer les modèles",
@@ -161,7 +170,7 @@ fun AltrexDrawer(
           onClick = onOpenModels,
         )
       }
-      StaggerIn(index = 11, trigger = isOpen) {
+      StaggerIn(index = 12, trigger = isOpen) {
         ToolRow(
           title = "Réglages",
           subtitle = "Thème et préférences de l'application",
@@ -253,7 +262,7 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun SpaceCard(entry: DrawerEntry, onClick: () -> Unit) {
+private fun SpaceCard(entry: DrawerEntry, active: Boolean, onClick: () -> Unit) {
   val interaction = remember { MutableInteractionSource() }
   val pressed by interaction.collectIsPressedAsState()
   val scale by
@@ -272,10 +281,15 @@ private fun SpaceCard(entry: DrawerEntry, onClick: () -> Unit) {
           scaleY = scale
         }
         .clip(RoundedCornerShape(20.dp))
-        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+        .background(
+          if (active) MaterialTheme.colorScheme.primaryContainer
+          else MaterialTheme.colorScheme.surfaceContainerLow
+        )
         .border(
-          width = 1.dp,
-          color = MaterialTheme.colorScheme.outlineVariant,
+          width = if (active) 1.5.dp else 1.dp,
+          color =
+            if (active) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.outlineVariant,
           shape = RoundedCornerShape(20.dp),
         )
         .clickable(interactionSource = interaction, indication = null, onClick = onClick)
@@ -311,7 +325,13 @@ private fun SpaceCard(entry: DrawerEntry, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ToolRow(title: String, subtitle: String, icon: ImageVector, onClick: () -> Unit) {
+private fun ToolRow(
+  title: String,
+  subtitle: String,
+  icon: ImageVector,
+  onClick: () -> Unit,
+  active: Boolean = false,
+) {
   val interaction = remember { MutableInteractionSource() }
   val pressed by interaction.collectIsPressedAsState()
   val scale by
@@ -330,6 +350,7 @@ private fun ToolRow(title: String, subtitle: String, icon: ImageVector, onClick:
           scaleY = scale
         }
         .clip(RoundedCornerShape(14.dp))
+        .background(if (active) MaterialTheme.colorScheme.surfaceContainer else Color.Transparent)
         .clickable(interactionSource = interaction, indication = null, onClick = onClick)
         .padding(horizontal = 6.dp, vertical = 10.dp),
   ) {
@@ -359,5 +380,35 @@ private fun ToolRow(title: String, subtitle: String, icon: ImageVector, onClick:
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
     }
+  }
+}
+
+@Composable
+private fun LoadedModelChip(modelName: String?) {
+  Row(
+    verticalAlignment = Alignment.CenterVertically,
+    modifier =
+      Modifier.padding(bottom = 18.dp)
+        .clip(RoundedCornerShape(50))
+        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(50))
+        .padding(horizontal = 12.dp, vertical = 7.dp),
+  ) {
+    Box(
+      modifier =
+        Modifier.size(8.dp)
+          .clip(RoundedCornerShape(50))
+          .background(
+            if (modelName != null) MaterialTheme.colorScheme.tertiary
+            else MaterialTheme.colorScheme.outline
+          )
+    )
+    Text(
+      if (modelName != null) "Modèle chargé : $modelName" else "Aucun modèle chargé",
+      style = MaterialTheme.typography.labelMedium,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier = Modifier.padding(start = 8.dp),
+      maxLines = 1,
+    )
   }
 }
