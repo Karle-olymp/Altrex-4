@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="cancel">Annuler</string>
+  <string name="clear">Effacer</string>
+  <string name="copy">Copier</string>
+  <string name="done">Terminé</string>
+  <string name="download">Télécharger</string>
+  <string name="import_action">Importer</string>
+  <string name="retry">Réessayer</string>
+  <string name="reset">Réinitialiser</string>
+  <string name="clear_all">Tout effacer</string>
+  <string name="clear_history_dialog_title">Effacer l\'historique ?</string>
+  <string name="clear_history_title">Effacer l\'historique ?</string>
+  <string name="drawer_settings_label">Réglages</string>
+  <string name="drawer_models_label">Modèles</string>
+  <string name="aichat_initializing_title">Initialisation du modèle</string>
+  <string name="aichat_initializing_content">Un instant, cela peut prendre jusqu\'à une minute</string>
+  <string name="model_is_initializing_msg">Initialisation du modèle…</string>
+  <string name="text_input_placeholder_llm_chat">Écris ton message…</string>
+  <string name="text_image_generation_text_field_placeholder">Écris ton message…</string>
+  <string name="prompt_lab_response_placeholder">La réponse apparaîtra ici</string>
+  <string name="prompt_lab_enter_content_placeholder">Saisis ton texte ou ton code</string>
+  <string name="cd_import_model_from_local_file_button">Importer un modèle depuis un fichier</string>
+  <string name="task_label_ai_chat">Discuter</string>
+  <string name="task_label_prompt_lab">Code</string>
+  <string name="aichat_emptystate_title">Discuter</string>
+  <string name="task_short_desc_ai_chat">Chat avec un modèle local</string>
+  <string name="conversation_reset_message">La conversation a été réinitialisée</string>
+  <string name="engin_reset_message">Moteur réinitialisé</string>
+</resources>
