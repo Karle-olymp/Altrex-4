@@ -613,7 +613,7 @@ fun ChatPanel(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
               ) {
-                RotationalLoader(size = 32.dp)
+                RotationalLoader(size = 72.dp)
                 Text(
                   stringResource(R.string.aichat_initializing_title),
                   style =
