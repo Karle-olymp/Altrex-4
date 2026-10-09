@@ -22,6 +22,15 @@ package com.google.ai.edge.gallery.ui.common
 // import com.google.ai.edge.gallery.ui.theme.GalleryTheme
 
 import android.content.Intent
+import com.google.ai.edge.gallery.data.ModelDownloadStatusType
+import com.google.ai.edge.gallery.data.ModelDownloadStatus
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.border
+import androidx.compose.animation.AnimatedVisibility
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResultLauncher
@@ -117,96 +126,80 @@ fun ModelPicker(
       }
     }
 
-  Column(modifier = Modifier.padding(bottom = 8.dp)) {
-    // Title
+  var showDownloadable by remember { mutableStateOf(false) }
+  // Reading task.updateTrigger keeps this list in sync when a model is imported while this
+  // picker is open (import mutates task.models and bumps this trigger).
+  task.updateTrigger.value
+  val onDevice =
+    task.models.filter {
+      it.imported ||
+        modelManagerUiState.modelDownloadStatus[it.name]?.status == ModelDownloadStatusType.SUCCEEDED
+    }
+  val downloadable = task.models.filter { m -> onDevice.none { it.name == m.name } }
+  val pickModel: (Model) -> Unit = { model ->
+    // Show memory warning before proceeding.
+    if (isMemoryLow(context = context, model = model)) {
+      modelToPick = model
+      showMemoryWarning = true
+    } else {
+      onModelSelected(model)
+    }
+  }
+
+  Column(modifier = Modifier.padding(bottom = 12.dp)) {
+    // Title.
     Row(
-      modifier = Modifier.padding(horizontal = 16.dp).padding(top = 4.dp, bottom = 4.dp),
+      modifier = Modifier.padding(horizontal = 20.dp).padding(top = 4.dp, bottom = 12.dp),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
       Icon(
         task.icon ?: ImageVector.vectorResource(task.iconVectorResourceId!!),
         tint = getTaskIconColor(task = task),
-        modifier = Modifier.size(16.dp),
+        modifier = Modifier.size(20.dp),
         contentDescription = null,
       )
       Text(
-        "${task.label} models",
+        "Modèles",
         modifier = Modifier.fillMaxWidth(),
-        style = MaterialTheme.typography.titleMedium,
-        color = getTaskIconColor(task = task),
+        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+        color = MaterialTheme.colorScheme.onSurface,
       )
     }
 
-    // Model list.
-    // Reading task.updateTrigger keeps this list in sync when a model is imported while this
-    // picker is open (import mutates task.models and bumps this trigger).
-    task.updateTrigger.value
-    for (model in task.models) {
-      val selected = model.name == modelManagerUiState.selectedModel.name
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-        modifier =
-          Modifier.fillMaxWidth()
-            .clickable {
-              // Show memory warning before proceeding.
-              if (isMemoryLow(context = context, model = model)) {
-                modelToPick = model
-                showMemoryWarning = true
-              } else {
-                onModelSelected(model)
-              }
-            }
-            .background(
-              if (selected) MaterialTheme.colorScheme.surfaceContainer else Color.Transparent
-            )
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-      ) {
-        Spacer(modifier = Modifier.width(24.dp))
-        Column(modifier = Modifier.weight(1f)) {
-          Text(
-            model.displayName.ifEmpty { model.name },
-            style = MaterialTheme.typography.bodyMedium,
-          )
-          if (model.runtimeType != RuntimeType.AICORE) {
-            Row(
-              horizontalArrangement = Arrangement.spacedBy(4.dp),
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              StatusIcon(
-                task = task,
-                model = model,
-                downloadStatus = modelManagerUiState.modelDownloadStatus[model.name],
-              )
-              Text(
-                if (model.localFileRelativeDirPathOverride.isEmpty()) {
-                  model.sizeInBytes.humanReadableSize()
-                } else {
-                  "{ext_file_dir}/${model.localFileRelativeDirPathOverride}"
-                },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = labelSmallNarrow.copy(lineHeight = 10.sp),
-              )
-            }
-          }
-        }
-        if (selected) {
-          Icon(
-            Icons.Filled.CheckCircle,
-            modifier = Modifier.size(16.dp),
-            contentDescription = stringResource(R.string.cd_selected_icon),
-          )
-        }
-      }
+    Text(
+      "SUR L'APPAREIL",
+      style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+      color = MaterialTheme.colorScheme.primary,
+      modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 6.dp),
+    )
+    if (onDevice.isEmpty()) {
+      Text(
+        "Aucun modèle sur l'appareil. Importe un fichier .gguf ci-dessous.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 8.dp),
+      )
+    }
+    for (model in onDevice) {
+      PickerModelRow(
+        task = task,
+        model = model,
+        selected = model.name == modelManagerUiState.selectedModel.name,
+        downloadStatus = modelManagerUiState.modelDownloadStatus[model.name],
+        onClick = { pickModel(model) },
+      )
     }
 
     // Import a local model file (.gguf or .litertlm) without leaving the chat.
     Row(
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(6.dp),
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
       modifier =
         Modifier.fillMaxWidth()
+          .padding(horizontal = 12.dp, vertical = 4.dp)
+          .clip(RoundedCornerShape(16.dp))
+          .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
           .clickable {
             val intent =
               Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
@@ -216,14 +209,54 @@ fun ModelPicker(
               }
             filePickerLauncher.launch(intent)
           }
-          .padding(horizontal = 16.dp, vertical = 12.dp),
+          .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
-      Spacer(modifier = Modifier.width(24.dp))
-      Icon(Icons.AutoMirrored.Outlined.NoteAdd, contentDescription = null)
-      Text(
-        stringResource(R.string.cd_import_model_from_local_file_button),
-        style = MaterialTheme.typography.bodyMedium,
+      Icon(
+        Icons.AutoMirrored.Outlined.NoteAdd,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.primary,
       )
+      Text(
+        "Importer un modèle depuis un fichier",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+      )
+    }
+
+    // The catalog of models to download (hidden by default).
+    if (downloadable.isNotEmpty()) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier =
+          Modifier.fillMaxWidth()
+            .clickable { showDownloadable = !showDownloadable }
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+      ) {
+        Text(
+          "CATALOGUE À TÉLÉCHARGER (${downloadable.size})",
+          style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+          color = MaterialTheme.colorScheme.primary,
+        )
+        Icon(
+          if (showDownloadable) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+      AnimatedVisibility(visible = showDownloadable) {
+        Column {
+          for (model in downloadable) {
+            PickerModelRow(
+              task = task,
+              model = model,
+              selected = model.name == modelManagerUiState.selectedModel.name,
+              downloadStatus = modelManagerUiState.modelDownloadStatus[model.name],
+              onClick = { pickModel(model) },
+            )
+          }
+        }
+      }
     }
   }
 
@@ -312,3 +345,70 @@ fun ModelPicker(
 //     )
 //   }
 // }
+
+@Composable
+private fun PickerModelRow(
+  task: Task,
+  model: Model,
+  selected: Boolean,
+  downloadStatus: ModelDownloadStatus?,
+  onClick: () -> Unit,
+) {
+  val shape = RoundedCornerShape(16.dp)
+  Row(
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.SpaceBetween,
+    modifier =
+      Modifier.fillMaxWidth()
+        .padding(horizontal = 12.dp, vertical = 3.dp)
+        .clip(shape)
+        .background(
+          if (selected) MaterialTheme.colorScheme.primaryContainer
+          else MaterialTheme.colorScheme.surfaceContainerLow
+        )
+        .border(
+          width = if (selected) 1.5.dp else 1.dp,
+          color =
+            if (selected) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.outlineVariant,
+          shape = shape,
+        )
+        .clickable(onClick = onClick)
+        .padding(horizontal = 14.dp, vertical = 10.dp),
+  ) {
+    Column(modifier = Modifier.weight(1f)) {
+      Text(
+        model.displayName.ifEmpty { model.name },
+        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+        color =
+          if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+          else MaterialTheme.colorScheme.onSurface,
+      )
+      if (model.runtimeType != RuntimeType.AICORE) {
+        Row(
+          horizontalArrangement = Arrangement.spacedBy(4.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          StatusIcon(task = task, model = model, downloadStatus = downloadStatus)
+          Text(
+            if (model.localFileRelativeDirPathOverride.isEmpty()) {
+              model.sizeInBytes.humanReadableSize()
+            } else {
+              "Modèle importé"
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = labelSmallNarrow.copy(lineHeight = 10.sp),
+          )
+        }
+      }
+    }
+    if (selected) {
+      Icon(
+        Icons.Filled.CheckCircle,
+        modifier = Modifier.size(20.dp),
+        tint = MaterialTheme.colorScheme.primary,
+        contentDescription = stringResource(R.string.cd_selected_icon),
+      )
+    }
+  }
+}
