@@ -74,12 +74,14 @@ import java.net.HttpURLConnection
 import java.net.URL
 import javax.inject.Inject
 import kotlin.collections.sortedWith
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationRequest
 import net.openid.appauth.AuthorizationResponse
@@ -450,6 +452,24 @@ constructor(
         model.cleanUpAfterInit = false
         Log.d(TAG, "Model '${model.name}' is being initialized. Skipping.")
         return@launch
+      }
+
+      // Only one GGUF model may stay in memory: a second one next to the first (for example an 8B
+      // next to a 4B) can exhaust the RAM and get the app killed. Release the others first.
+      if (model.runtimeType == RuntimeType.LLAMA_CPP) {
+        val others =
+          uiState.value.tasks
+            .flatMap { it.models }
+            .filter {
+              it.runtimeType == RuntimeType.LLAMA_CPP && it.name != model.name && it.instance != null
+            }
+            .distinctBy { it.name }
+        for (other in others) {
+          Log.d(TAG, "Releasing '${other.name}' before loading '${model.name}'.")
+          val released = CompletableDeferred<Unit>()
+          cleanupModel(context = context, task = task, model = other, onDone = { released.complete(Unit) })
+          withTimeoutOrNull(15_000L) { released.await() }
+        }
       }
 
       // Clean up.
