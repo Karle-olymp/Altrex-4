@@ -21,6 +21,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
@@ -366,6 +367,11 @@ fun ChatPanel(
         ) {
           messages.forEachIndexed { index, message ->
             val imageHistoryCurIndex = remember { mutableIntStateOf(0) }
+            // Soft entrance: each message fades in and slides up a few pixels when it appears.
+            val appear = remember { Animatable(0f) }
+            LaunchedEffect(Unit) {
+              appear.animateTo(1f, animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing))
+            }
             var hAlign: Alignment.Horizontal = Alignment.End
             var backgroundColor: Color = MaterialTheme.customColors.userBubbleBgColor
             var hardCornerAtLeftOrRight = false
@@ -403,6 +409,10 @@ fun ChatPanel(
             Column(
               modifier =
                 Modifier.fillMaxWidth()
+                  .graphicsLayer {
+                    alpha = appear.value
+                    translationY = (1f - appear.value) * 20.dp.toPx()
+                  }
                   // Update the height of the item in the list when the size changes.
                   //
                   // Need to put this modifier here to get the correct size that includes the
