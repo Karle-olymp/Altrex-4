@@ -81,6 +81,30 @@ object LlamaCppModelHelper : LlmModelHelper {
       model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN)
     val modelPath = model.getPath(context = context)
 
+    // Memory guard. A big model (for example an 8B, about 5 GB) next to Android and the other apps
+    // can get the process killed without any error message, so check first and shrink the context.
+    val fileBytes = java.io.File(modelPath).length()
+    val memInfo = android.app.ActivityManager.MemoryInfo()
+    (context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager)
+      .getMemoryInfo(memInfo)
+    val megabyte = 1024L * 1024L
+    // The KV cache grows with the context: cap it for big models.
+    val contextLength = if (fileBytes > 4_000L * megabyte) minOf(maxTokens, 4096) else maxTokens
+    Log.i(
+      TAG,
+      "Loading '${model.name}': file=${fileBytes / megabyte} MB, available RAM=${memInfo.availMem / megabyte} MB, " +
+        "context=$contextLength (asked $maxTokens)",
+    )
+    if (fileBytes > 0 && memInfo.availMem < fileBytes + 400L * megabyte) {
+      val msg =
+        "Mémoire insuffisante pour charger ce modèle : environ ${(fileBytes + 400L * megabyte) / megabyte} Mo " +
+          "nécessaires, ${memInfo.availMem / megabyte} Mo disponibles. Ferme d'autres applications " +
+          "ou choisis un modèle plus petit."
+      model.markInitializationFailed(msg)
+      onDone(msg)
+      return
+    }
+
     var hasCompletedInit = false
 
     scope.launch {
@@ -111,11 +135,11 @@ object LlamaCppModelHelper : LlmModelHelper {
     try {
       llamaHelper.load(
         path = modelPath,
-        contextLength = maxTokens,
+        contextLength = contextLength,
         mmprojPath = null,
       ) { contextId ->
         Log.d(TAG, "LlamaHelper loaded callback with contextId=$contextId")
-        Log.i(TAG, "Modèle chargé avec contexte: $maxTokens tokens")
+        Log.i(TAG, "Modèle chargé avec contexte: $contextLength tokens")
 
         if (!hasCompletedInit) {
           hasCompletedInit = true
