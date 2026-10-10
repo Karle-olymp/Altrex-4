@@ -112,6 +112,7 @@ import com.google.ai.edge.gallery.ui.home.HomeScreen
 import com.google.ai.edge.gallery.ui.home.PromoScreenGm4
 import com.google.ai.edge.gallery.ui.home.SettingsDialog
 import com.google.ai.edge.gallery.ui.home.AltrexDrawer
+import com.google.ai.edge.gallery.ui.home.LastExitDialog
 import com.google.ai.edge.gallery.ui.home.SquareDrawerItem
 import com.google.ai.edge.gallery.ui.llamacpp.LlamaCppTestScreen
 import com.google.ai.edge.gallery.ui.modelmanager.GlobalModelManager
@@ -246,6 +247,9 @@ fun GalleryNavHost(
 
     onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
   }
+
+  // Tells the user, once, why the previous run ended abnormally (memory kill, crash...).
+  LastExitDialog()
 
   ModalNavigationDrawer(
     drawerState = drawerState,
