@@ -137,7 +137,7 @@ fun SettingsDialog(
           )
           // Subtitle.
           Text(
-            "App version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+            "Version de l'application : ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
             style = labelSmallNarrow,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.offset(y = (-6).dp),
@@ -192,41 +192,13 @@ fun SettingsDialog(
             }
           }
 
-            Row(
-              modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-              Column(
-                modifier = Modifier.weight(1f).padding(end = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-              ) {
-                Text(
-                  stringResource(R.string.settings_dialog_firebase_analytics_title),
-                  style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
-                )
-                Text(
-                  stringResource(R.string.settings_dialog_firebase_analytics_description),
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-              Switch(
-                checked = selectedFirebaseAnalytics,
-                onCheckedChange = { checked ->
-                  selectedFirebaseAnalytics = checked
-                  modelManagerViewModel.saveFirebaseAnalytics(checked)
-                },
-              )
-            }
-
           // HF Token management.
           Column(
             modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
             verticalArrangement = Arrangement.spacedBy(4.dp),
           ) {
             Text(
-              "HuggingFace access token",
+              "Jeton d'accès Hugging Face",
               style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
             )
             // Show the start of the token.
@@ -238,18 +210,18 @@ fun SettingsDialog(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
               Text(
-                "Expires at: ${dateFormatter.format(Instant.ofEpochMilli(curHfToken.expiresAtMs))}",
+                "Expire le : ${dateFormatter.format(Instant.ofEpochMilli(curHfToken.expiresAtMs))}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
             } else {
               Text(
-                "Not available",
+                "Non disponible",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
               Text(
-                "The token will be automatically retrieved when a gated model is downloaded",
+                "Le jeton est récupéré automatiquement lors du téléchargement d'un modèle à accès restreint.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
@@ -262,7 +234,7 @@ fun SettingsDialog(
                 },
                 enabled = curHfToken != null,
               ) {
-                Text("Clear")
+                Text("Effacer")
               }
               val handleSaveToken = {
                 modelManagerViewModel.saveAccessToken(
@@ -303,7 +275,7 @@ fun SettingsDialog(
                     Box(modifier = Modifier.padding(start = 16.dp).weight(1f)) {
                       if (customHfToken.isEmpty()) {
                         Text(
-                          "Enter token manually",
+                          "Saisir le jeton manuellement",
                           color = MaterialTheme.colorScheme.onSurfaceVariant,
                           style = MaterialTheme.typography.bodySmall,
                         )
@@ -342,24 +314,19 @@ fun SettingsDialog(
             }
           }
 
-          // Tos
-          Column(modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}) {
+          // About.
+          Column(
+            modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
             Text(
-              stringResource(R.string.settings_dialog_tos_title),
+              "À propos",
               style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
             )
-            OutlinedButton(onClick = { showTos = true }) {
-              Text(stringResource(R.string.settings_dialog_view_app_terms_of_service))
-            }
-            ClickableLink(
-              url = "https://ai.google.dev/gemma/terms",
-              linkText = stringResource(R.string.tos_dialog_title_gemma),
-              modifier = Modifier.padding(top = 4.dp),
-            )
-            ClickableLink(
-              url = "https://ai.google.dev/gemma/prohibited_use_policy",
-              linkText = stringResource(R.string.settings_dialog_gemma_prohibited_use_policy),
-              modifier = Modifier.padding(top = 8.dp),
+            Text(
+              "Les modèles s'exécutent sur ton téléphone. Seul l'outil Sécurité envoie du code à SecurCode, après ton autorisation.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
           }
         }
