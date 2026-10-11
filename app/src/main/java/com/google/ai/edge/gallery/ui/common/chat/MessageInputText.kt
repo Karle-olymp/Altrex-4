@@ -46,6 +46,11 @@ import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.rotate
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -422,35 +427,40 @@ fun MessageInputText(
                   // A plus button to show a popup menu to add stuff to the chat.
                   Box() {
                     val enableAddButton = !inProgress && !isResettingSession && !modelInitializing
+                    // The "+" turns into a "x" while its menu is open.
+                    val addIconRotation by
+                      animateFloatAsState(
+                        targetValue = if (showAddContentMenu) 45f else 0f,
+                        animationSpec = tween(durationMillis = 200),
+                        label = "addIconRotation",
+                      )
                     OutlinedIconButton(
                       enabled = enableAddButton,
                       onClick = { showAddContentMenu = true },
                       colors =
                         IconButtonDefaults.iconButtonColors(
+                          containerColor = MaterialTheme.colorScheme.primaryContainer,
+                          contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                          disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                           disabledContentColor =
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
                         ),
                       border =
                         IconButtonDefaults.outlinedIconButtonBorder(true)
-                          .copy(
-                            brush =
-                              SolidColor(
-                                MaterialTheme.colorScheme.outlineVariant.copy(
-                                  alpha = if (enableAddButton) 1f else 0.1f
-                                )
-                              )
-                          ),
+                          .copy(brush = SolidColor(Color.Transparent)),
                     ) {
                       Icon(
                         Icons.Outlined.Add,
                         contentDescription = stringResource(R.string.cd_add_content_icon),
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(24.dp).rotate(addIconRotation),
                       )
                     }
 
                     DropdownMenu(
                       expanded = showAddContentMenu,
                       onDismissRequest = { showAddContentMenu = false },
+                      shape = RoundedCornerShape(20.dp),
+                      containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ) {
                       if (showImagePicker) {
                         val isImageLimitExceededForAiCore =
@@ -468,6 +478,7 @@ fun MessageInputText(
                               if (isImageSupported) Color.Unspecified
                               else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                           )
+                        MenuSectionLabel("IMAGE")
                         // Take a picture.
                         DropdownMenuItem(
                           text = {
@@ -548,6 +559,7 @@ fun MessageInputText(
 
                       // Audio related menu items.
                       if (showAudioPicker) {
+                        MenuSectionLabel("AUDIO")
                         val enableRecordAudioClipMenuItems =
                           (audioClipMessageCount + pickedAudioClips.size) < MAX_AUDIO_CLIP_COUNT
                         val isAudioSupported = modelManagerUiState.selectedModel.llmSupportAudio
@@ -638,6 +650,7 @@ fun MessageInputText(
                         )
                       }
 
+                      MenuSectionLabel("TEXTE")
                       // Prompt history.
                       DropdownMenuItem(
                         text = {
@@ -738,11 +751,24 @@ fun MessageInputText(
                 }
                 // Send button.
                 else {
+                  val canSend =
+                    !inProgress &&
+                      !isResettingSession &&
+                      (curMessage.isNotEmpty() || pickedAudioClips.isNotEmpty())
+                  // The send button grows slightly when there is something to send.
+                  val sendScale by
+                    animateFloatAsState(
+                      targetValue = if (canSend) 1f else 0.88f,
+                      animationSpec = tween(durationMillis = 150),
+                      label = "sendScale",
+                    )
                   IconButton(
-                    enabled =
-                      !inProgress &&
-                        !isResettingSession &&
-                        (curMessage.isNotEmpty() || pickedAudioClips.isNotEmpty()),
+                    enabled = canSend,
+                    modifier =
+                      Modifier.graphicsLayer {
+                        scaleX = sendScale
+                        scaleY = sendScale
+                      },
                     onClick = {
                       var message = curMessage.trim()
                       onSendMessage(
@@ -1214,4 +1240,14 @@ private class SensorObserver(context: Context) : DefaultLifecycleObserver, Senso
   }
 
   override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+}
+
+@Composable
+private fun MenuSectionLabel(text: String) {
+  Text(
+    text,
+    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+    color = MaterialTheme.colorScheme.primary,
+    modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 2.dp),
+  )
 }
