@@ -64,6 +64,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -300,29 +301,29 @@ fun AddOrEditSkillBottomSheet(
 
                   Spacer(modifier = Modifier.height(16.dp))
 
-                   // Require Secret.
-                   if (!viewingMode) {
-                     Row(
-                       modifier = Modifier.fillMaxWidth(),
-                       verticalAlignment = Alignment.CenterVertically,
-                     ) {
-                       Checkbox(
-                         checked = requireSecret,
-                         onCheckedChange = { newValue ->
-                           if (!edited) {
-                             edited = requireSecret != newValue
-                           }
-                           requireSecret = newValue
-                         },
-                         modifier = Modifier.padding(end = 12.dp),
-                       )
-                       Text(
-                         stringResource(R.string.skill_require_secret),
-                         style = MaterialTheme.typography.bodyLarge,
-                       )
-                     }
-                     Spacer(modifier = Modifier.height(16.dp))
-                   }
+// Require Secret.
+                    if (!viewingMode) {
+                      Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                      ) {
+                        Checkbox(
+                          checked = requireSecret,
+                          onCheckedChange = { newValue: Boolean ->
+                            if (!edited) {
+                              edited = requireSecret != newValue
+                            }
+                            requireSecret = newValue
+                          },
+                          modifier = Modifier.padding(end = 12.dp),
+                        )
+                        Text(
+                          stringResource(R.string.skill_require_secret),
+                          style = MaterialTheme.typography.bodyLarge,
+                        )
+                      }
+                      Spacer(modifier = Modifier.height(16.dp))
+                    }
 
                    // Require Secret Description.
                    if (!viewingMode && requireSecret) {
@@ -342,21 +343,21 @@ fun AddOrEditSkillBottomSheet(
                      Spacer(modifier = Modifier.height(16.dp))
                    }
 
-                   // Homepage.
-                   if (!viewingMode) {
-                     CursorTrackingTextField(
-                       labelResId = R.string.skill_homepage,
-                       supportingTextResId = R.string.skill_homepage_input_description,
-                       singleLine = true,
-                       enabled = true,
-                       initialValue = homepage,
-                       onValueChange = { newText ->
-                         if (!edited) {
-                           edited = homepage != newText
-                         }
-                         homepage = newText
-                       },
-                     )
+// Homepage.
+                    if (!viewingMode) {
+                      CursorTrackingTextField(
+                        labelResId = R.string.skill_homepage,
+                        supportingTextResId = R.string.skill_homepage_input_description,
+                        minLines = 1,
+                        enabled = true,
+                        initialValue = homepage,
+                        onValueChange = { newText ->
+                          if (!edited) {
+                            edited = homepage != newText
+                          }
+                          homepage = newText
+                        },
+                      )
                      Spacer(modifier = Modifier.height(16.dp))
                    }
                  }
