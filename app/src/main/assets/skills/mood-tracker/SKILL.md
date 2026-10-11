@@ -1,6 +1,10 @@
 ---
 name: mood-tracker
 description: A simple mood tracking skill that stores your daily mood and comments. Use this when the user wants to log their mood, track how they feel, or see their mood history.
+metadata:
+  require-secret: false
+  require-secret-description: ""
+  homepage: ""
 ---
 
 # Mood Tracker

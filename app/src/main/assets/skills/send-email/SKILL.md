@@ -1,6 +1,10 @@
 ---
 name: send-email
 description: Send an email.
+metadata:
+  require-secret: false
+  require-secret-description: ""
+  homepage: ""
 ---
 
 # Send email

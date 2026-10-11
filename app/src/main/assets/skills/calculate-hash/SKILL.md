@@ -1,6 +1,10 @@
 ---
 name: calculate-hash
 description: Calculate the hash of a given text.
+metadata:
+  require-secret: false
+  require-secret-description: ""
+  homepage: ""
 ---
 
 # Calculate hash

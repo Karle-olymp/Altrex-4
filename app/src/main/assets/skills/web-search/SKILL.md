@@ -1,6 +1,10 @@
 ---
 name: web-search
 description: Search the web for up-to-date information and return a list of results.
+metadata:
+  require-secret: false
+  require-secret-description: ""
+  homepage: ""
 ---
 
 # Web Search

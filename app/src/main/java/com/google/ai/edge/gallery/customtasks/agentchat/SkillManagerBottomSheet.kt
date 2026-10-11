@@ -150,6 +150,12 @@ private val ADD_SKILL_OPTIONS =
       icon = Icons.Outlined.DriveFolderUpload,
     ),
     AddSkillOption(
+      type = AddSkillOptionType.ManualInput,
+      titleResId = R.string.add_skill_option_skill_creator_title,
+      descriptionResId = R.string.add_skill_option_skill_creator_description,
+      icon = Icons.Outlined.AutoAwesome,
+    ),
+    AddSkillOption(
       type = AddSkillOptionType.ViewCommunitySkills,
       titleResId = R.string.add_skill_option_view_community_skills_title,
       descriptionResId = R.string.add_skill_option_view_community_skills_description,
@@ -715,6 +721,10 @@ fun SkillManagerBottomSheet(
           }
           AddSkillOptionType.LocalImport -> {
             showDisclaimerDialog = true
+          }
+          AddSkillOptionType.ManualInput -> {
+            skillToEditIndex = uiState.skills.size
+            showAddOrEditSkillBottomSheet = true
           }
           AddSkillOptionType.ViewCommunitySkills -> {
             showCommunitySkillsBottomSheet = true

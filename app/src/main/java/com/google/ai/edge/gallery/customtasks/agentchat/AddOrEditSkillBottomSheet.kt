@@ -142,6 +142,10 @@ fun AddOrEditSkillBottomSheet(
   val curSkill = skill
   val viewingMode = true
 
+  var requireSecret by remember { mutableStateOf(skill?.requireSecret ?: false) }
+  var requireSecretDescription by remember { mutableStateOf(skill?.requireSecretDescription ?: "") }
+  var homepage by remember { mutableStateOf(skill?.homepage ?: "") }
+
   var llmPromptGeneratorRequirements by remember { mutableStateOf(skill?.description ?: "") }
   var llmPromptGeneratorInputData by remember { mutableStateOf(INPUT_DATA_PLACEHOLDER) }
   var llmPromptGeneratorOutputData by remember { mutableStateOf(OUTPUT_DATA_PLACEHOLDER) }
@@ -295,8 +299,68 @@ fun AddOrEditSkillBottomSheet(
                   )
 
                   Spacer(modifier = Modifier.height(16.dp))
-                }
-              }
+
+                   // Require Secret.
+                   if (!viewingMode) {
+                     Row(
+                       modifier = Modifier.fillMaxWidth(),
+                       verticalAlignment = Alignment.CenterVertically,
+                     ) {
+                       Checkbox(
+                         checked = requireSecret,
+                         onCheckedChange = { newValue ->
+                           if (!edited) {
+                             edited = requireSecret != newValue
+                           }
+                           requireSecret = newValue
+                         },
+                         modifier = Modifier.padding(end = 12.dp),
+                       )
+                       Text(
+                         stringResource(R.string.skill_require_secret),
+                         style = MaterialTheme.typography.bodyLarge,
+                       )
+                     }
+                     Spacer(modifier = Modifier.height(16.dp))
+                   }
+
+                   // Require Secret Description.
+                   if (!viewingMode && requireSecret) {
+                     CursorTrackingTextField(
+                       labelResId = R.string.skill_require_secret_description,
+                       supportingTextResId = R.string.skill_require_secret_description_input_description,
+                       minLines = 2,
+                       enabled = true,
+                       initialValue = requireSecretDescription,
+                       onValueChange = { newText ->
+                         if (!edited) {
+                           edited = requireSecretDescription != newText
+                         }
+                         requireSecretDescription = newText
+                       },
+                     )
+                     Spacer(modifier = Modifier.height(16.dp))
+                   }
+
+                   // Homepage.
+                   if (!viewingMode) {
+                     CursorTrackingTextField(
+                       labelResId = R.string.skill_homepage,
+                       supportingTextResId = R.string.skill_homepage_input_description,
+                       singleLine = true,
+                       enabled = true,
+                       initialValue = homepage,
+                       onValueChange = { newText ->
+                         if (!edited) {
+                           edited = homepage != newText
+                         }
+                         homepage = newText
+                       },
+                     )
+                     Spacer(modifier = Modifier.height(16.dp))
+                   }
+                 }
+               }
               // Script tab.
               1 -> {
                 if (scriptsLoading) {
@@ -402,6 +466,9 @@ fun AddOrEditSkillBottomSheet(
                   description = description,
                   instructions = instructions,
                   scriptsContent = scriptContents,
+                  requireSecret = requireSecret,
+                  requireSecretDescription = requireSecretDescription,
+                  homepage = homepage,
                   onError = { error ->
                     errorMessage = error
                     showErrorDialog = true

@@ -1,6 +1,10 @@
 ---
 name: schedule-notification
 description: Schedule a notification for a specific date or repeating daily.
+metadata:
+  require-secret: false
+  require-secret-description: ""
+  homepage: ""
 ---
 
 # Schedule Notification

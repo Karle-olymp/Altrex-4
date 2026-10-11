@@ -1,6 +1,10 @@
 ---
 name: learn-something-new
 description: A daily learning companion that teaches users a new concept, generates a beautiful image card, and schedules recurring daily learning notifications.
+metadata:
+  require-secret: false
+  require-secret-description: ""
+  homepage: ""
 ---
 
 # Persona

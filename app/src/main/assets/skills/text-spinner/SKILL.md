@@ -1,6 +1,10 @@
 ---
 name: text-spinner
 description: Spin the given text on my head.
+metadata:
+  require-secret: false
+  require-secret-description: ""
+  homepage: ""
 ---
 
 # Instructions

@@ -311,6 +311,9 @@ class SkillManagerViewModel @Inject constructor(val skillManager: SkillManager) 
     description: String,
     instructions: String,
     scriptsContent: Map<String, String>,
+    requireSecret: Boolean = false,
+    requireSecretDescription: String = "",
+    homepage: String = "",
     onSuccess: () -> Unit,
     onError: (error: String) -> Unit,
   ) {
@@ -323,6 +326,9 @@ class SkillManagerViewModel @Inject constructor(val skillManager: SkillManager) 
             description = description,
             instructions = instructions,
             scriptsContent = scriptsContent,
+            requireSecret = requireSecret,
+            requireSecretDescription = requireSecretDescription,
+            homepage = homepage,
             featuredSkills = _uiState.value.featuredSkills,
           )
         onSuccess()

@@ -1,6 +1,10 @@
 ---
 name: query-wikipedia
 description: Query summary from Wikipedia for a given topic.
+metadata:
+  require-secret: false
+  require-secret-description: ""
+  homepage: ""
 ---
 
 # Query Wiki

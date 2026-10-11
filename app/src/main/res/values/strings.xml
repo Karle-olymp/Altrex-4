@@ -324,6 +324,11 @@
   <string name="skill_name_input_description" translatable="true" description="Help text indicating that the skill name is required and suggesting a kebab-case format. [CHAR_LIMIT=90]">REQUIRED. In the form of my-skill-name</string>
   <string name="skill_description_input_description" translatable="true" description="Help text explaining what should be entered in the skill description field. [CHAR_LIMIT=147]">REQUIRED. A brief description of the skill\'s function and trigger conditions or keywords.</string>
   <string name="skill_instructions_input_description" translatable="true" description="Help text explaining what should be entered in the skill instructions field (markdown format for LLM). [CHAR_LIMIT=139]">Detailed instructions in Markdown format that LLM must follow to accomplish the task.</string>
+  <string name="skill_require_secret" translatable="true" description="Label for the checkbox to indicate if the skill requires a secret (API key, token, etc.). [CHAR_LIMIT=30]">Require secret (API key, token)</string>
+  <string name="skill_require_secret_description" translatable="true" description="Label for the text field where the user describes how to obtain the secret. [CHAR_LIMIT=30]">Secret description</string>
+  <string name="skill_require_secret_description_input_description" translatable="true" description="Help text explaining what should be entered in the secret description field. [CHAR_LIMIT=147]">How to obtain the secret (e.g., URL to get API key).</string>
+  <string name="skill_homepage" translatable="true" description="Label for the text field where the user enters the skill homepage URL. [CHAR_LIMIT=30]">Homepage</string>
+  <string name="skill_homepage_input_description" translatable="true" description="Help text explaining what should be entered in the homepage field. [CHAR_LIMIT=147]">URL to the skill documentation or source code.</string>
   <string name="use_call_js_template" translatable="true" description="Button label to pre-fill the instructions field with a template for calling JavaScript code. [CHAR_LIMIT=30]">Use Call JS template</string>
 
   <!-- Strings for MCP -->

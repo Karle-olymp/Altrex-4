@@ -1,6 +1,10 @@
 ---
 name: create-calendar-event
 description: Create a calendar event.
+metadata:
+  require-secret: false
+  require-secret-description: ""
+  homepage: ""
 ---
 
 # Create calendar event

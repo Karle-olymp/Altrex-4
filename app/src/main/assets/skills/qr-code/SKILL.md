@@ -1,6 +1,10 @@
 ---
 name: qr-code
 description: Generates a QR code for the given url.
+metadata:
+  require-secret: false
+  require-secret-description: ""
+  homepage: ""
 ---
 
 # Instructions

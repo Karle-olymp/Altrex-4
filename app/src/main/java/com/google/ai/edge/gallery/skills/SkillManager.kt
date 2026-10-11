@@ -86,6 +86,14 @@ constructor(
   private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
   /**
+   * Resets the skill loaded state, allowing skills to be reloaded on the next call to [loadSkills].
+   * Useful for debugging or when skills need to be refreshed.
+   */
+  fun resetSkills() {
+    skillLoaded = false
+  }
+
+  /**
    * Loads all skills from [DataStoreRepository] and merges them with built-in asset skills.
    * Performs disk reads on [kotlinx.coroutines.Dispatchers.IO] and updates [skills] when finished.
    */
@@ -615,6 +623,9 @@ constructor(
     description: String,
     instructions: String,
     scriptsContent: Map<String, String>,
+    requireSecret: Boolean = false,
+    requireSecretDescription: String = "",
+    homepage: String = "",
     featuredSkills: List<AllowedSkill> = emptyList(),
   ): Skill {
     return withContext(Dispatchers.IO) {
@@ -649,7 +660,7 @@ constructor(
         val skillMdFile = File(skillDestDir, "SKILL.md")
 
         // Write SKILL.md
-        writeSkillMd(skillMdFile, normalizedName, description, instructions)
+        writeSkillMd(skillMdFile, normalizedName, description, instructions, requireSecret, requireSecretDescription, homepage)
 
         // Save scripts
         saveScripts(scriptDestDir, scriptsContent)
@@ -663,6 +674,9 @@ constructor(
             .setBuiltIn(false)
             .setSelected(true)
             .setSkillUrl("")
+            .setRequireSecret(requireSecret)
+            .setRequireSecretDescription(requireSecretDescription)
+            .setHomepage(homepage)
             .setImportDirName(skillDestDir.relativeTo(context.filesDir).path)
             .build()
         addSkill(newSkill, addToDataStore = true, featuredSkills = featuredSkills)
@@ -711,7 +725,15 @@ constructor(
         }
 
         // Update SKILL.md
-        writeSkillMd(newSkillMdFile, normalizedNewName, description, instructions)
+        writeSkillMd(
+          newSkillMdFile,
+          normalizedNewName,
+          description,
+          instructions,
+          existingSkill.requireSecret,
+          existingSkill.requireSecretDescription,
+          existingSkill.homepage,
+        )
 
         // Update scripts: Clear existing scripts and save new ones.
         newScriptDestDir.deleteRecursively()
@@ -887,6 +909,9 @@ constructor(
     name: String,
     description: String,
     instructions: String,
+    requireSecret: Boolean = false,
+    requireSecretDescription: String = "",
+    homepage: String = "",
   ) {
     Log.d(TAG, "Writing skill.md: ${skillMdFile.path}")
     val mdContent =
@@ -894,6 +919,10 @@ constructor(
     ---
     name: $name
     description: $description
+    metadata:
+      require-secret: $requireSecret
+      require-secret-description: $requireSecretDescription
+      homepage: $homepage
     ---
 
     $instructions

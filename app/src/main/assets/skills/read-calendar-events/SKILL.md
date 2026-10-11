@@ -1,6 +1,10 @@
 ---
 name: read-calendar-events
 description: Read OS calendar events for a specific date.
+metadata:
+  require-secret: false
+  require-secret-description: ""
+  homepage: ""
 ---
 
 # Read calendar events
