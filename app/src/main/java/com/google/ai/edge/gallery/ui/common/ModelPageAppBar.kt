@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Tune
@@ -87,6 +88,7 @@ fun ModelPageAppBar(
   onSystemPromptChanged: (String) -> Unit = {},
   shouldShowHistoryButton: Boolean = false,
   onHistoryClicked: (Model) -> Unit = {},
+  onExportClicked: (() -> Unit)? = null,
 ) {
   var showConfigDialog by remember { mutableStateOf(false) }
   val modelManagerUiState by modelManagerViewModel.uiState.collectAsState()
@@ -159,9 +161,12 @@ fun ModelPageAppBar(
       val downloadSucceeded = curDownloadStatus?.status == ModelDownloadStatusType.SUCCEEDED
       val showConfigButton = model.configs.isNotEmpty() && downloadSucceeded
       Box(modifier = Modifier.size(42.dp), contentAlignment = Alignment.Center) {
+        val showHistory = downloadSucceeded && shouldShowHistoryButton
+        val showExport = downloadSucceeded && onExportClicked != null
+        // The buttons are stacked in a small box: each one is shifted left by 40dp per neighbour.
         var configButtonOffset = 0.dp
-        if (showConfigButton && shouldShowHistoryButton) {
-          configButtonOffset = (-40).dp
+        if (showConfigButton) {
+          configButtonOffset = (-40 * ((if (showHistory) 1 else 0) + (if (showExport) 1 else 0))).dp
         }
         if (showConfigButton) {
           val enableConfigButton = !isModelInitializing && !inProgress && isModelInitialized
@@ -174,6 +179,23 @@ fun ModelPageAppBar(
             Icon(
               imageVector = Icons.Rounded.Tune,
               contentDescription = stringResource(R.string.cd_model_settings_icon),
+              tint = MaterialTheme.colorScheme.onSurface,
+              modifier = Modifier.size(20.dp),
+            )
+          }
+        }
+        if (showExport) {
+          val enableExportButton = !isModelInitializing && !modelPreparing && !inProgress
+          IconButton(
+            onClick = { onExportClicked?.invoke() },
+            enabled = enableExportButton,
+            modifier =
+              Modifier.offset(x = if (showHistory) (-40).dp else 0.dp)
+                .alpha(if (!enableExportButton) 0.5f else 1f),
+          ) {
+            Icon(
+              imageVector = Icons.Outlined.PictureAsPdf,
+              contentDescription = "Exporter la discussion en PDF",
               tint = MaterialTheme.colorScheme.onSurface,
               modifier = Modifier.size(20.dp),
             )
