@@ -19,22 +19,33 @@ package com.google.ai.edge.gallery.agent
 import android.content.Context
 import android.util.Log
 import com.google.ai.edge.gallery.data.Model
+import com.google.ai.edge.gallery.data.RuntimeType
 import com.google.ai.edge.gallery.data.awaitInitialization
 import com.google.ai.edge.gallery.runtime.runtimeHelper
 import com.google.ai.edge.gallery.skills.SkillsProvider
 import com.google.ai.edge.gallery.tools.ToolDispatcher
 import com.google.ai.edge.gallery.tools.ToolExecutionContext
 import com.google.ai.edge.gallery.tools.ToolsProvider
+import com.google.ai.edge.gallery.ui.llmsingleturn.AgentMsg
+import com.google.ai.edge.gallery.ui.llmsingleturn.ToolCalling
 import com.google.ai.edge.litertlm.Contents
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.channels.onFailure
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 
 private const val TAG = "AGDefaultAgentRuntimeExecutor"
+
+/** Maximum number of tool-calling steps for local llama.cpp models before giving up. */
+private const val MAX_LLAMA_AGENT_STEPS = 6
 
 /**
  * Default implementation of [AgentRuntimeExecutor] orchestrating context assembly, execution
@@ -53,10 +64,17 @@ open class DefaultAgentRuntimeExecutor(
 ) : AgentRuntimeExecutor {
 
   /** Active session state for the current conversation. */
-  private data class ActiveSession(val model: Model, val toolExecutionContext: ToolExecutionContext)
+  private data class ActiveSession(
+    val model: Model,
+    val toolExecutionContext: ToolExecutionContext,
+    val systemInstruction: String?,
+  )
 
   /** Atomic reference to the active session. */
   private val activeSession = AtomicReference<ActiveSession?>(null)
+
+  /** Set when the user interrupts an in-flight generation; reset at the start of each session. */
+  private val interrupted = AtomicBoolean(false)
 
   override suspend fun initialize(
     context: Context,
@@ -67,7 +85,14 @@ open class DefaultAgentRuntimeExecutor(
     val executionContext =
       ToolExecutionContext(taskId = config.taskId, actionChannel = config.actionChannel)
 
-    activeSession.set(ActiveSession(model = config.model, toolExecutionContext = executionContext))
+    interrupted.set(false)
+    activeSession.set(
+      ActiveSession(
+        model = config.model,
+        toolExecutionContext = executionContext,
+        systemInstruction = config.systemInstruction,
+      )
+    )
 
     toolDispatcher.setupExecutionContext(
       tools = toolsProvider.getAvailableTools(),
@@ -131,6 +156,40 @@ open class DefaultAgentRuntimeExecutor(
       close()
       return@callbackFlow
     }
+
+    // Local llama.cpp models have no native tool calling: run the ReAct loop here, driving the
+    // same tool definitions through the ChatML / Hermes protocol. LiteRT-LM models keep using the
+    // engine's built-in automatic tool calling (single runInference call below).
+    if (curModel.runtimeType == RuntimeType.LLAMA_CPP) {
+      val producer = this
+      val loopJob =
+        launch(Dispatchers.IO) {
+          try {
+            val finalResponse =
+              runLlamaCppAgentLoop(
+                model = curModel,
+                request = request,
+                systemInstruction = session.systemInstruction,
+                emit = { producer.emitEvent(it) },
+              )
+            if (finalResponse == null) {
+              producer.emitEvent(AgentEvent.LoopCancelled)
+            } else {
+              producer.emitEvent(AgentEvent.LoopTerminated(finalResponse = finalResponse))
+            }
+          } catch (e: CancellationException) {
+            throw e
+          } catch (e: Exception) {
+            Log.e(TAG, "Error in llama.cpp agent loop", e)
+            producer.emitEvent(AgentEvent.Error(errorMessage = e.message ?: "Agent loop failed."))
+          } finally {
+            producer.close()
+          }
+        }
+      awaitClose { loopJob.cancel() }
+      return@callbackFlow
+    }
+
     curModel.runtimeHelper.runInference(
       model = curModel,
       input = request.query,
@@ -195,6 +254,7 @@ open class DefaultAgentRuntimeExecutor(
   override fun interrupt() {
     val curModel = activeSession.get()?.model ?: return
     Log.d(TAG, "Interrupting session for model: ${curModel.name}")
+    interrupted.set(true)
     // TODO: we need to reset the conversation in executeStream if user sends a new request.
     curModel.runtimeHelper.stopResponse(curModel)
   }
@@ -204,7 +264,14 @@ open class DefaultAgentRuntimeExecutor(
     val executionContext =
       ToolExecutionContext(taskId = config.taskId, actionChannel = config.actionChannel)
 
-    activeSession.set(ActiveSession(model = config.model, toolExecutionContext = executionContext))
+    interrupted.set(false)
+    activeSession.set(
+      ActiveSession(
+        model = config.model,
+        toolExecutionContext = executionContext,
+        systemInstruction = config.systemInstruction,
+      )
+    )
 
     toolDispatcher.setupExecutionContext(
       tools = toolsProvider.getAvailableTools(),
@@ -252,5 +319,90 @@ open class DefaultAgentRuntimeExecutor(
       return
     }
     session.model.runtimeHelper.cleanUp(model = session.model, onDone = onDone)
+  }
+
+  /**
+   * ReAct loop for local llama.cpp models. Builds a full ChatML conversation (system prompt + tool
+   * definitions, then the running message list), runs one generation per step, parses any tool call,
+   * executes it through the shared [ToolDefinition]s and feeds the result back until the model
+   * answers without calling a tool.
+   */
+  private suspend fun runLlamaCppAgentLoop(
+    model: Model,
+    request: AgentRequest,
+    systemInstruction: String?,
+    emit: (AgentEvent) -> Unit,
+  ): String? {
+    // Triggers the ViewModel's "first token" handling so the loading state clears even when the
+    // model's first turn is a silent tool call.
+    emit(AgentEvent.StreamToken(token = "", done = false))
+
+    val system = ToolCalling.systemPrompt(LlamaCppToolBridge.specs, systemInstruction.orEmpty())
+    val messages = mutableListOf(AgentMsg("user", request.query))
+
+    for (step in 0 until MAX_LLAMA_AGENT_STEPS) {
+      if (interrupted.get()) {
+        return null
+      }
+      val prompt = ToolCalling.buildPrompt(system, messages)
+      val response = runLlamaCppTurn(model = model, prompt = prompt)
+      val calls = ToolCalling.parseToolCalls(response)
+      val visible = ToolCalling.stripToolCalls(response)
+
+      if (calls.isEmpty()) {
+        emit(AgentEvent.StreamToken(token = visible, done = true))
+        return visible
+      }
+
+      if (visible.isNotEmpty()) {
+        emit(AgentEvent.StreamToken(token = visible, done = false))
+      }
+
+      val results = ArrayList<String>()
+      for (call in calls.take(4)) {
+        results.add(LlamaCppToolBridge.dispatch(call = call, toolsProvider = toolsProvider))
+      }
+      messages.add(AgentMsg("assistant", response.trim()))
+      messages.add(ToolCalling.toolResponseMessage(results))
+    }
+
+    val message = "Reached the maximum number of steps ($MAX_LLAMA_AGENT_STEPS)."
+    emit(AgentEvent.StreamToken(token = message, done = true))
+    return message
+  }
+
+  /** Runs a single generation on a local llama.cpp model and suspends until it completes. */
+  private suspend fun runLlamaCppTurn(model: Model, prompt: String): String {
+    val buffer = StringBuilder()
+    val completion = CompletableDeferred<String>()
+    model.runtimeHelper.runInference(
+      model = model,
+      input = prompt,
+      resultListener = { partialResult, done, _ ->
+        if (partialResult.isNotEmpty()) {
+          buffer.append(partialResult)
+        }
+        if (done && !completion.isCompleted) {
+          completion.complete(buffer.toString())
+        }
+      },
+      cleanUpListener = {
+        if (!completion.isCompleted) {
+          completion.complete(buffer.toString())
+        }
+      },
+      onError = { errorMsg ->
+        if (!completion.isCompleted) {
+          completion.completeExceptionally(RuntimeException(errorMsg))
+        }
+      },
+    )
+    return try {
+      completion.await()
+    } catch (e: CancellationException) {
+      // The underlying generation runs in its own scope, so stop it explicitly on cancellation.
+      model.runtimeHelper.stopResponse(model)
+      throw e
+    }
   }
 }

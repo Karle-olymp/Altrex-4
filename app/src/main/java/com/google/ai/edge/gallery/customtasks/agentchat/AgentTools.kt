@@ -28,6 +28,7 @@ import com.google.ai.edge.gallery.tools.RunMcpTool
 import com.google.ai.edge.gallery.tools.ToolAction
 import com.google.ai.edge.gallery.tools.ToolDefinition
 import com.google.ai.edge.gallery.tools.ToolsProvider
+import com.google.ai.edge.gallery.tools.WebSearchTool
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
@@ -77,8 +78,10 @@ open class AgentToolsImpl : AgentTools {
 
   val runIntentTool by lazy { RunIntentTool(context = context, skillsProvider = skillsProvider) }
 
+  val webSearchTool by lazy { WebSearchTool() }
+
   override fun getAvailableTools(): List<ToolDefinition> {
-    return listOf(loadSkillTool, runMcpTool, runJsTool, runIntentTool) + activeTools
+    return listOf(loadSkillTool, runMcpTool, runJsTool, runIntentTool, webSearchTool) + activeTools
   }
 
   override fun registerTool(tool: ToolDefinition) {

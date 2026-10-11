@@ -1,0 +1,147 @@
+<!--
+@license
+Copyright 2026 Google LLC
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+==============================================================================
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web Search</title>
+  </head>
+  <body>
+    <script>
+      /**
+       * Fetches the DuckDuckGo Instant Answer API (CORS-enabled, no API key) for direct answers
+       * and abstracts.
+       * @param {string} query - The search query.
+       */
+      async function fetchInstantAnswer(query) {
+        const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1&t=altrex`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      }
+
+      /**
+       * Fetches the Wikipedia search REST API (CORS-enabled, no API key).
+       * @param {string} query - The search keywords.
+       * @param {string} lang - The two-letter language code.
+       */
+      async function fetchWikipedia(query, lang) {
+        const url = `https://${lang}.wikipedia.org/w/rest.php/v1/search/page?q=${encodeURIComponent(query)}&limit=6`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        return Array.isArray(data.pages) ? data.pages : [];
+      }
+
+      /** Removes HTML tags and collapses whitespace. */
+      function stripHtml(html) {
+        const el = document.createElement("div");
+        el.innerHTML = html || "";
+        return (el.textContent || "").replace(/\s+/g, " ").trim();
+      }
+
+      /** Flattens DuckDuckGo RelatedTopics (which may be nested) into result objects. */
+      function collectRelated(topics, out) {
+        if (!Array.isArray(topics)) return;
+        for (const topic of topics) {
+          if (out.length >= 6) return;
+          if (Array.isArray(topic.Topics)) {
+            collectRelated(topic.Topics, out);
+            continue;
+          }
+          if (topic.Text && topic.FirstURL) {
+            out.push({
+              title: topic.Text.split(" - ")[0].slice(0, 80),
+              url: topic.FirstURL,
+              snippet: topic.Text,
+            });
+          }
+        }
+      }
+
+      window["ai_edge_gallery_get_result"] = async (data) => {
+        try {
+          const params = JSON.parse(data || "{}");
+          const query = (params.query || "").trim();
+          const lang = (
+            params.lang || (navigator.language || "en")
+          ).slice(0, 2).toLowerCase();
+          if (!query) {
+            return JSON.stringify({ error: "No query provided." });
+          }
+
+          const seen = new Set();
+          const results = [];
+          let summary = "";
+          let answer = "";
+
+          // 1) DuckDuckGo Instant Answer API.
+          try {
+            const ia = await fetchInstantAnswer(query);
+            summary = (ia.AbstractText || ia.Definition || "").trim();
+            answer = (ia.Answer || "").trim();
+            const abstractUrl = ia.AbstractURL || "";
+            if (summary && abstractUrl) {
+              results.push({ title: ia.Heading || query, url: abstractUrl, snippet: summary });
+              seen.add(abstractUrl);
+            }
+            const related = [];
+            collectRelated(ia.RelatedTopics, related);
+            for (const r of related) {
+              if (!seen.has(r.url)) {
+                results.push(r);
+                seen.add(r.url);
+              }
+            }
+          } catch (e) {
+            console.warn("Instant answer failed:", e);
+          }
+
+          // 2) Wikipedia search API.
+          try {
+            const pages = await fetchWikipedia(query, lang);
+            for (const p of pages) {
+              if (results.length >= 6) break;
+              const url = `https://${lang}.wikipedia.org/wiki/${p.key}`;
+              if (seen.has(url)) continue;
+              const snippet = [p.description, stripHtml(p.excerpt)].filter(Boolean).join(" — ");
+              results.push({ title: p.title || p.key, url, snippet });
+              seen.add(url);
+            }
+          } catch (e) {
+            console.warn("Wikipedia search failed:", e);
+          }
+
+          if (!results.length) {
+            return JSON.stringify({ result: `No results found for "${query}".` });
+          }
+
+          let text = "";
+          if (answer) text += `Answer: ${answer}\n\n`;
+          if (summary) text += `Summary: ${summary}\n\n`;
+          text += "Results:\n";
+          results.slice(0, 6).forEach((r, i) => {
+            text += `${i + 1}. ${r.title}\n   ${r.snippet}\n   ${r.url}\n`;
+          });
+          return JSON.stringify({ result: text.trim() });
+        } catch (e) {
+          console.error(e);
+          return JSON.stringify({ error: `Web search failed: ${e.message}` });
+        }
+      };
+    </script>
+  </body>
+</html>
