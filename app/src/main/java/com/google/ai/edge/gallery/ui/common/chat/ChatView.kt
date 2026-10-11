@@ -26,6 +26,12 @@ import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import java.util.Locale
+import java.util.Date
+import java.text.SimpleDateFormat
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
+import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -178,6 +184,32 @@ fun ChatView(
     }
   }
   val scope = rememberCoroutineScope()
+  // Export the current conversation to a PDF file chosen by the user.
+  val exportPdfLauncher =
+    rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) {
+      uri ->
+      if (uri != null) {
+        val toExport = uiState.messagesByModel[selectedModel.name]?.toList() ?: emptyList()
+        scope.launch(Dispatchers.IO) {
+          val ok =
+            ChatPdfExporter.write(
+              context = context,
+              uri = uri,
+              title = task.label,
+              modelName = selectedModel.displayName.ifEmpty { selectedModel.name },
+              messages = toExport,
+            )
+          withContext(Dispatchers.Main) {
+            Toast.makeText(
+                context,
+                if (ok) "Discussion exportée en PDF" else "L'export PDF a échoué",
+                Toast.LENGTH_SHORT,
+              )
+              .show()
+          }
+        }
+      }
+    }
   var navigatingUp by remember { mutableStateOf(false) }
 
   val handleNavigateUp = {
@@ -312,6 +344,16 @@ fun ChatView(
               inProgress = uiState.inProgress,
               modelPreparing = uiState.preparing,
               shouldShowHistoryButton = true,
+              onExportClicked = {
+                val current = uiState.messagesByModel[selectedModel.name] ?: emptyList()
+                if (ChatPdfExporter.hasContent(current)) {
+                  val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.getDefault()).format(Date())
+                  exportPdfLauncher.launch("Altrex-discussion-$stamp.pdf")
+                } else {
+                  Toast.makeText(context, "Rien à exporter pour le moment", Toast.LENGTH_SHORT)
+                    .show()
+                }
+              },
               onConfigChanged = { old, new ->
                 viewModel.addConfigChangedMessage(
                   oldConfigValues = old,
