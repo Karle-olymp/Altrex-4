@@ -53,4 +53,10 @@
   <string name="aichat_emptystate_support_image">Jusqu\'à 10 images par discussion.</string>
   <string name="aichat_emptystate_support_image_aicore">1 image par discussion.</string>
   <string name="aichat_emptystate_support_audio">1 extrait audio de 30 secondes maximum.</string>
+  <string name="take_a_picture">Prendre une photo</string>
+  <string name="pick_from_album">Choisir dans la galerie</string>
+  <string name="media_picker_record_audio">Enregistrer un extrait audio</string>
+  <string name="media_picker_pick_wav">Choisir un fichier .wav</string>
+  <string name="input_history">Historique des saisies</string>
+  <string name="text_input_history_title">Historique des saisies</string>
 </resources>
