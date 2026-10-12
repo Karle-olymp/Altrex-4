@@ -324,7 +324,7 @@ fun SettingsDialog(
               style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
             )
             Text(
-              "Les modèles s'exécutent sur ton téléphone. Seul l'outil Sécurité envoie du code à SecurCode, après ton autorisation.",
+              "Les modèles s'exécutent sur ton téléphone. L'outil Sécurité envoie du code à SecurCode, après ton autorisation. La recherche web de l'espace Code envoie uniquement tes requêtes de recherche à Brave.",
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
