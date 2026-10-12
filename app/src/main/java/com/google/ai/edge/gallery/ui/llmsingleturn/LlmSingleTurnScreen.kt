@@ -196,6 +196,8 @@ fun LlmSingleTurnScreen(
     ) {
       if (securityMode) {
         SecurityBar()
+      } else {
+        WebBar()
       }
       FileExplorerPanel(
         modifier = Modifier.fillMaxWidth(),
