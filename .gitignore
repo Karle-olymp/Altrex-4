@@ -1,0 +1,20 @@
+# Gradle / build
+.gradle/
+build/
+app/build/
+.cxx/
+app/.cxx/
+local.properties
+captures/
+
+# Signing and artifacts
+debug.keystore
+*.keystore
+*.jks
+*.apk
+*.aab
+
+# IDE / OS
+.idea/
+*.iml
+.DS_Store
