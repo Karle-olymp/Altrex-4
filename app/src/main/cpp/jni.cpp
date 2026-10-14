@@ -10,6 +10,7 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include <mutex> // [ALTREX] Ajout de l'inclusion pour le verrou de sécurité
 #include "llama.h"
 #include "rn-llama.h"
 #include "rn-completion.h"
@@ -194,7 +195,9 @@ static inline void addHashMapArrayList(JNIEnv *env, jobject arrayList, jobject v
     env->CallBooleanMethod(arrayList, addMethod, value);
 }
 
+// [ALTREX] Thread-safety: Mutex et Map globale protégée
 std::unordered_map<long, rnllama::llama_rn_context *> context_map;
+std::mutex context_mutex;
 
 JNIEXPORT jlong JNICALL
 Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
@@ -275,7 +278,12 @@ Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
     bool ok = llama->loadModel(defaultParams);
 
     if (ok) {
-        context_map[(long) llama->ctx] = llama;
+        // [ALTREX] Verrouillage propre lors de l'enregistrement du pointeur
+        {
+            std::lock_guard<std::mutex> lock(context_mutex);
+            context_map[(long) llama->ctx] = llama;
+        }
+        
         if (!defaultParams.mmproj.path.empty()) {
             LOGI("Initializing multimodal with mmproj: %s", defaultParams.mmproj.path.c_str());
             bool mm_ok = llama->initMultimodal(defaultParams.mmproj.path, n_gpu_layers > 0);
@@ -297,9 +305,13 @@ Java_org_nehuatl_llamacpp_LlamaContext_loadModelDetails(
         jlong context_ptr
 ) {
     UNUSED(thiz);
-    auto it = context_map.find((long) context_ptr);
-    if (it == context_map.end()) return nullptr;
-    auto llama = it->second;
+    rnllama::llama_rn_context* llama = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(context_mutex);
+        auto it = context_map.find((long) context_ptr);
+        if (it != context_map.end()) llama = it->second;
+    }
+    if (!llama) return nullptr;
 
     int count = llama_model_meta_count(llama->model);
     auto meta = createHashMap(env);
@@ -336,8 +348,13 @@ Java_org_nehuatl_llamacpp_LlamaContext_getFormattedChat(
     UNUSED(thiz);
     UNUSED(messages);
     UNUSED(chat_template);
-    auto it = context_map.find((long) context_ptr);
-    if (it == context_map.end()) return nullptr;
+    rnllama::llama_rn_context* llama = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(context_mutex);
+        auto it = context_map.find((long) context_ptr);
+        if (it != context_map.end()) llama = it->second;
+    }
+    if (!llama) return nullptr;
     return env->NewStringUTF("");
 }
 
@@ -349,9 +366,13 @@ Java_org_nehuatl_llamacpp_LlamaContext_loadSession(
         jstring path
 ) {
     UNUSED(thiz);
-    auto it = context_map.find((long) context_ptr);
-    if (it == context_map.end()) return nullptr;
-    auto llama = it->second;
+    rnllama::llama_rn_context* llama = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(context_mutex);
+        auto it = context_map.find((long) context_ptr);
+        if (it != context_map.end()) llama = it->second;
+    }
+    if (!llama) return nullptr;
     const char *path_chars = env->GetStringUTFChars(path, nullptr);
 
     auto result = createHashMap(env);
@@ -378,9 +399,13 @@ Java_org_nehuatl_llamacpp_LlamaContext_saveSession(
 ) {
     UNUSED(thiz);
     UNUSED(size);
-    auto it = context_map.find((long) context_ptr);
-    if (it == context_map.end()) return -1;
-    auto llama = it->second;
+    rnllama::llama_rn_context* llama = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(context_mutex);
+        auto it = context_map.find((long) context_ptr);
+        if (it != context_map.end()) llama = it->second;
+    }
+    if (!llama) return -1;
 
     const char *path_chars = env->GetStringUTFChars(path, nullptr);
 
@@ -441,11 +466,13 @@ Java_org_nehuatl_llamacpp_LlamaContext_doCompletion(
     UNUSED(ignore_eos);
     UNUSED(logit_bias);
     
-    auto it = context_map.find((long) context_ptr);
-    if (it == context_map.end()) return nullptr;
-    auto llama = it->second;
-
-    if (llama->completion == nullptr) return nullptr;
+    rnllama::llama_rn_context* llama = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(context_mutex);
+        auto it = context_map.find((long) context_ptr);
+        if (it != context_map.end()) llama = it->second;
+    }
+    if (!llama || llama->completion == nullptr) return nullptr;
 
     llama->completion->rewind();
 
@@ -525,10 +552,13 @@ Java_org_nehuatl_llamacpp_LlamaContext_stopCompletion(
         JNIEnv *env, jobject thiz, jlong context_ptr) {
     UNUSED(env);
     UNUSED(thiz);
-    auto it = context_map.find((long) context_ptr);
-    if (it == context_map.end()) return;
-    auto llama = it->second;
-    if (llama->completion) llama->completion->is_interrupted = true;
+    rnllama::llama_rn_context* llama = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(context_mutex);
+        auto it = context_map.find((long) context_ptr);
+        if (it != context_map.end()) llama = it->second;
+    }
+    if (llama && llama->completion) llama->completion->is_interrupted = true;
 }
 
 JNIEXPORT jboolean JNICALL
@@ -536,10 +566,13 @@ Java_org_nehuatl_llamacpp_LlamaContext_isPredicting(
         JNIEnv *env, jobject thiz, jlong context_ptr) {
     UNUSED(env);
     UNUSED(thiz);
-    auto it = context_map.find((long) context_ptr);
-    if (it == context_map.end()) return false;
-    auto llama = it->second;
-    if (llama->completion) return llama->completion->is_predicting;
+    rnllama::llama_rn_context* llama = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(context_mutex);
+        auto it = context_map.find((long) context_ptr);
+        if (it != context_map.end()) llama = it->second;
+    }
+    if (llama && llama->completion) return llama->completion->is_predicting;
     return false;
 }
 
@@ -547,9 +580,13 @@ JNIEXPORT jobject JNICALL
 Java_org_nehuatl_llamacpp_LlamaContext_tokenize(
         JNIEnv *env, jobject thiz, jlong context_ptr, jstring text) {
     UNUSED(thiz);
-    auto it = context_map.find((long) context_ptr);
-    if (it == context_map.end()) return nullptr;
-    auto llama = it->second;
+    rnllama::llama_rn_context* llama = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(context_mutex);
+        auto it = context_map.find((long) context_ptr);
+        if (it != context_map.end()) llama = it->second;
+    }
+    if (!llama) return nullptr;
 
     const char *text_chars = env->GetStringUTFChars(text, nullptr);
     auto result = llama->tokenize(text_chars, {});
@@ -566,9 +603,13 @@ JNIEXPORT jstring JNICALL
 Java_org_nehuatl_llamacpp_LlamaContext_detokenize(
         JNIEnv *env, jobject thiz, jlong context_ptr, jintArray tokens) {
     UNUSED(thiz);
-    auto it = context_map.find((long) context_ptr);
-    if (it == context_map.end()) return nullptr;
-    auto llama = it->second;
+    rnllama::llama_rn_context* llama = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(context_mutex);
+        auto it = context_map.find((long) context_ptr);
+        if (it != context_map.end()) llama = it->second;
+    }
+    if (!llama) return nullptr;
 
     jsize tokens_len = env->GetArrayLength(tokens);
     jint *tokens_ptr = env->GetIntArrayElements(tokens, 0);
@@ -593,9 +634,13 @@ Java_org_nehuatl_llamacpp_LlamaContext_isEmbeddingEnabled(
         JNIEnv *env, jobject thiz, jlong context_ptr) {
     UNUSED(env);
     UNUSED(thiz);
-    auto it = context_map.find((long) context_ptr);
-    if (it == context_map.end()) return false;
-    auto llama = it->second;
+    rnllama::llama_rn_context* llama = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(context_mutex);
+        auto it = context_map.find((long) context_ptr);
+        if (it != context_map.end()) llama = it->second;
+    }
+    if (!llama) return false;
     return llama->params.embedding;
 }
 
@@ -603,9 +648,13 @@ JNIEXPORT jobject JNICALL
 Java_org_nehuatl_llamacpp_LlamaContext_embedding(
         JNIEnv *env, jobject thiz, jlong context_ptr, jstring text) {
     UNUSED(thiz);
-    auto it = context_map.find((long) context_ptr);
-    if (it == context_map.end()) return nullptr;
-    auto llama = it->second;
+    rnllama::llama_rn_context* llama = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(context_mutex);
+        auto it = context_map.find((long) context_ptr);
+        if (it != context_map.end()) llama = it->second;
+    }
+    if (!llama) return nullptr;
 
     const char *text_chars = env->GetStringUTFChars(text, nullptr);
     llama->params.prompt = text_chars;
@@ -634,9 +683,13 @@ Java_org_nehuatl_llamacpp_LlamaContext_bench(
         jint nr
 ) {
     UNUSED(thiz);
-    auto it = context_map.find((long) context_ptr);
-    if (it == context_map.end()) return nullptr;
-    auto llama = it->second;
+    rnllama::llama_rn_context* llama = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(context_mutex);
+        auto it = context_map.find((long) context_ptr);
+        if (it != context_map.end()) llama = it->second;
+    }
+    if (!llama) return nullptr;
     if (llama->completion) {
         std::string result = llama->completion->bench(pp, tg, pl, nr);
         return env->NewStringUTF(result.c_str());
@@ -649,11 +702,19 @@ Java_org_nehuatl_llamacpp_LlamaContext_freeContext(
         JNIEnv *env, jobject thiz, jlong context_ptr) {
     UNUSED(env);
     UNUSED(thiz);
-    auto it = context_map.find((long) context_ptr);
-    if (it == context_map.end()) return;
-    auto llama = it->second;
-    context_map.erase((long) llama->ctx);
-    delete llama;
+    rnllama::llama_rn_context* llama = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(context_mutex);
+        auto it = context_map.find((long) context_ptr);
+        if (it != context_map.end()) {
+            llama = it->second;
+            context_map.erase(it); // Retire de la map de manière sécurisée
+        }
+    }
+    // La suppression réelle (delete) se fait hors du verrou pour ne pas bloquer les autres threads
+    if (llama) {
+        delete llama; 
+    }
 }
 
 // ============ GET MODEL CONTEXT SIZE ============
