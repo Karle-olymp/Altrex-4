@@ -1,335 +1,193 @@
+/*
+ * Copyright 2026 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.nehuatl.llamacpp
 
-import android.os.Build
+import android.content.Context
+import android.os.ParcelFileDescriptor
 import android.util.Log
-import java.io.BufferedReader
+import com.google.ai.edge.gallery.data.HardwareOptimizer
+import com.google.ai.edge.gallery.data.LlmHardwareProfile
 import java.io.File
-import java.io.FileReader
-import java.io.IOException
+import java.util.Collections
+import java.util.WeakHashMap
 
-class LlamaContext(
-    private val id: Int,
-    params: Map<String, Any>
-) {
+class LlamaContext private constructor(private var contextPtr: Long) {
 
-    private var tokenCallback: ((String) -> Unit)? = null
-
-    companion object {
-        private const val NAME = "RNLlamaContext"
-
-        init {
-            try {
-                if (isArm64V8a()) {
-                    val cpuFeatures = getCpuFeatures()
-                    Log.d(NAME, "CPU features: $cpuFeatures")
-
-                    val hasDotProd = cpuFeatures.contains("dotprod") || cpuFeatures.contains("asimddp")
-                    val isAtLeastArmV82 = cpuFeatures.contains("asimd") && cpuFeatures.contains("crc32") && cpuFeatures.contains("aes")
-                    val hasI8mm = cpuFeatures.contains("i8mm")
-
-                    when {
-                        isAtLeastArmV82 && hasDotProd && hasI8mm -> {
-                            Log.d(NAME, "Loading librnllama_v8_2_dotprod_i8mm.so")
-                            System.loadLibrary("rnllama_v8_2_dotprod_i8mm")
-                        }
-                        isAtLeastArmV82 && hasDotProd -> {
-                            Log.d(NAME, "Loading librnllama_v8_2_dotprod.so")
-                            System.loadLibrary("rnllama_v8_2_dotprod")
-                        }
-                        isAtLeastArmV82 && hasI8mm -> {
-                            Log.d(NAME, "Loading librnllama_v8_2_i8mm.so")
-                            System.loadLibrary("rnllama_v8_2_i8mm")
-                        }
-                        isAtLeastArmV82 -> {
-                            Log.d(NAME, "Loading librnllama_v8_2.so")
-                            System.loadLibrary("rnllama_v8_2")
-                        }
-                        else -> {
-                            Log.d(NAME, "Loading librnllama_v8.so")
-                            System.loadLibrary("rnllama_v8")
-                        }
-                    }
-                } else if (isX86_64()) {
-                    Log.d(NAME, "Loading librnllama_x86_64.so")
-                    System.loadLibrary("rnllama_x86_64")
-                } else {
-                    Log.d(NAME, "Loading default librnllama.so")
-                    System.loadLibrary("rnllama")
-                }
-            } catch (t: Throwable) {
-                Log.w(NAME, "Native library rnllama could not be loaded: ${t.message}")
-            }
-        }
-
-        private fun isArm64V8a(): Boolean = Build.SUPPORTED_ABIS[0] == "arm64-v8a"
-        private fun isX86_64(): Boolean = Build.SUPPORTED_ABIS[0] == "x86_64"
-        private fun getCpuFeatures(): String {
-            val file = File("/proc/cpuinfo")
-            val stringBuilder = StringBuilder()
-            try {
-                val bufferedReader = BufferedReader(FileReader(file))
-                var line: String?
-                while (bufferedReader.readLine().also { line = it } != null) {
-                    if (line!!.startsWith("Features")) {
-                        stringBuilder.append(line)
-                        break
-                    }
-                }
-                bufferedReader.close()
-                return stringBuilder.toString()
-            } catch (e: IOException) {
-                Log.w(NAME, "Couldn't read /proc/cpuinfo", e)
-                return ""
-            }
-        }
-    }
-
-    val context: Long
-    val modelDetails: Map<String, Any>
-
-    init {
-        if (!isArm64V8a() && !isX86_64()) {
-            throw IllegalStateException("Only 64-bit architectures are supported")
-        }
-        if (!params.containsKey("model")) {
-            throw IllegalArgumentException("Missing required parameter: model")
-        }
-
-        this.context = initContextWithFd(
-            // int modelFd,
-            params["model_fd"] as Int,
-            // boolean embedding,
-            params["embedding"] as? Boolean ?: false,
-            // int n_ctx,
-            params["n_ctx"] as? Int ?: 512,
-            // int n_batch,
-            params["n_batch"] as? Int ?: 512,
-            // int n_threads,
-            params["n_threads"] as? Int ?: 0,
-            // int n_gpu_layers,
-            params["n_gpu_layers"] as? Int ?: 0,
-            // boolean use_mlock,
-            params["use_mlock"] as? Boolean ?: true,
-            // boolean use_mmap,
-            params["use_mmap"] as? Boolean ?: true,
-            // boolean vocab_only,
-            params["vocab_only"] as? Boolean ?: false,
-            // String lora,
-            params["lora"] as? String ?: "",
-            // float lora_scaled,
-            (params["lora_scaled"] as? Double)?.toFloat() ?: 1.0f,
-            // float rope_freq_base,
-            (params["rope_freq_base"] as? Double)?.toFloat() ?: 0.0f,
-            // float rope_freq_scale
-            (params["rope_freq_scale"] as? Double)?.toFloat() ?: 0.0f,
-            // int mmproj_fd,
-            params["mmproj_fd"] as? Int ?: -1,
-            // int[] image_fds
-            (params["image_fds"] as? List<Int>)?.toIntArray() ?: intArrayOf()
-        )
-        if (this.context == 0L) {
-            throw IllegalStateException("Failed to initialize llama context")
-        }
-        this.modelDetails = loadModelDetails(this.context).toMutableMap()
-    }
-
-    fun setTokenCallback(callback: (String) -> Unit) {
-        tokenCallback = callback
-    }
-
-    fun getFormattedChat(messages: List<Map<String, Any>>, chatTemplate: String): String {
-        val msgs = messages.toTypedArray()
-        return getFormattedChat(context, msgs, chatTemplate.ifEmpty { "" })
-    }
-
-    private inner class PartialCompletionCallback {
-        private val emitNeeded: Boolean
-
-        constructor(emitNeeded: Boolean) {
-            this.emitNeeded = emitNeeded
-        }
-
-        fun onPartialCompletion(tokenResult: Map<String, Any>) {
-            if (!emitNeeded) return
-            tokenCallback?.invoke(tokenResult["token"] as String)
-        }
-    }
-
-    fun loadSession(path: String): Map<String, Any> {
-        if (path.isEmpty()) {
-            throw IllegalArgumentException("File path is empty")
-        }
-        val file = File(path)
-        if (!file.exists()) {
-            throw IllegalArgumentException("File does not exist: $path")
-        }
-        val result = loadSession(context, path).toMutableMap()
-        if (result.containsKey("error")) {
-            throw IllegalStateException(result["error"] as String)
-        }
-        return result
-    }
-
-    fun saveSession(path: String, size: Int): Int {
-        if (path.isEmpty()) {
-            throw IllegalArgumentException("File path is empty")
-        }
-        return saveSession(context, path, size)
-    }
-
-    fun completion(params: Map<String, Any>): Map<String, Any> {
-        if (!params.containsKey("prompt")) {
-            throw IllegalArgumentException("Missing required parameter: prompt")
-        }
-
-        val logitBias = params["logit_bias"] as? List<List<Double>>
-        val logitBiasArray: Array<DoubleArray> = logitBias?.map { it.toDoubleArray() }?.toTypedArray() ?: emptyArray()
-
-        val result = doCompletion(
-            context,
-            params["prompt"] as String,
-            params["grammar"] as? String ?: "",
-            (params["temperature"] as? Double)?.toFloat() ?: 0.7f,
-            params["n_threads"] as? Int ?: 0,
-            params["n_predict"] as? Int ?: -1,
-            params["n_probs"] as? Int ?: 0,
-            params["penalty_last_n"] as? Int ?: 64,
-            (params["penalty_repeat"] as? Double)?.toFloat() ?: 1.00f,
-            (params["penalty_freq"] as? Double)?.toFloat() ?: 0.00f,
-            (params["penalty_present"] as? Double)?.toFloat() ?: 0.00f,
-            (params["mirostat"] as? Double)?.toFloat() ?: 0.00f,
-            (params["mirostat_tau"] as? Double)?.toFloat() ?: 5.00f,
-            (params["mirostat_eta"] as? Double)?.toFloat() ?: 0.10f,
-            params["penalize_nl"] as? Boolean ?: false,
-            params["top_k"] as? Int ?: 40,
-            (params["top_p"] as? Double)?.toFloat() ?: 0.95f,
-            (params["min_p"] as? Double)?.toFloat() ?: 0.05f,
-            (params["xtc_t"] as? Double)?.toFloat() ?: 0.00f,
-            (params["xtc_p"] as? Double)?.toFloat() ?: 0.00f,
-            (params["tfs_z"] as? Double)?.toFloat() ?: 1.00f,
-            (params["typical_p"] as? Double)?.toFloat() ?: 1.00f,
-            params["seed"] as? Int ?: -1,
-            (params["stop"] as? List<String>)?.toTypedArray() ?: emptyArray(),
-            params["ignore_eos"] as? Boolean ?: false,
-            logitBiasArray,
-            (params["image_fds"] as? List<Int>)?.toIntArray() ?: intArrayOf(),
-            PartialCompletionCallback(
-                params["emit_partial_completion"] as? Boolean ?: false
-            )
-        ).toMutableMap()
-        if (result.containsKey("error")) {
-            throw IllegalStateException(result["error"] as String)
-        }
-        return result
-    }
-
-    fun stopCompletion() {
-        stopCompletion(context)
-    }
-
-    fun isPredicting(): Boolean {
-        return isPredicting(context)
-    }
-
-    fun tokenize(text: String): List<Int> {
-        val result = tokenize(context, text)
-        return result.map { it as Int }
-    }
-
-    fun detokenize(tokens: List<Int>): String {
-        return detokenize(context, tokens.toIntArray())
-    }
-
-    fun getEmbedding(text: String): Map<String, Any> {
-        if (!isEmbeddingEnabled(context)) {
-            throw IllegalStateException("Embedding is not enabled")
-        }
-        val result = embedding(context, text).toMutableMap()
-        if (result.containsKey("error")) {
-            throw IllegalStateException(result["error"] as String)
-        }
-        return result
-    }
-
-    fun bench(pp: Int, tg: Int, pl: Int, nr: Int): String {
-        return bench(context, pp, tg, pl, nr)
-    }
+    private var isReleased = false
 
     fun release() {
-        freeContext(context)
+        if (!isReleased && contextPtr != 0L) {
+            freeContext(contextPtr)
+            contextPtr = 0L
+            isReleased = true
+        }
     }
 
-    private external fun initContextWithFd(
-        modelFd: Int,
-        embedding: Boolean,
-        n_ctx: Int,
-        n_batch: Int,
-        n_threads: Int,
-        n_gpu_layers: Int,
-        use_mlock: Boolean,
-        use_mmap: Boolean,
-        vocab_only: Boolean,
-        lora: String?,
-        lora_scaled: Float,
-        rope_freq_base: Float,
-        rope_freq_scale: Float,
-        mmprojFd: Int,
-        imageFds: IntArray
-    ): Long
+    protected fun finalize() {
+        release()
+    }
 
-    private external fun loadModelDetails(contextPtr: Long): Map<String, Any>
-    external fun getModelContextSize(): Int
+    companion object {
+        init {
+            System.loadLibrary("rnllama")
+        }
 
-    external fun getFormattedChat(contextPtr: Long, messages: Array<Map<String, Any>>, chatTemplate: String): String
+        private const val TAG = "LlamaContext"
 
-    private external fun loadSession(contextPtr: Long, path: String): Map<String, Any>
+        /**
+         * Crée et initialise un contexte LLM avec prise en compte du profil matériel (CPU / GPU Hybride).
+         */
+        fun create(
+            context: Context,
+            modelFile: File,
+            embedding: Boolean = false,
+            nCtx: Int = 2048,
+            nBatch: Int = 512,
+            nThreads: Int = 0,
+            hardwareProfile: LlmHardwareProfile = LlmHardwareProfile.HYBRID_AUTO,
+            useMlock: Boolean = true,
+            useMmap: Boolean = true,
+            vocabOnly: Boolean = false,
+            lora: String = "",
+            loraScaled: Float = 1.0f,
+            ropeFreqBase: Float = 0.0f,
+            ropeFreqScale: Float = 0.0f,
+            mmprojFile: File? = null
+        ): LlamaContext? {
+            if (!modelFile.exists()) {
+                Log.e(TAG, "Model file does not exist: ${modelFile.absolutePath}")
+                return null
+            }
 
-    private external fun saveSession(contextPtr: Long, path: String, size: Int): Int
+            val pfd = ParcelFileDescriptor.open(modelFile, ParcelFileDescriptor.MODE_READ_ONLY)
+            val modelFd = pfd.fd
 
-    private external fun doCompletion(
-        contextPtr: Long,
+            var mmprojFd = -1
+            if (mmprojFile != null && mmprojFile.exists()) {
+                val mmprojPfd = ParcelFileDescriptor.open(mmprojFile, ParcelFileDescriptor.MODE_READ_ONLY)
+                mmprojFd = mmprojPfd.fd
+            }
+
+            // [ALTREX] Calcul dynamique des couches GPU via l'optimiseur matériel
+            // On attribue par défaut 33 couches (standard pour les modèles 3B/4B comme Qwen) si non spécifié
+            val estimatedTotalLayers = 33 
+            val calculatedGpuLayers = HardwareOptimizer.getOptimalGpuLayers(
+                context = context,
+                profile = hardwareProfile,
+                totalModelLayers = estimatedTotalLayers
+            )
+
+            Log.i(TAG, "Initialisation JNI avec ${calculatedGpuLayers} couches sur le GPU (Profil: ${hardwareProfile.name})")
+
+            val ptr = initContextWithFd(
+                modelFd = modelFd,
+                embedding = embedding,
+                nCtx = nCtx,
+                nBatch = nBatch,
+                nThreads = nThreads,
+                nGpuLayers = calculatedGpuLayers,
+                useMlock = useMlock,
+                useMmap = useMmap,
+                vocabOnly = vocabOnly,
+                loraStr = lora,
+                loraScaled = loraScaled,
+                ropeFreqBase = ropeFreqBase,
+                ropeFreqScale = ropeFreqScale,
+                mmprojFd = mmprojFd,
+                imageFds = null
+            )
+
+            // Fermeture propre des descripteurs côté Kotlin (dupliqués en C++ via dup())
+            try {
+                pfd.close()
+            } catch (e: Exception) {
+                Log.e(TAG, "Erreur lors de la fermeture du pfd du modèle", e)
+            }
+
+            if (ptr == 0L) {
+                Log.e(TAG, "Échec de l'initialisation du contexte C++ (pointeur nul)")
+                return null
+            }
+
+            return LlamaContext(ptr)
+        }
+
+        @JvmStatic
+        private external fun initContextWithFd(
+            modelFd: Int,
+            embedding: Boolean,
+            nCtx: Int,
+            nBatch: Int,
+            nThreads: Int,
+            nGpuLayers: Int,
+            useMlock: Boolean,
+            useMmap: Boolean,
+            vocabOnly: Boolean,
+            loraStr: String,
+            loraScaled: Float,
+            ropeFreqBase: Float,
+            ropeFreqScale: Float,
+            mmprojFd: Int,
+            imageFds: IntArray?
+        ): Long
+
+        @JvmStatic
+        private external fun freeContext(contextPtr: Long)
+    }
+
+    external fun loadModelDetails(): Map<String, Any>?
+    external fun loadSession(path: String): Map<String, Any>?
+    external fun saveSession(path: String, size: Int): Int
+    
+    external fun doCompletion(
         prompt: String,
-        grammar: String,
+        grammar: String?,
         temperature: Float,
-        n_threads: Int,
-        n_predict: Int,
-        n_probs: Int,
-        penalty_last_n: Int,
-        penalty_repeat: Float,
-        penalty_freq: Float,
-        penalty_present: Float,
+        nThreads: Int,
+        nPredict: Int,
+        nProbs: Int,
+        penaltyLastN: Int,
+        penaltyRepeat: Float,
+        penaltyFreq: Float,
+        penaltyPresent: Float,
         mirostat: Float,
-        mirostat_tau: Float,
-        mirostat_eta: Float,
-        penalize_nl: Boolean,
-        top_k: Int,
-        top_p: Float,
+        mirostatTau: Float,
+        mirostatEta: Float,
+        penalizeNl: Boolean,
+        topK: Int,
+        topP: Float,
         min_p: Float,
-        xtc_t: Float,
-        xtc_p: Float,
-        tfs_z: Float,
-        typical_p: Float,
+        xtcT: Float,
+        xtcP: Float,
+        tfsZ: Float,
+        typicalP: Float,
         seed: Int,
-        stop: Array<String>,
-        ignore_eos: Boolean,
-        logit_bias: Array<DoubleArray>,
-        imageFds: IntArray,
-        partial_completion_callback: PartialCompletionCallback
-    ): Map<String, Any>
+        stop: Array<String>?,
+        ignoreEos: Boolean,
+        logitBias: Array<FloatArray>?,
+        imageFds: IntArray?,
+        callback: Any
+    ): Map<String, Any>?
 
-    private external fun stopCompletion(contextPtr: Long)
-
-    private external fun isPredicting(contextPtr: Long): Boolean
-
-    private external fun tokenize(contextPtr: Long, text: String): List<Any>
-
-    private external fun detokenize(contextPtr: Long, tokens: IntArray): String
-
-    private external fun isEmbeddingEnabled(contextPtr: Long): Boolean
-
-    private external fun embedding(contextPtr: Long, text: String): Map<String, Any>
-
-    private external fun bench(contextPtr: Long, pp: Int, tg: Int, pl: Int, nr: Int): String
-
-    private external fun freeContext(contextPtr: Long)
+    external fun stopCompletion()
+    external fun isPredicting(): Boolean
+    external fun tokenize(text: String): IntArray?
+    external fun detokenize(tokens: IntArray): String?
+    external fun isEmbeddingEnabled(): Boolean
+    external fun embedding(text: String): FloatArray?
+    external fun bench(pp: Int, tg: Int, pl: Int, nr: Int): String?
 }
