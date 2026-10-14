@@ -16,6 +16,7 @@
 
 package com.google.ai.edge.gallery.ui.common
 
+import com.google.ai.edge.gallery.ui.theme.codeFontFamily
 import androidx.annotation.StringRes
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -119,7 +120,7 @@ fun CursorTrackingTextField(
     modifier = modifier.fillMaxWidth().bringIntoViewRequester(bringIntoViewRequester),
     textStyle =
       (if (monoFont) {
-          MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+          MaterialTheme.typography.bodySmall.copy(fontFamily = codeFontFamily)
         } else {
           MaterialTheme.typography.bodyMedium
         })

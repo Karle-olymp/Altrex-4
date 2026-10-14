@@ -16,6 +16,7 @@
 
 package com.google.ai.edge.gallery.customtasks.agentchat
 
+import com.google.ai.edge.gallery.ui.theme.codeFontFamily
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -87,7 +88,7 @@ fun McpToolCallPermissionDialog(
           Text(
             text = formattedArgument,
             style = MaterialTheme.typography.bodySmall,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = codeFontFamily,
           )
         }
       }
