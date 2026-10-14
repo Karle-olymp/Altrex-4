@@ -110,7 +110,7 @@ import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.ui.common.AudioAnimation
 import com.google.ai.edge.gallery.ui.common.ErrorDialog
 import com.google.ai.edge.gallery.ui.common.FloatingBanner
-import com.google.ai.edge.gallery.ui.common.RotationalLoader
+import com.google.ai.edge.gallery.ui.common.AltrexModelLoading
 import com.google.ai.edge.gallery.ui.common.ScrollToBottomButton
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
@@ -618,27 +618,12 @@ fun ChatPanel(
             exit = fadeOut() + scaleOut(targetScale = 0.9f),
           ) {
             Box(modifier = Modifier.background(MaterialTheme.colorScheme.surface).fillMaxSize()) {
-              Column(
+              AltrexModelLoading(
+                title = stringResource(R.string.aichat_initializing_title),
+                modelName = selectedModel.displayName.ifEmpty { selectedModel.name },
+                hint = stringResource(R.string.aichat_initializing_content),
                 modifier = Modifier.align(Alignment.Center),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-              ) {
-                RotationalLoader(size = 72.dp)
-                Text(
-                  stringResource(R.string.aichat_initializing_title),
-                  style =
-                    MaterialTheme.typography.headlineLarge.copy(
-                      fontSize = 24.sp,
-                      fontWeight = FontWeight.Bold,
-                    ),
-                )
-                Text(
-                  stringResource(R.string.aichat_initializing_content),
-                  style = MaterialTheme.typography.bodyMedium,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  textAlign = TextAlign.Center,
-                )
-              }
+              )
             }
           }
         }

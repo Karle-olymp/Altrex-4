@@ -49,9 +49,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.core.os.bundleOf
 import com.google.ai.edge.gallery.GalleryEvent
+import com.google.ai.edge.gallery.R
+import com.google.ai.edge.gallery.ui.common.AltrexModelLoading
 import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.RuntimeType
@@ -225,6 +228,28 @@ fun LlmSingleTurnScreen(
           onOpenedFileCleared = { openedFile = null },
           onFileContentSaved = { newContent -> openedFile = openedFile?.copy(content = newContent) },
         )
+
+        // [ALTREX] Model loading screen over the editor and the response. Fully qualified: the
+        // ColumnScope overload would otherwise be picked from the outer Column.
+        androidx.compose.animation.AnimatedVisibility(
+          visible = modelInitializationStatus?.status == ModelInitializationStatusType.INITIALIZING,
+          enter = fadeIn(),
+          exit = fadeOut() + scaleOut(targetScale = 0.96f),
+        ) {
+          Box(
+            modifier =
+              Modifier.fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.94f))
+                .pointerInput(Unit) {},
+            contentAlignment = Alignment.Center,
+          ) {
+            AltrexModelLoading(
+              title = stringResource(R.string.aichat_initializing_title),
+              modelName = selectedModel.displayName.ifEmpty { selectedModel.name },
+              hint = stringResource(R.string.aichat_initializing_content),
+            )
+          }
+        }
       }
     }
   }
