@@ -75,6 +75,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FlipCameraAndroid
@@ -381,10 +382,14 @@ fun MessageInputText(
             Column(
               modifier =
                 Modifier.padding(horizontal = 12.dp)
-                  .padding(vertical = 8.dp)
-                  .clip(RoundedCornerShape(24.dp))
+                  .padding(top = 6.dp, bottom = 10.dp)
+                  .clip(RoundedCornerShape(26.dp))
                   .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                  .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(24.dp))
+                  .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                    RoundedCornerShape(26.dp),
+                  )
             ) {
               // First row: text field for input.
               Row(
@@ -396,7 +401,7 @@ fun MessageInputText(
                 TextField(
                   value = curMessage,
                   minLines = 1,
-                  maxLines = 3,
+                  maxLines = 6,
                   onValueChange = onValueChanged,
                   colors =
                     TextFieldDefaults.colors(
@@ -437,237 +442,29 @@ fun MessageInputText(
                     OutlinedIconButton(
                       enabled = enableAddButton,
                       onClick = { showAddContentMenu = true },
+                      modifier = Modifier.size(38.dp),
                       colors =
                         IconButtonDefaults.iconButtonColors(
-                          containerColor = MaterialTheme.colorScheme.primaryContainer,
-                          contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                          disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                          containerColor = Color.Transparent,
+                          contentColor = MaterialTheme.colorScheme.onSurface,
+                          disabledContainerColor = Color.Transparent,
                           disabledContentColor =
                             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
                         ),
                       border =
                         IconButtonDefaults.outlinedIconButtonBorder(true)
-                          .copy(brush = SolidColor(Color.Transparent)),
+                          .copy(
+                            brush =
+                              SolidColor(MaterialTheme.colorScheme.primary.copy(alpha = 0.22f))
+                          ),
                     ) {
                       Icon(
                         Icons.Outlined.Add,
                         contentDescription = stringResource(R.string.cd_add_content_icon),
-                        modifier = Modifier.size(24.dp).rotate(addIconRotation),
+                        modifier = Modifier.size(20.dp).rotate(addIconRotation),
                       )
                     }
 
-                    DropdownMenu(
-                      expanded = showAddContentMenu,
-                      onDismissRequest = { showAddContentMenu = false },
-                      shape = RoundedCornerShape(20.dp),
-                      containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ) {
-                      if (showImagePicker) {
-                        val isImageLimitExceededForAiCore =
-                          modelManagerUiState.selectedModel.runtimeType == RuntimeType.AICORE &&
-                            (imageCount + pickedImages.size) >= MAX_IMAGE_COUNT_AI_CORE
-                        val enableAddImageMenuItems =
-                          (imageCount + pickedImages.size) < MAX_IMAGE_COUNT
-                        val isImageSupported = modelManagerUiState.selectedModel.llmSupportImage
-                        val imageItemColors =
-                          MenuDefaults.itemColors(
-                            textColor =
-                              if (isImageSupported) Color.Unspecified
-                              else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                            leadingIconColor =
-                              if (isImageSupported) Color.Unspecified
-                              else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                          )
-                        MenuSectionLabel("IMAGE")
-                        // Take a picture.
-                        DropdownMenuItem(
-                          text = {
-                            Row(
-                              verticalAlignment = Alignment.CenterVertically,
-                              horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                              Icon(Icons.Rounded.PhotoCamera, contentDescription = null)
-                              Text(stringResource(R.string.take_a_picture))
-                            }
-                          },
-                          enabled = enableAddImageMenuItems,
-                          colors = imageItemColors,
-                          onClick = {
-                            if (!isImageSupported) {
-                              onModelNotSupportImage()
-                              showAddContentMenu = false
-                              return@DropdownMenuItem
-                            }
-                            if (isImageLimitExceededForAiCore) {
-                              onImageLimitExceeded()
-                              showAddContentMenu = false
-                              return@DropdownMenuItem
-                            }
-                            // Check permission
-                            when (PackageManager.PERMISSION_GRANTED) {
-                              // Already got permission. Call the lambda.
-                              ContextCompat.checkSelfPermission(
-                                context,
-                                Manifest.permission.CAMERA,
-                              ) -> {
-                                showAddContentMenu = false
-                                showCameraCaptureBottomSheet = true
-                              }
-
-                              // Otherwise, ask for permission
-                              else -> {
-                                takePicturePermissionLauncher.launch(Manifest.permission.CAMERA)
-                              }
-                            }
-                          },
-                        )
-
-                        // Pick an image from album.
-                        DropdownMenuItem(
-                          text = {
-                            Row(
-                              verticalAlignment = Alignment.CenterVertically,
-                              horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                              Icon(Icons.Rounded.Photo, contentDescription = null)
-                              Text(stringResource(R.string.pick_from_album))
-                            }
-                          },
-                          enabled = enableAddImageMenuItems,
-                          colors = imageItemColors,
-                          onClick = {
-                            if (!isImageSupported) {
-                              onModelNotSupportImage()
-                              showAddContentMenu = false
-                              return@DropdownMenuItem
-                            }
-                            if (isImageLimitExceededForAiCore) {
-                              onImageLimitExceeded()
-                              showAddContentMenu = false
-                              return@DropdownMenuItem
-                            }
-                            // Launch the photo picker and let the user choose only images.
-                            pickMedia.launch(
-                              PickVisualMediaRequest(
-                                ActivityResultContracts.PickVisualMedia.ImageOnly
-                              )
-                            )
-                            showAddContentMenu = false
-                          },
-                        )
-                      }
-
-                      // Audio related menu items.
-                      if (showAudioPicker) {
-                        MenuSectionLabel("AUDIO")
-                        val enableRecordAudioClipMenuItems =
-                          (audioClipMessageCount + pickedAudioClips.size) < MAX_AUDIO_CLIP_COUNT
-                        val isAudioSupported = modelManagerUiState.selectedModel.llmSupportAudio
-                        val audioItemColors =
-                          MenuDefaults.itemColors(
-                            textColor =
-                              if (isAudioSupported) Color.Unspecified
-                              else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                            leadingIconColor =
-                              if (isAudioSupported) Color.Unspecified
-                              else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                          )
-                        DropdownMenuItem(
-                          text = {
-                            Row(
-                              verticalAlignment = Alignment.CenterVertically,
-                              horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                              Icon(Icons.Rounded.Mic, contentDescription = null)
-                              Text(stringResource(R.string.media_picker_record_audio))
-                            }
-                          },
-                          enabled = enableRecordAudioClipMenuItems,
-                          colors = audioItemColors,
-                          onClick = {
-                            if (!isAudioSupported) {
-                              onModelNotSupportAudio()
-                              showAddContentMenu = false
-                              return@DropdownMenuItem
-                            }
-                            // Check permission
-                            when (PackageManager.PERMISSION_GRANTED) {
-                              // Already got permission. Call the lambda.
-                              ContextCompat.checkSelfPermission(
-                                context,
-                                Manifest.permission.RECORD_AUDIO,
-                              ) -> {
-                                handleClickRecordAudioClip()
-                              }
-
-                              // Otherwise, ask for permission
-                              else -> {
-                                recordAudioClipsPermissionLauncher.launch(
-                                  Manifest.permission.RECORD_AUDIO
-                                )
-                              }
-                            }
-                          },
-                        )
-
-                        DropdownMenuItem(
-                          text = {
-                            Row(
-                              verticalAlignment = Alignment.CenterVertically,
-                              horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                              Icon(Icons.Rounded.AudioFile, contentDescription = null)
-                              Text(stringResource(R.string.media_picker_pick_wav))
-                            }
-                          },
-                          enabled = enableRecordAudioClipMenuItems,
-                          colors = audioItemColors,
-                          onClick = {
-                            if (!isAudioSupported) {
-                              onModelNotSupportAudio()
-                              showAddContentMenu = false
-                              return@DropdownMenuItem
-                            }
-                            showAddContentMenu = false
-
-                            // Show file picker.
-                            val intent =
-                              Intent(Intent.ACTION_GET_CONTENT).apply {
-                                addCategory(Intent.CATEGORY_OPENABLE)
-                                type = "audio/*"
-
-                                // Provide a list of more specific MIME types to filter for.
-                                val mimeTypes = arrayOf("audio/wav", "audio/x-wav")
-                                putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes)
-
-                                // Single select.
-                                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, false)
-                                  .addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-                                  .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                              }
-                            pickWav.launch(intent)
-                          },
-                        )
-                      }
-
-                      MenuSectionLabel("TEXTE")
-                      // Prompt history.
-                      DropdownMenuItem(
-                        text = {
-                          Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                          ) {
-                            Icon(Icons.Rounded.History, contentDescription = null)
-                            Text(stringResource(R.string.input_history))
-                          }
-                        },
-                        onClick = {
-                          showAddContentMenu = false
-                          showTextInputHistorySheet = true
-                        },
-                      )
-                    }
                   }
 
                   // Skills.
@@ -736,15 +533,17 @@ fun MessageInputText(
                   if (!modelInitializing && !modelPreparing) {
                     IconButton(
                       onClick = onStopButtonClicked,
+                      modifier = Modifier.size(40.dp),
                       colors =
                         IconButtonDefaults.iconButtonColors(
-                          containerColor = MaterialTheme.colorScheme.secondaryContainer
+                          containerColor = MaterialTheme.colorScheme.onSurface
                         ),
                     ) {
                       Icon(
                         Icons.Rounded.Stop,
                         contentDescription = stringResource(R.string.cd_stop_icon),
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = MaterialTheme.colorScheme.surface,
+                        modifier = Modifier.size(20.dp),
                       )
                     }
                   }
@@ -765,7 +564,7 @@ fun MessageInputText(
                   IconButton(
                     enabled = canSend,
                     modifier =
-                      Modifier.graphicsLayer {
+                      Modifier.size(40.dp).graphicsLayer {
                         scaleX = sendScale
                         scaleY = sendScale
                       },
@@ -783,15 +582,17 @@ fun MessageInputText(
                     },
                     colors =
                       IconButtonDefaults.iconButtonColors(
-                        containerColor = getTaskIconColor(task = task),
-                        disabledContainerColor = getTaskIconColor(task = task).copy(alpha = 0.3f),
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        disabledContentColor =
+                          MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                       ),
                   ) {
                     Icon(
-                      Icons.AutoMirrored.Rounded.Send,
+                      Icons.Rounded.ArrowUpward,
                       contentDescription = stringResource(R.string.cd_send_prompt_icon),
-                      modifier = Modifier.offset(x = 2.dp),
-                      tint = Color.White,
+                      modifier = Modifier.size(20.dp),
                     )
                   }
                 }
@@ -843,6 +644,135 @@ fun MessageInputText(
       onHistoryItemDeleted = { item -> modelManagerViewModel.deleteTextInputHistory(item) },
       onHistoryItemsDeleteAll = { modelManagerViewModel.clearTextInputHistory() },
     )
+  }
+
+  // [ALTREX] "+" panel: media tiles on top, text tools below. Same actions as the former menu.
+  if (showAddContentMenu) {
+    val isImageSupported = modelManagerUiState.selectedModel.llmSupportImage
+    val isImageLimitExceededForAiCore =
+      modelManagerUiState.selectedModel.runtimeType == RuntimeType.AICORE &&
+        (imageCount + pickedImages.size) >= MAX_IMAGE_COUNT_AI_CORE
+    val enableImageItems = (imageCount + pickedImages.size) < MAX_IMAGE_COUNT
+    val isAudioSupported = modelManagerUiState.selectedModel.llmSupportAudio
+    val enableAudioItems = (audioClipMessageCount + pickedAudioClips.size) < MAX_AUDIO_CLIP_COUNT
+
+    // Returns false (and warns) when images cannot be added now.
+    val imageAllowed: () -> Boolean = {
+      if (!isImageSupported) {
+        onModelNotSupportImage()
+        showAddContentMenu = false
+        false
+      } else if (isImageLimitExceededForAiCore) {
+        onImageLimitExceeded()
+        showAddContentMenu = false
+        false
+      } else {
+        true
+      }
+    }
+    val audioAllowed: () -> Boolean = {
+      if (!isAudioSupported) {
+        onModelNotSupportAudio()
+        showAddContentMenu = false
+        false
+      } else {
+        true
+      }
+    }
+
+    ModalBottomSheet(
+      onDismissRequest = { showAddContentMenu = false },
+      containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+      Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+      ) {
+        if (showImagePicker || showAudioPicker) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+          ) {
+            if (showImagePicker) {
+              AddContentTile(
+                icon = Icons.Rounded.Photo,
+                label = "Photo",
+                enabled = enableImageItems && isImageSupported,
+                modifier = Modifier.weight(1f),
+              ) {
+                if (imageAllowed()) {
+                  pickMedia.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                  )
+                  showAddContentMenu = false
+                }
+              }
+              AddContentTile(
+                icon = Icons.Rounded.PhotoCamera,
+                label = "Caméra",
+                enabled = enableImageItems && isImageSupported,
+                modifier = Modifier.weight(1f),
+              ) {
+                if (imageAllowed()) {
+                  if (
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                      PackageManager.PERMISSION_GRANTED
+                  ) {
+                    showAddContentMenu = false
+                    showCameraCaptureBottomSheet = true
+                  } else {
+                    takePicturePermissionLauncher.launch(Manifest.permission.CAMERA)
+                  }
+                }
+              }
+            }
+            if (showAudioPicker) {
+              AddContentTile(
+                icon = Icons.Rounded.Mic,
+                label = "Audio",
+                enabled = enableAudioItems && isAudioSupported,
+                modifier = Modifier.weight(1f),
+              ) {
+                if (audioAllowed()) {
+                  if (
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                      PackageManager.PERMISSION_GRANTED
+                  ) {
+                    handleClickRecordAudioClip()
+                  } else {
+                    recordAudioClipsPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                  }
+                }
+              }
+              AddContentTile(
+                icon = Icons.Rounded.AudioFile,
+                label = "Fichier",
+                enabled = enableAudioItems && isAudioSupported,
+                modifier = Modifier.weight(1f),
+              ) {
+                if (audioAllowed()) {
+                  showAddContentMenu = false
+                  val intent =
+                    Intent(Intent.ACTION_GET_CONTENT).apply {
+                      addCategory(Intent.CATEGORY_OPENABLE)
+                      type = "audio/*"
+                      putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("audio/wav", "audio/x-wav"))
+                      putExtra(Intent.EXTRA_ALLOW_MULTIPLE, false)
+                        .addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                  pickWav.launch(intent)
+                }
+              }
+            }
+          }
+        }
+        AddContentRow(icon = Icons.Rounded.History, label = stringResource(R.string.input_history)) {
+          showAddContentMenu = false
+          showTextInputHistorySheet = true
+        }
+      }
+    }
   }
 
   if (showCameraCaptureBottomSheet) {
@@ -1250,4 +1180,64 @@ private fun MenuSectionLabel(text: String) {
     color = MaterialTheme.colorScheme.primary,
     modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 2.dp),
   )
+}
+
+/** Square tile of the "+" panel (icon above its label). */
+@Composable
+private fun AddContentTile(
+  icon: androidx.compose.ui.graphics.vector.ImageVector,
+  label: String,
+  enabled: Boolean,
+  modifier: Modifier = Modifier,
+  onClick: () -> Unit,
+) {
+  val alpha = if (enabled) 1f else 0.38f
+  Column(
+    modifier =
+      modifier
+        .clip(RoundedCornerShape(16.dp))
+        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+        .clickable(onClick = onClick)
+        .padding(vertical = 14.dp),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.spacedBy(6.dp),
+  ) {
+    Icon(
+      icon,
+      contentDescription = null,
+      tint = MaterialTheme.colorScheme.primary.copy(alpha = alpha),
+      modifier = Modifier.size(22.dp),
+    )
+    Text(
+      label,
+      style = MaterialTheme.typography.labelMedium,
+      color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
+    )
+  }
+}
+
+/** Full-width row of the "+" panel. */
+@Composable
+private fun AddContentRow(
+  icon: androidx.compose.ui.graphics.vector.ImageVector,
+  label: String,
+  onClick: () -> Unit,
+) {
+  Row(
+    modifier =
+      Modifier.fillMaxWidth()
+        .clip(RoundedCornerShape(12.dp))
+        .clickable(onClick = onClick)
+        .padding(horizontal = 6.dp, vertical = 12.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(12.dp),
+  ) {
+    Icon(
+      icon,
+      contentDescription = null,
+      tint = MaterialTheme.colorScheme.tertiary,
+      modifier = Modifier.size(20.dp),
+    )
+    Text(label, style = MaterialTheme.typography.bodyLarge)
+  }
 }
