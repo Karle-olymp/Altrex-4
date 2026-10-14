@@ -64,6 +64,8 @@ import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.ui.common.modelitem.StatusIcon
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
+import com.google.ai.edge.gallery.data.ModelDownloadStatusType
+import androidx.compose.ui.graphics.Color
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -108,11 +110,24 @@ fun ModelPickerChip(
             .semantics { contentDescription = cdChangeModel },
       ) Inner@{
         Box(contentAlignment = Alignment.Center, modifier = Modifier.size(21.dp)) {
-          StatusIcon(
-            task = task,
-            model = initialModel,
-            downloadStatus = modelManagerUiState.modelDownloadStatus[initialModel.name],
-          )
+          // [ALTREX] Once the model is on the phone, a status dot replaces the download icon:
+          // green when loaded, dim otherwise (the ring below shows loading).
+          val chipDownloadStatus = modelManagerUiState.modelDownloadStatus[initialModel.name]
+          if (chipDownloadStatus?.status == ModelDownloadStatusType.SUCCEEDED) {
+            val loaded =
+              modelInitializationStatus?.status == ModelInitializationStatusType.INITIALIZED
+            Box(
+              modifier =
+                Modifier.size(8.dp)
+                  .clip(CircleShape)
+                  .background(
+                    if (loaded) Color(0xFF5FD4A0)
+                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                  )
+            )
+          } else {
+            StatusIcon(task = task, model = initialModel, downloadStatus = chipDownloadStatus)
+          }
           this@Inner.AnimatedVisibility(
             visible =
               modelInitializationStatus?.status == ModelInitializationStatusType.INITIALIZING,

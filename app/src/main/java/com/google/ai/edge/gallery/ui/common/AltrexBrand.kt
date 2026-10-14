@@ -26,6 +26,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -354,5 +355,25 @@ fun AltrexModelLoading(title: String, modelName: String, hint: String, modifier:
       textAlign = TextAlign.Center,
       modifier = Modifier.fillMaxWidth(),
     )
+  }
+}
+
+/** Small rounded tile with the "A", shown next to the model's answers. */
+@Composable
+fun AltrexAvatar(size: Dp = 22.dp) {
+  val paths = remember { AltrexLogoPaths() }
+  val primary = MaterialTheme.colorScheme.primary
+  Box(
+    modifier =
+      Modifier.size(size)
+        .clip(RoundedCornerShape(size * 0.32f))
+        .background(primary.copy(alpha = 0.12f))
+        .border(1.dp, primary.copy(alpha = 0.28f), RoundedCornerShape(size * 0.32f))
+        .clearAndSetSemantics {},
+    contentAlignment = Alignment.Center,
+  ) {
+    Canvas(modifier = Modifier.fillMaxSize()) {
+      inLogoSpace(fraction = 0.5f) { drawPath(paths.filled, primary) }
+    }
   }
 }
