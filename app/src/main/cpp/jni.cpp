@@ -3,6 +3,9 @@
 #include <fcntl.h>
 
 #include <android/log.h>
+#include <algorithm>
+#include <climits>
+#include <cstdio>
 #include <cstdlib>
 #include <ctime>
 #include <sys/sysinfo.h>
@@ -199,6 +202,38 @@ static inline void addHashMapArrayList(JNIEnv *env, jobject arrayList, jobject v
 std::unordered_map<long, rnllama::llama_rn_context *> context_map;
 std::mutex context_mutex;
 
+// [ALTREX] Repère les cœurs rapides (fréquence max au-dessus du minimum de la puce).
+// Sur un Snapdragon 8 Gen 1 : le X2 et les trois A710, sans les quatre A510 lents.
+// Renvoie leur nombre, 0 si la puce est homogène ou si la fréquence est illisible.
+static int altrex_pick_fast_cores(bool *mask, int n_cpus) {
+    n_cpus = std::min(n_cpus, LM_GGML_MAX_N_THREADS);
+    std::vector<long> freqs(n_cpus > 0 ? n_cpus : 0, 0);
+    long f_min = LONG_MAX;
+    long f_max = 0;
+    for (int i = 0; i < n_cpus; i++) {
+        char path[96];
+        snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", i);
+        FILE *f = fopen(path, "r");
+        if (f == nullptr) continue;
+        long v = 0;
+        if (fscanf(f, "%ld", &v) == 1 && v > 0) {
+            freqs[i] = v;
+            f_min = std::min(f_min, v);
+            f_max = std::max(f_max, v);
+        }
+        fclose(f);
+    }
+    if (f_max == 0 || f_min == f_max) return 0;
+    int count = 0;
+    for (int i = 0; i < n_cpus; i++) {
+        if (freqs[i] > f_min) {
+            mask[i] = true;
+            count++;
+        }
+    }
+    return count;
+}
+
 JNIEXPORT jlong JNICALL
 Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
         JNIEnv *env,
@@ -249,6 +284,18 @@ Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
 
     int max_threads = std::thread::hardware_concurrency();
     int auto_threads = max_threads == 4 ? 2 : std::min(4, max_threads);
+    // [ALTREX] En mode auto, les threads de calcul restent sur les cœurs rapides : un thread posé
+    // sur un cœur lent fait attendre tous les autres à chaque couche.
+    bool use_fast_cores = false;
+    if (n_threads <= 0) {
+        int fast = altrex_pick_fast_cores(defaultParams.cpuparams.cpumask, max_threads);
+        if (fast >= 2) {
+            auto_threads = std::min(fast, 4);
+            defaultParams.cpuparams.mask_valid = true;
+            use_fast_cores = true;
+        }
+        LOGI("Fast cores: %d of %d, threads: %d", fast, max_threads, auto_threads);
+    }
     defaultParams.cpuparams.n_threads =
             n_threads > 0 ? n_threads : auto_threads;
     defaultParams.n_gpu_layers = n_gpu_layers;
@@ -282,6 +329,13 @@ Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
         {
             std::lock_guard<std::mutex> lock(context_mutex);
             context_map[(long) llama->ctx] = llama;
+        }
+
+        // [ALTREX] Pool de threads persistant, limité aux cœurs rapides. En cas d'échec, llama.cpp
+        // garde son fonctionnement par défaut.
+        if (use_fast_cores) {
+            bool attached = llama->attachThreadpoolsIfAvailable();
+            LOGI("Fast-core threadpool attached: %s", attached ? "yes" : "no");
         }
         
         if (!defaultParams.mmproj.path.empty()) {
