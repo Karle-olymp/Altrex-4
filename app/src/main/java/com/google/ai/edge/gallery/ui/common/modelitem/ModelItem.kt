@@ -20,6 +20,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -114,8 +115,13 @@ fun ModelItem(
   var boxModifier =
     modifier
       .fillMaxWidth()
-      .clip(RoundedCornerShape(size = 12.dp))
-      .background(color = MaterialTheme.customColors.taskCardBgColor)
+      .clip(RoundedCornerShape(size = 20.dp))
+      .background(color = MaterialTheme.colorScheme.surfaceContainerLow)
+      .border(
+        1.dp,
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+        RoundedCornerShape(size = 20.dp),
+      )
   boxModifier =
     if (canExpand) {
       boxModifier.clickable(
@@ -313,8 +319,8 @@ fun ModelItem(
                         rememberSharedContentState(key = "variant_container_${variantModel.name}"),
                       animatedVisibilityScope = this,
                     )
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainer)
                     .padding(vertical = 12.dp, horizontal = 16.dp)
 
                 if (targetShowColumnLayout) {

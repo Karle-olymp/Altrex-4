@@ -1,5 +1,8 @@
 package com.google.ai.edge.gallery.ui.security
 
+import androidx.compose.material.icons.Icons
+import com.google.ai.edge.gallery.ui.common.ToolStatusBar
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -50,25 +53,18 @@ fun SecurityBar(modifier: Modifier = Modifier) {
     }
   }
 
-  Row(
-    modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp),
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.SpaceBetween,
-  ) {
-    Text(
-      text = "🛡 Sécurité · lecture seule",
-      style = MaterialTheme.typography.labelMedium,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    TextButton(
-      onClick = {
-        keyInput = ""
-        showKeyDialog = true
-      }
-    ) {
-      Text(if (hasKey) "🔑 Clé SecurCode : enregistrée" else "🔑 Clé SecurCode : absente")
-    }
-  }
+  // [ALTREX] Shared status bar (icon + label, key pill) instead of emoji text.
+  ToolStatusBar(
+    icon = Icons.Outlined.Shield,
+    label = "Lecture seule",
+    keyName = "Clé SecurCode",
+    hasKey = hasKey,
+    onKeyClicked = {
+      keyInput = ""
+      showKeyDialog = true
+    },
+    modifier = modifier,
+  )
 
   if (showKeyDialog) {
     SecretEditorDialog(

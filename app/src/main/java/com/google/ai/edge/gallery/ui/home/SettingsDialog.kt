@@ -22,6 +22,23 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.annotation.StringRes
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -90,6 +107,10 @@ import kotlin.math.min
 
 private val THEME_OPTIONS = listOf(Theme.THEME_AUTO, Theme.THEME_LIGHT, Theme.THEME_DARK)
 
+/**
+ * [ALTREX] Settings as a full-screen page: grouped sections (Appearance, Models, Privacy,
+ * Application) made of rows with an icon, a title and a subtitle.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsDialog(
@@ -99,152 +120,151 @@ fun SettingsDialog(
   onDismissed: () -> Unit,
 ) {
   var selectedTheme by remember { mutableStateOf(curThemeOverride) }
-  var selectedFirebaseAnalytics by remember { mutableStateOf(curFirebaseAnalytics) }
   var hfToken by remember { mutableStateOf(modelManagerViewModel.getTokenStatusAndData().data) }
   val dateFormatter = remember {
-    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
       .withZone(ZoneId.systemDefault())
       .withLocale(Locale.getDefault())
   }
   var customHfToken by remember { mutableStateOf("") }
   var isFocused by remember { mutableStateOf(false) }
+  var showTokenEditor by remember { mutableStateOf(false) }
   val focusRequester = remember { FocusRequester() }
   val interactionSource = remember { MutableInteractionSource() }
-  var showTos by remember { mutableStateOf(false) }
+  val context = LocalContext.current
 
-  Dialog(onDismissRequest = onDismissed) {
+  val applyTheme: (Theme) -> Unit = { theme ->
+    selectedTheme = theme
+    // Updates the app's theme and saves it.
+    ThemeSettings.themeOverride.value = theme
+    modelManagerViewModel.saveThemeOverride(theme)
+    // Keeps other activities launched from MainActivity on the same theme.
+    val uiModeManager =
+      context.applicationContext.getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
+    when (theme) {
+      Theme.THEME_AUTO -> uiModeManager.setApplicationNightMode(UiModeManager.MODE_NIGHT_AUTO)
+      Theme.THEME_LIGHT -> uiModeManager.setApplicationNightMode(UiModeManager.MODE_NIGHT_NO)
+      else -> uiModeManager.setApplicationNightMode(UiModeManager.MODE_NIGHT_YES)
+    }
+  }
+
+  Dialog(
+    onDismissRequest = onDismissed,
+    properties = DialogProperties(usePlatformDefaultWidth = false),
+  ) {
     val focusManager = LocalFocusManager.current
-    Card(
+    Column(
       modifier =
-        Modifier.fillMaxWidth().clickable(
-          interactionSource = interactionSource,
-          indication = null, // Disable the ripple effect
-        ) {
-          focusManager.clearFocus()
-        },
-      shape = RoundedCornerShape(16.dp),
+        Modifier.fillMaxSize()
+          .background(MaterialTheme.colorScheme.background)
+          .statusBarsPadding()
+          .navigationBarsPadding()
+          .clickable(interactionSource = interactionSource, indication = null) {
+            focusManager.clearFocus()
+          }
     ) {
-      Column(
-        modifier = Modifier.padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+      // Top bar.
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
       ) {
-        // Dialog title and subtitle.
-        Column {
-          Text(
-            stringResource(R.string.drawer_settings_label),
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(bottom = 8.dp),
-          )
-          // Subtitle.
-          Text(
-            "Version de l'application : ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-            style = labelSmallNarrow,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.offset(y = (-6).dp),
+        IconButton(onClick = onDismissed) {
+          Icon(
+            Icons.AutoMirrored.Rounded.ArrowBack,
+            contentDescription = stringResource(R.string.cd_navigate_back_icon),
           )
         }
+        Text(
+          stringResource(R.string.drawer_settings_label),
+          style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+          modifier = Modifier.padding(start = 4.dp),
+        )
+      }
 
-        Column(
-          modifier = Modifier.verticalScroll(rememberScrollState()).weight(1f, fill = false),
-          verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-          val context = LocalContext.current
-          // Theme switcher.
-          Column(modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}) {
-            Text(
-              stringResource(R.string.theme_title),
-              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
-            )
-            MultiChoiceSegmentedButtonRow {
-              THEME_OPTIONS.forEachIndexed { index, theme ->
-                SegmentedButton(
-                  shape =
-                    SegmentedButtonDefaults.itemShape(index = index, count = THEME_OPTIONS.size),
-                  onCheckedChange = {
-                    selectedTheme = theme
-
-                    // Update theme settings.
-                    // This will update app's theme.
-                    ThemeSettings.themeOverride.value = theme
-
-                    // Save to data store.
-                    modelManagerViewModel.saveThemeOverride(theme)
-
-                    // Update ui mode.
-                    //
-                    // This is necessary to make other Activities launched from MainActivity to have
-                    // the correct theme.
-                    val uiModeManager =
-                      context.applicationContext.getSystemService(Context.UI_MODE_SERVICE)
-                        as UiModeManager
-                    if (theme == Theme.THEME_AUTO) {
-                      uiModeManager.setApplicationNightMode(UiModeManager.MODE_NIGHT_AUTO)
-                    } else if (theme == Theme.THEME_LIGHT) {
-                      uiModeManager.setApplicationNightMode(UiModeManager.MODE_NIGHT_NO)
-                    } else {
-                      uiModeManager.setApplicationNightMode(UiModeManager.MODE_NIGHT_YES)
-                    }
-                  },
-                  checked = theme == selectedTheme,
-                  label = { Text(stringResource(themeLabelRes(theme))) },
+      Column(
+        modifier =
+          Modifier.weight(1f)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+        // Appearance.
+        SettingsSection("Apparence") {
+          SettingsRow(
+            icon = Icons.Outlined.Palette,
+            title = stringResource(R.string.theme_title),
+            subtitle = "Couleurs de l'application",
+          )
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 52.dp, end = 14.dp, bottom = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            THEME_OPTIONS.forEach { theme ->
+              val selected = theme == selectedTheme
+              Box(
+                contentAlignment = Alignment.Center,
+                modifier =
+                  Modifier.weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                      if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                      else MaterialTheme.colorScheme.surfaceContainerHigh
+                    )
+                    .border(
+                      1.dp,
+                      if (selected) MaterialTheme.colorScheme.primary
+                      else MaterialTheme.colorScheme.surfaceContainerHigh,
+                      RoundedCornerShape(12.dp),
+                    )
+                    .clickable { applyTheme(theme) }
+                    .padding(vertical = 10.dp),
+              ) {
+                Text(
+                  stringResource(themeLabelRes(theme)),
+                  style = MaterialTheme.typography.labelLarge,
+                  color =
+                    if (selected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface,
                 )
               }
             }
           }
+        }
 
-          // HF Token management.
-          Column(
-            modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-          ) {
-            Text(
-              "Jeton d'accès Hugging Face",
-              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
-            )
-            // Show the start of the token.
-            val curHfToken = hfToken
-            if (curHfToken != null && curHfToken.accessToken.isNotEmpty()) {
-              Text(
-                curHfToken.accessToken.substring(0, min(16, curHfToken.accessToken.length)) + "...",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+        // Models.
+        SettingsSection("Modèles") {
+          val curHfToken = hfToken
+          val hasToken = curHfToken != null && curHfToken.accessToken.isNotEmpty()
+          SettingsRow(
+            icon = Icons.Outlined.Key,
+            title = "Jeton Hugging Face",
+            subtitle =
+              if (curHfToken != null && hasToken) {
+                curHfToken.accessToken.take(10) +
+                  "… · expire le " +
+                  dateFormatter.format(Instant.ofEpochMilli(curHfToken.expiresAtMs))
+              } else {
+                "Aucun jeton · récupéré au téléchargement d'un modèle à accès restreint"
+              },
+            trailing = if (showTokenEditor) "Fermer" else "Modifier",
+            onClick = { showTokenEditor = !showTokenEditor },
+          )
+          if (showTokenEditor) {
+            val handleSaveToken = {
+              modelManagerViewModel.saveAccessToken(
+                accessToken = customHfToken,
+                refreshToken = "",
+                expiresAt = System.currentTimeMillis() + 1000L * 60 * 60 * 24 * 365 * 10,
               )
-              Text(
-                "Expire le : ${dateFormatter.format(Instant.ofEpochMilli(curHfToken.expiresAtMs))}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-            } else {
-              Text(
-                "Non disponible",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-              Text(
-                "Le jeton est récupéré automatiquement lors du téléchargement d'un modèle à accès restreint.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
+              hfToken = modelManagerViewModel.getTokenStatusAndData().data
+              customHfToken = ""
+              focusManager.clearFocus()
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-              OutlinedButton(
-                onClick = {
-                  modelManagerViewModel.clearAccessToken()
-                  hfToken = null
-                },
-                enabled = curHfToken != null,
-              ) {
-                Text("Effacer")
-              }
-              val handleSaveToken = {
-                modelManagerViewModel.saveAccessToken(
-                  accessToken = customHfToken,
-                  refreshToken = "",
-                  expiresAt = System.currentTimeMillis() + 1000L * 60 * 60 * 24 * 365 * 10,
-                )
-                hfToken = modelManagerViewModel.getTokenStatusAndData().data
-                focusManager.clearFocus()
-              }
+            Column(
+              modifier = Modifier.fillMaxWidth().padding(start = 52.dp, end = 14.dp, bottom = 14.dp),
+              verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
               BasicTextField(
                 value = customHfToken,
                 singleLine = true,
@@ -252,30 +272,29 @@ fun SettingsDialog(
                 keyboardActions = KeyboardActions(onDone = { handleSaveToken() }),
                 modifier =
                   Modifier.fillMaxWidth()
-                    .padding(top = 4.dp)
                     .focusRequester(focusRequester)
                     .onFocusChanged { isFocused = it.isFocused },
                 onValueChange = { customHfToken = it },
                 textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
               ) { innerTextField ->
                 Box(
                   modifier =
                     Modifier.border(
-                        width = if (isFocused) 2.dp else 1.dp,
+                        width = 1.dp,
                         color =
                           if (isFocused) MaterialTheme.colorScheme.primary
-                          else MaterialTheme.colorScheme.outline,
-                        shape = CircleShape,
+                          else MaterialTheme.colorScheme.outlineVariant,
+                        shape = RoundedCornerShape(12.dp),
                       )
-                      .height(40.dp),
+                      .height(44.dp),
                   contentAlignment = Alignment.CenterStart,
                 ) {
                   Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(modifier = Modifier.padding(start = 16.dp).weight(1f)) {
+                    Box(modifier = Modifier.padding(start = 14.dp).weight(1f)) {
                       if (customHfToken.isEmpty()) {
                         Text(
-                          "Saisir le jeton manuellement",
+                          "Coller un jeton hf_…",
                           color = MaterialTheme.colorScheme.onSurfaceVariant,
                           style = MaterialTheme.typography.bodySmall,
                         )
@@ -283,68 +302,127 @@ fun SettingsDialog(
                       innerTextField()
                     }
                     if (customHfToken.isNotEmpty()) {
-                      IconButton(modifier = Modifier.offset(x = 1.dp), onClick = handleSaveToken) {
+                      IconButton(onClick = handleSaveToken) {
                         Icon(
                           Icons.Rounded.CheckCircle,
                           contentDescription = stringResource(R.string.cd_done_icon),
+                          tint = MaterialTheme.colorScheme.primary,
                         )
                       }
                     }
                   }
                 }
               }
-            }
-          }
-
-          // Third party licenses.
-          Column(modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}) {
-            Text(
-              stringResource(R.string.third_party_libraries),
-              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
-            )
-            OutlinedButton(
-              onClick = {
-                // Create an Intent to launch a license viewer that displays a list of
-                // third-party library names. Clicking a name will show its license content.
-                val intent = Intent(context, OssLicensesMenuActivity::class.java)
-                context.startActivity(intent)
+              if (hasToken) {
+                OutlinedButton(
+                  onClick = {
+                    modelManagerViewModel.clearAccessToken()
+                    hfToken = null
+                  }
+                ) {
+                  Text("Effacer le jeton")
+                }
               }
-            ) {
-              Text(stringResource(R.string.view_licenses))
             }
-          }
-
-          // About.
-          Column(
-            modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-          ) {
-            Text(
-              "À propos",
-              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
-            )
-            Text(
-              "Les modèles s'exécutent sur ton téléphone. L'outil Sécurité envoie du code à SecurCode, après ton autorisation. La recherche web de l'espace Code envoie uniquement tes requêtes de recherche à Brave.",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
           }
         }
 
-        // Button row.
-        Row(
-          modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-          horizontalArrangement = Arrangement.End,
-        ) {
-          // Close button
-          Button(onClick = { onDismissed() }) { Text(stringResource(R.string.close)) }
+        // Privacy.
+        SettingsSection("Confidentialité") {
+          SettingsRow(
+            icon = Icons.Outlined.Lock,
+            title = "Ce qui sort du téléphone",
+            subtitle =
+              "Les modèles tournent sur ton téléphone. Sécurité envoie du code à SecurCode après " +
+                "ton accord ; la recherche web de l'espace Code n'envoie que tes requêtes à Brave.",
+          )
+        }
+
+        // Application.
+        SettingsSection("Application") {
+          SettingsRow(
+            icon = Icons.Outlined.Info,
+            title = "Version",
+            subtitle = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+          )
+          SettingsRow(
+            icon = Icons.Outlined.Description,
+            title = stringResource(R.string.third_party_libraries),
+            subtitle = stringResource(R.string.view_licenses),
+            showChevron = true,
+            onClick = { context.startActivity(Intent(context, OssLicensesMenuActivity::class.java)) },
+          )
         }
       }
     }
   }
+}
 
-  if (showTos) {
-    AppTosDialog(onTosAccepted = { showTos = false }, viewingMode = true)
+@Composable
+private fun SettingsSection(title: String, content: @Composable () -> Unit) {
+  Text(
+    title.uppercase(),
+    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+    color = MaterialTheme.colorScheme.onSurfaceVariant,
+    modifier = Modifier.padding(start = 6.dp, top = 16.dp, bottom = 6.dp),
+  )
+  Column(
+    modifier =
+      Modifier.fillMaxWidth()
+        .clip(RoundedCornerShape(20.dp))
+        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.10f), RoundedCornerShape(20.dp))
+  ) {
+    content()
+  }
+}
+
+@Composable
+private fun SettingsRow(
+  icon: ImageVector,
+  title: String,
+  subtitle: String,
+  trailing: String? = null,
+  showChevron: Boolean = false,
+  onClick: (() -> Unit)? = null,
+) {
+  Row(
+    verticalAlignment = Alignment.CenterVertically,
+    modifier =
+      Modifier.fillMaxWidth()
+        .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+        .padding(horizontal = 14.dp, vertical = 14.dp),
+  ) {
+    Icon(
+      icon,
+      contentDescription = null,
+      tint = MaterialTheme.colorScheme.primary,
+      modifier = Modifier.size(22.dp),
+    )
+    Spacer(modifier = Modifier.width(16.dp))
+    Column(modifier = Modifier.weight(1f)) {
+      Text(title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
+      Text(
+        subtitle,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+    }
+    if (trailing != null) {
+      Text(
+        trailing,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 8.dp),
+      )
+    }
+    if (showChevron) {
+      Icon(
+        Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+    }
   }
 }
 

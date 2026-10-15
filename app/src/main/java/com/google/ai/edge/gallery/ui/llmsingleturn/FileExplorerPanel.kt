@@ -132,7 +132,7 @@ fun FileExplorerPanel(modifier: Modifier = Modifier, onFileClicked: (DocumentFil
     var newFileName by remember { mutableStateOf("") }
     AlertDialog(
       onDismissRequest = { showCreateFileDialog = false },
-      title = { Text("New file") },
+      title = { Text("Nouveau fichier") },
       text = {
         OutlinedTextField(
           value = newFileName,

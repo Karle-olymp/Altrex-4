@@ -90,7 +90,7 @@ constructor(
 
     updateCollapsableProgressPanelMessage(
       model = model,
-      title = "Autonomous mode",
+      title = "Mode autonome",
       inProgress = true,
       doneIcon = Icons.Filled.CheckCircle,
       addItemTitle = "Attempt 1/$MAX_SELF_CORRECTION_ITERATIONS",
@@ -166,7 +166,7 @@ constructor(
             )
             updateCollapsableProgressPanelMessage(
               model = model,
-              title = "Autonomous mode",
+              title = "Mode autonome",
               inProgress = true,
               doneIcon = Icons.Filled.CheckCircle,
               addItemTitle = "Attempt ${iteration + 1}/$MAX_SELF_CORRECTION_ITERATIONS",

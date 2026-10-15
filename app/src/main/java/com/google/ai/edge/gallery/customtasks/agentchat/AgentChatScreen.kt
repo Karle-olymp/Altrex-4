@@ -726,10 +726,11 @@ private fun AutonomousModeToggleRow(viewModel: AgentChatViewModel) {
     horizontalArrangement = Arrangement.SpaceBetween,
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    Column {
-      Text("Autonomous mode", style = MaterialTheme.typography.bodyMedium)
+    // [ALTREX] Weighted column: the switch keeps its room and the text wraps instead of being cut.
+    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+      Text("Mode autonome", style = MaterialTheme.typography.bodyMedium)
       Text(
-        "The model checks and retries its own work automatically",
+        "Le modèle vérifie son travail et réessaie tout seul",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
