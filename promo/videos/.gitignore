@@ -1,0 +1,8 @@
+node_modules
+renders/
+.hyperframes/artifacts/
+.hyperframes/video-state*
+.hyperframes/history-id
+.hyperframes/frame-packets/
+package-lock.json
+audio_request.json
