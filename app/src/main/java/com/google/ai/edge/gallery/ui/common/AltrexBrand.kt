@@ -26,6 +26,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -125,7 +126,7 @@ private fun segment(path: Path, start: Float, stop: Float): Path {
 private fun step(t: Float, start: Float, end: Float): Float =
   FastOutSlowInEasing.transform(((t - start) / (end - start)).coerceIn(0f, 1f))
 
-private const val INTRO_MS = 1700
+private const val INTRO_MS = 3000
 
 /**
  * Altrex opening animation: the "A" is traced, filled, crossed by a light sweep, then the name
@@ -147,11 +148,12 @@ fun AltrexIntro(onFinished: () -> Unit) {
   val background = MaterialTheme.colorScheme.background
   val onBackground = MaterialTheme.colorScheme.onBackground
 
-  val trace = step(t, 0.00f, 0.42f)
-  val fill = step(t, 0.30f, 0.55f)
-  val sweep = step(t, 0.45f, 0.72f)
-  val name = step(t, 0.50f, 0.75f)
-  val exit = step(t, 0.82f, 1.00f)
+  // About 1.1 s of tracing, then fill, light sweep and name, a short hold, and the fade-out.
+  val trace = step(t, 0.00f, 0.38f)
+  val fill = step(t, 0.30f, 0.52f)
+  val sweep = step(t, 0.46f, 0.68f)
+  val name = step(t, 0.50f, 0.70f)
+  val exit = step(t, 0.86f, 1.00f)
 
   Box(
     modifier =
@@ -231,7 +233,7 @@ fun AltrexLogoLoader(size: Dp) {
     transition.animateFloat(
       initialValue = 0f,
       targetValue = 1f,
-      animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing)),
+      animationSpec = infiniteRepeatable(tween(2600, easing = LinearEasing)),
       label = "run",
     )
   val breath by
@@ -258,17 +260,23 @@ fun AltrexLogoLoader(size: Dp) {
       drawPath(paths.outer, primary.copy(alpha = 0.18f), style = faint)
       drawPath(paths.inner, primary.copy(alpha = 0.18f), style = faint)
 
-      // Comet: a head followed by a fading tail, wrapping around the closed outline.
+      // Comet: a head followed by a fading tail, wrapping around the closed outline. Butt caps on
+      // the tail pieces so that their overlaps do not show up as dots; only the head is rounded.
       val length = paths.outerLength
-      val tail = length * 0.28f
+      val tail = length * 0.30f
       val head = length * run
-      val pieces = 14
+      val pieces = 24
       for (i in 0 until pieces) {
         val a = head - tail * (i + 1) / pieces
         val b = head - tail * i / pieces
         val alpha = 1f - i.toFloat() / pieces
         val color = if (i < pieces / 2) primary else tertiary
-        val style = Stroke(width = 2.2f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        val style =
+          Stroke(
+            width = 2.2f,
+            cap = if (i == 0) StrokeCap.Round else StrokeCap.Butt,
+            join = StrokeJoin.Round,
+          )
         if (a >= 0f) {
           drawPath(segment(paths.outer, a, b), color, alpha = alpha, style = style)
         } else if (b <= 0f) {
@@ -347,5 +355,25 @@ fun AltrexModelLoading(title: String, modelName: String, hint: String, modifier:
       textAlign = TextAlign.Center,
       modifier = Modifier.fillMaxWidth(),
     )
+  }
+}
+
+/** Small rounded tile with the "A", shown next to the model's answers. */
+@Composable
+fun AltrexAvatar(size: Dp = 22.dp) {
+  val paths = remember { AltrexLogoPaths() }
+  val primary = MaterialTheme.colorScheme.primary
+  Box(
+    modifier =
+      Modifier.size(size)
+        .clip(RoundedCornerShape(size * 0.32f))
+        .background(primary.copy(alpha = 0.12f))
+        .border(1.dp, primary.copy(alpha = 0.28f), RoundedCornerShape(size * 0.32f))
+        .clearAndSetSemantics {},
+    contentAlignment = Alignment.Center,
+  ) {
+    Canvas(modifier = Modifier.fillMaxSize()) {
+      inLogoSpace(fraction = 0.5f) { drawPath(paths.filled, primary) }
+    }
   }
 }

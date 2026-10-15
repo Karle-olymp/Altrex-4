@@ -23,16 +23,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.google.ai.edge.gallery.R
 
+// [ALTREX] Manrope: thin, neutral sans-serif for the whole interface.
 val appFontFamily =
   FontFamily(
-    Font(R.font.nunito_regular, FontWeight.Normal),
-    Font(R.font.nunito_extralight, FontWeight.ExtraLight),
-    Font(R.font.nunito_light, FontWeight.Light),
-    Font(R.font.nunito_medium, FontWeight.Medium),
-    Font(R.font.nunito_semibold, FontWeight.SemiBold),
-    Font(R.font.nunito_bold, FontWeight.Bold),
-    Font(R.font.nunito_extrabold, FontWeight.ExtraBold),
-    Font(R.font.nunito_black, FontWeight.Black),
+    Font(R.font.manrope_light, FontWeight.ExtraLight),
+    Font(R.font.manrope_light, FontWeight.Light),
+    Font(R.font.manrope_regular, FontWeight.Normal),
+    Font(R.font.manrope_medium, FontWeight.Medium),
+    Font(R.font.manrope_semibold, FontWeight.SemiBold),
+    Font(R.font.manrope_bold, FontWeight.Bold),
+    Font(R.font.manrope_extrabold, FontWeight.ExtraBold),
+    Font(R.font.manrope_extrabold, FontWeight.Black),
+  )
+
+// [ALTREX] Bundled monospace font for code. FontFamily.Monospace follows the phone's font style
+// on Samsung devices (a handwriting font, for example), so code gets its own font.
+val codeFontFamily =
+  FontFamily(
+    Font(R.font.jetbrains_mono_regular, FontWeight.Normal),
+    Font(R.font.jetbrains_mono_medium, FontWeight.Medium),
+    Font(R.font.jetbrains_mono_medium, FontWeight.SemiBold),
+    Font(R.font.jetbrains_mono_medium, FontWeight.Bold),
   )
 
 val baseline = Typography()

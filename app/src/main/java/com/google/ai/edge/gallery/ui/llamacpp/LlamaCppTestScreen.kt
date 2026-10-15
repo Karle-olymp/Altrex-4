@@ -1,5 +1,6 @@
 package com.google.ai.edge.gallery.ui.llamacpp
 
+import com.google.ai.edge.gallery.ui.theme.codeFontFamily
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -430,7 +431,7 @@ fun LlamaCppTestScreen(
                   text = generatedText,
                   style =
                     MaterialTheme.typography.bodyMedium.copy(
-                      fontFamily = FontFamily.Monospace,
+                      fontFamily = codeFontFamily,
                       fontSize = 13.sp,
                       lineHeight = 18.sp,
                     ),

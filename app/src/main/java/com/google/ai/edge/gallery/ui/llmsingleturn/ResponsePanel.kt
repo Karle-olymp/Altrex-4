@@ -16,6 +16,7 @@
 
 package com.google.ai.edge.gallery.ui.llmsingleturn
 
+import com.google.ai.edge.gallery.ui.theme.codeFontFamily
 import android.content.ClipData
 import android.util.Log
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -203,7 +204,7 @@ fun ResponsePanel(
           Box(contentAlignment = Alignment.BottomEnd, modifier = Modifier.fillMaxSize()) {
             val codeTextStyle =
               MaterialTheme.typography.bodySmall.copy(
-                fontFamily = FontFamily.Monospace,
+                fontFamily = codeFontFamily,
                 color = MaterialTheme.colorScheme.onSurface,
               )
             val lineCount = editedContent.count { it == '\n' } + 1

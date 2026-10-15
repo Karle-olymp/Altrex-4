@@ -16,6 +16,7 @@
 
 package com.google.ai.edge.gallery.customtasks.agentchat
 
+import com.google.ai.edge.gallery.ui.theme.codeFontFamily
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -262,7 +263,7 @@ fun McpToolManagerBottomSheet(
               Text(
                 text = formattedSchema,
                 style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
+                fontFamily = codeFontFamily,
               )
             }
           }

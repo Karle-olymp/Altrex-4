@@ -1,5 +1,6 @@
 package com.google.ai.edge.gallery.ui.llmsingleturn
 
+import com.google.ai.edge.gallery.ui.theme.codeFontFamily
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -175,7 +176,7 @@ fun ResponseActionsBar(
             Text(
               text = action.path,
               style = MaterialTheme.typography.bodySmall,
-              fontFamily = FontFamily.Monospace,
+              fontFamily = codeFontFamily,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
             )

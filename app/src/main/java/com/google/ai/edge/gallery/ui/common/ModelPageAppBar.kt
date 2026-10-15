@@ -27,11 +27,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -160,21 +163,17 @@ fun ModelPageAppBar(
     actions = {
       val downloadSucceeded = curDownloadStatus?.status == ModelDownloadStatusType.SUCCEEDED
       val showConfigButton = model.configs.isNotEmpty() && downloadSucceeded
-      Box(modifier = Modifier.size(42.dp), contentAlignment = Alignment.Center) {
-        val showHistory = downloadSucceeded && shouldShowHistoryButton
-        val showExport = downloadSucceeded && onExportClicked != null
-        // The buttons are stacked in a small box: each one is shifted left by 40dp per neighbour.
-        var configButtonOffset = 0.dp
-        if (showConfigButton) {
-          configButtonOffset = (-40 * ((if (showHistory) 1 else 0) + (if (showExport) 1 else 0))).dp
-        }
+      val showHistory = downloadSucceeded && shouldShowHistoryButton
+      val showExport = downloadSucceeded && onExportClicked != null
+      // [ALTREX] Model settings stay visible; history and PDF export go in a "more" menu, so the
+      // actions never overlap the centered model chip.
+      Row(verticalAlignment = Alignment.CenterVertically) {
         if (showConfigButton) {
           val enableConfigButton = !isModelInitializing && !inProgress && isModelInitialized
           IconButton(
             onClick = { showConfigDialog = true },
             enabled = enableConfigButton,
-            modifier =
-              Modifier.offset(x = configButtonOffset).alpha(if (!enableConfigButton) 0.5f else 1f),
+            modifier = Modifier.alpha(if (!enableConfigButton) 0.5f else 1f),
           ) {
             Icon(
               imageVector = Icons.Rounded.Tune,
@@ -184,37 +183,45 @@ fun ModelPageAppBar(
             )
           }
         }
-        if (showExport) {
-          val enableExportButton = !isModelInitializing && !modelPreparing && !inProgress
-          IconButton(
-            onClick = { onExportClicked?.invoke() },
-            enabled = enableExportButton,
-            modifier =
-              Modifier.offset(x = if (showHistory) (-40).dp else 0.dp)
-                .alpha(if (!enableExportButton) 0.5f else 1f),
-          ) {
-            Icon(
-              imageVector = Icons.Outlined.PictureAsPdf,
-              contentDescription = "Exporter la discussion en PDF",
-              tint = MaterialTheme.colorScheme.onSurface,
-              modifier = Modifier.size(20.dp),
-            )
-          }
-        }
-        if (downloadSucceeded && shouldShowHistoryButton) {
-          val enableHistoryButton =
-            !isModelInitializing && !modelPreparing && !inProgress && isModelInitialized
-          IconButton(
-            onClick = { onHistoryClicked(model) },
-            enabled = enableHistoryButton,
-            modifier = Modifier.alpha(if (!enableHistoryButton) 0.5f else 1f),
-          ) {
-            Icon(
-              imageVector = Icons.Rounded.History,
-              contentDescription = stringResource(R.string.cd_chat_history),
-              tint = MaterialTheme.colorScheme.onSurface,
-              modifier = Modifier.size(20.dp),
-            )
+        if (showHistory || showExport) {
+          var showMoreMenu by remember { mutableStateOf(false) }
+          val enableMore = !isModelInitializing && !modelPreparing && !inProgress
+          Box {
+            IconButton(
+              onClick = { showMoreMenu = true },
+              enabled = enableMore,
+              modifier = Modifier.alpha(if (!enableMore) 0.5f else 1f),
+            ) {
+              Icon(
+                imageVector = Icons.Rounded.MoreVert,
+                contentDescription = "Plus d'options",
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(20.dp),
+              )
+            }
+            DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
+              if (showHistory) {
+                DropdownMenuItem(
+                  text = { Text(stringResource(R.string.cd_chat_history)) },
+                  leadingIcon = { Icon(Icons.Rounded.History, contentDescription = null) },
+                  enabled = isModelInitialized,
+                  onClick = {
+                    showMoreMenu = false
+                    onHistoryClicked(model)
+                  },
+                )
+              }
+              if (showExport) {
+                DropdownMenuItem(
+                  text = { Text("Exporter en PDF") },
+                  leadingIcon = { Icon(Icons.Outlined.PictureAsPdf, contentDescription = null) },
+                  onClick = {
+                    showMoreMenu = false
+                    onExportClicked?.invoke()
+                  },
+                )
+              }
+            }
           }
         }
       }

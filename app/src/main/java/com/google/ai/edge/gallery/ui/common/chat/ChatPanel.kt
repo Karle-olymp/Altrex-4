@@ -35,6 +35,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -431,10 +432,8 @@ fun ChatPanel(
               horizontalAlignment = hAlign,
             ) messageColumn@{
               // Sender row.
-              var agentName = stringResource(task.agentNameRes)
-              if (message.accelerator.isNotEmpty()) {
-                agentName = "$agentName on ${message.accelerator}"
-              }
+              // [ALTREX] The sender header shows the accelerator itself (see MessageSender).
+              val agentName = stringResource(task.agentNameRes)
               if (!message.hideSenderLabel) {
                 MessageSender(
                   message = message,
@@ -484,6 +483,25 @@ fun ChatPanel(
                     // Use a rounded rectangle clip for multi-image image message.
                     if (message is ChatMessageImage && message.bitmaps.size > 1) {
                       messageBubbleModifier = messageBubbleModifier.clip(RoundedCornerShape(6.dp))
+                    }
+                    // [ALTREX] User messages: rounded bubble with a small corner at the bottom
+                    // right and a thin outline.
+                    else if (message.side == ChatSide.USER) {
+                      val userShape =
+                        RoundedCornerShape(
+                          topStart = 20.dp,
+                          topEnd = 20.dp,
+                          bottomEnd = 6.dp,
+                          bottomStart = 20.dp,
+                        )
+                      messageBubbleModifier =
+                        messageBubbleModifier
+                          .clip(userShape)
+                          .border(
+                            1.dp,
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                            userShape,
+                          )
                     }
                     // For other messages, use a bubble shape to clip.
                     else {
@@ -551,24 +569,26 @@ fun ChatPanel(
                   }
 
                   if (message.side == ChatSide.AGENT) {
+                    // [ALTREX] Actions first, then the response time.
                     Row(
+                      modifier = Modifier.padding(top = 2.dp),
                       verticalAlignment = Alignment.CenterVertically,
-                      horizontalArrangement = Arrangement.spacedBy(8.dp),
+                      horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                      LatencyText(message = message)
                       if (message is ChatMessageText && !uiState.inProgress) {
                         IconButton(
                           onClick = { copyToClipboard(message.content) },
-                          modifier = Modifier.size(28.dp),
+                          modifier = Modifier.size(34.dp),
                         ) {
                           Icon(
                             imageVector = Icons.Rounded.ContentCopy,
                             contentDescription = stringResource(R.string.copy),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            modifier = Modifier.size(17.dp),
                           )
                         }
                       }
+                      LatencyText(message = message)
                     }
                   } else if (message.side == ChatSide.USER) {
                     Row(

@@ -16,6 +16,7 @@
 
 package com.google.ai.edge.gallery.ui.common.chat
 
+import com.google.ai.edge.gallery.ui.common.AltrexAvatar
 // import androidx.compose.ui.tooling.preview.Preview
 // import com.google.ai.edge.gallery.ui.theme.GalleryTheme
 
@@ -55,6 +56,40 @@ data class MessageLayoutConfig(
 fun MessageSender(message: ChatMessage, agentName: String = "", imageHistoryCurIndex: Int = 0) {
   // No user label for system messages.
   if (message.side == ChatSide.SYSTEM) {
+    return
+  }
+
+  // [ALTREX] The user's own text messages need no label: the bubble says it all.
+  if (message.side == ChatSide.USER && message is ChatMessageText) {
+    return
+  }
+
+  // [ALTREX] Model answers: the Altrex tile, the name and the accelerator.
+  if (
+    message.side == ChatSide.AGENT &&
+      message !is ChatMessageBenchmarkResult &&
+      message !is ChatMessageBenchmarkLlmResult &&
+      message !is ChatMessageImageWithHistory
+  ) {
+    Row(
+      modifier = Modifier.padding(bottom = 6.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      AltrexAvatar()
+      Text(
+        "Altrex",
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+      )
+      if (message.accelerator.isNotEmpty()) {
+        Text(
+          message.accelerator,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+    }
     return
   }
 
