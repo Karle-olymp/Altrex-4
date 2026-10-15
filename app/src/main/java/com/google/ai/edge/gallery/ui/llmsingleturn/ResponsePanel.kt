@@ -297,15 +297,17 @@ fun ResponsePanel(
         } else {
           // Message when response is empty.
           if (response.isEmpty()) {
-            Row(
+            // [ALTREX] Altrex tile above the hint, instead of a bare grey line.
+            androidx.compose.foundation.layout.Column(
               modifier = Modifier.fillMaxSize(),
-              horizontalArrangement = Arrangement.Center,
-              verticalAlignment = Alignment.CenterVertically,
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
             ) {
+              com.google.ai.edge.gallery.ui.common.AltrexAvatar(size = 40.dp)
               Text(
                 stringResource(R.string.prompt_lab_response_placeholder),
-                modifier = Modifier.alpha(0.5f),
-                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
               )
             }
           }

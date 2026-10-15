@@ -470,4 +470,35 @@
   <string name="skill_chip_query_wikipedia_label">Chercher sur Wikipédia</string>
   <string name="skill_chip_generate_qr_code_label">Générer un QR code</string>
   <string name="agent_skills_intro">Raisonne avec des skills spécialisées, ou <![CDATA[<a href="%1$s">crée les tiennes</a>]]>. Découvre les skills de la communauté sur <![CDATA[<a href="%2$s">GitHub Discussions</a>]]>.\n\nTouche un exemple ci-dessous pour voir %3$s en action !</string>
+  <!-- [ALTREX] Libellés des réglages de modèle. -->
+  <string name="config_label_max_tokens">Tokens max</string>
+  <string name="config_label_max_output_tokens">Tokens de sortie max</string>
+  <string name="config_label_topk">TopK</string>
+  <string name="config_label_topp">TopP</string>
+  <string name="config_label_temperature">Température</string>
+  <string name="config_label_default_max_tokens">Taille du contexte (tokens)</string>
+  <string name="config_label_default_topk">TopK par défaut</string>
+  <string name="config_label_default_topp">TopP par défaut</string>
+  <string name="config_label_default_temperature">Température par défaut</string>
+  <string name="config_label_support_image">Accepte les images</string>
+  <string name="config_label_support_audio">Accepte l\'audio</string>
+  <string name="config_label_support_thinking">Mode réflexion</string>
+  <string name="config_label_support_speculative_decoding">Décodage spéculatif</string>
+  <string name="config_label_enable_thinking">Activer la réflexion</string>
+  <string name="config_label_enable_speculative_decoding">Activer le décodage spéculatif</string>
+  <string name="config_label_max_result_count">Nombre de résultats max</string>
+  <string name="config_label_use_gpu">Utiliser le GPU</string>
+  <string name="config_label_accelerator">Accélérateur</string>
+  <string name="config_label_vision_accelerator">Accélérateur vision</string>
+  <string name="config_label_compatible_accelerators">Accélérateurs compatibles</string>
+  <string name="config_label_warm_up_iterations">Itérations de préchauffage</string>
+  <string name="config_label_benchmark_iterations">Itérations du benchmark</string>
+  <string name="config_label_iterations">Itérations</string>
+  <string name="config_label_model_type">Type de modèle</string>
+  <string name="config_label_model">Modèle</string>
+  <string name="config_label_prefill_tokens">Tokens de prefill</string>
+  <string name="config_label_decode_tokens">Tokens de décodage</string>
+  <string name="config_label_number_of_runs">Nombre d\'exécutions</string>
+  <string name="config_label_font_size">Taille du texte</string>
+  <string name="config_label_max_char_count">Nombre de caractères max</string>
 </resources>

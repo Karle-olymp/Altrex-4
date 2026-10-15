@@ -245,7 +245,29 @@ fun ModelImportDialog(
           verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
           // Default configs for users to set.
-          ConfigEditorsPanel(configs = IMPORT_CONFIGS_LLM, values = values)
+          // [ALTREX] A GGUF file runs on the CPU through llama.cpp, text only: accelerators,
+          // image, audio and speculative decoding would have no effect, so they are not shown
+          // (their default values are still saved).
+          val isGguf = fileName.endsWith(".gguf")
+          val shownConfigs =
+            if (isGguf) {
+              IMPORT_CONFIGS_LLM.filter {
+                it.key != ConfigKeys.COMPATIBLE_ACCELERATORS &&
+                  it.key != ConfigKeys.SUPPORT_IMAGE &&
+                  it.key != ConfigKeys.SUPPORT_AUDIO &&
+                  it.key != ConfigKeys.SUPPORT_SPECULATIVE_DECODING
+              }
+            } else {
+              IMPORT_CONFIGS_LLM
+            }
+          if (isGguf) {
+            Text(
+              "Modèle GGUF : exécuté sur le processeur par llama.cpp, texte uniquement.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+          ConfigEditorsPanel(configs = shownConfigs, values = values)
         }
 
         // Button row.
