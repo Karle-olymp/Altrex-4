@@ -336,9 +336,53 @@ fun MessageInputText(
       null
     }
   }
-  DisposableEffect(speechRecognizer) { onDispose { speechRecognizer?.destroy() } }
+  // The recognizer plays a system "beep" when it starts and stops listening, with no option to turn
+  // it off: the system, notification and media sounds are muted for that moment only.
+  val audioManager = remember {
+    context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+  }
+  val mutedStreams = remember { mutableListOf<Int>() }
+  val mainHandler = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
+  val muteBeep: () -> Unit = {
+    for (stream in
+      listOf(
+        android.media.AudioManager.STREAM_SYSTEM,
+        android.media.AudioManager.STREAM_NOTIFICATION,
+        android.media.AudioManager.STREAM_MUSIC,
+      )) {
+      try {
+        if (!audioManager.isStreamMute(stream) && stream !in mutedStreams) {
+          audioManager.adjustStreamVolume(stream, android.media.AudioManager.ADJUST_MUTE, 0)
+          mutedStreams.add(stream)
+        }
+      } catch (e: Exception) {
+        // Some streams cannot be muted (Do Not Disturb rules): the beep stays for them.
+      }
+    }
+  }
+  val unmuteBeep: () -> Unit = {
+    for (stream in mutedStreams) {
+      try {
+        audioManager.adjustStreamVolume(stream, android.media.AudioManager.ADJUST_UNMUTE, 0)
+      } catch (e: Exception) {}
+    }
+    mutedStreams.clear()
+  }
+  val unmuteBeepSoon: () -> Unit = { mainHandler.postDelayed({ unmuteBeep() }, 450) }
+  DisposableEffect(speechRecognizer) {
+    onDispose {
+      speechRecognizer?.destroy()
+      unmuteBeep()
+    }
+  }
   val stopDictation: (Boolean) -> Unit = { keep ->
-    if (keep) speechRecognizer?.stopListening() else speechRecognizer?.cancel()
+    if (keep) {
+      muteBeep()
+      speechRecognizer?.stopListening()
+    } else {
+      speechRecognizer?.cancel()
+      unmuteBeepSoon()
+    }
     if (!keep) {
       dictating = false
       dictationPartial = ""
@@ -357,7 +401,9 @@ fun MessageInputText(
     }
     recognizer.setRecognitionListener(
       object : android.speech.RecognitionListener {
-        override fun onReadyForSpeech(params: android.os.Bundle?) {}
+        override fun onReadyForSpeech(params: android.os.Bundle?) {
+          unmuteBeepSoon()
+        }
 
         override fun onBeginningOfSpeech() {}
 
@@ -370,6 +416,7 @@ fun MessageInputText(
         override fun onEndOfSpeech() {}
 
         override fun onError(error: Int) {
+          unmuteBeepSoon()
           dictating = false
           dictationPartial = ""
           if (
@@ -397,6 +444,7 @@ fun MessageInputText(
           }
           dictating = false
           dictationPartial = ""
+          unmuteBeepSoon()
         }
 
         override fun onPartialResults(partialResults: android.os.Bundle?) {
@@ -422,6 +470,7 @@ fun MessageInputText(
     dictationPartial = ""
     dictationLevel = 0f
     dictating = true
+    muteBeep()
     recognizer.startListening(intent)
   }
   val dictationPermissionLauncher =

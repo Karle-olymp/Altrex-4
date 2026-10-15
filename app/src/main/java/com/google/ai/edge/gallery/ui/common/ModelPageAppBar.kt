@@ -109,23 +109,8 @@ fun ModelPageAppBar(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
       ) {
-        // Task type.
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-          val tintColor =
-            if (useThemeColor) MaterialTheme.colorScheme.onSurface
-            else getTaskIconColor(task = task)
-          Icon(
-            task.icon ?: ImageVector.vectorResource(task.iconVectorResourceId!!),
-            tint = tintColor,
-            modifier = Modifier.size(24.dp),
-            contentDescription = null,
-          )
-          Text(task.label, style = MaterialTheme.typography.titleMedium, color = tintColor)
-        }
-
+        // [ALTREX] No page name (Discuter, Code, Sécurité…) above the model chip: it took a line for
+        // little use. The side menu already shows which space is open.
         // Model chips pager.
         if (!hideModelSelector) {
           val enableModelPickerChip = !isModelInitializing && !inProgress
