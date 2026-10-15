@@ -126,14 +126,9 @@ fun LlmChatScreen(
 ) {
   val chatMode by viewModel.chatMode.collectAsState()
   val task = modelManagerViewModel.getTaskById(id = taskId)
-  val defaultTopContent: @Composable () -> Unit = {
-    if (taskId == BuiltInTaskId.LLM_CHAT && task != null) {
-      LlmChatModeToggle(
-        selectedMode = chatMode,
-        onModeSelected = { mode -> viewModel.setChatMode(mode, task) },
-      )
-    }
-  }
+  // [ALTREX] No General/Code switch above the chat any more: it took space for little use
+  // (the Code space has its own screen). The chat stays in general mode.
+  val defaultTopContent: @Composable () -> Unit = {}
 
   ChatViewWrapper(
     viewModel = viewModel,
