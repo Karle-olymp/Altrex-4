@@ -499,4 +499,5 @@
   <string name="config_label_number_of_runs">Nombre d\'exécutions</string>
   <string name="config_label_font_size">Taille du texte</string>
   <string name="config_label_max_char_count">Nombre de caractères max</string>
+  <string name="configs_updated">Réglages mis à jour</string>
 </resources>

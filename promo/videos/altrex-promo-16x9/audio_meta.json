@@ -1,0 +1,713 @@
+{
+ "bgm": {
+  "path": "assets/bgm/altrex-bed.wav",
+  "source": "host",
+  "volume": 0.5,
+  "duration_s": 59.3
+ },
+ "voices": [
+  {
+   "frame": 1,
+   "path": "assets/voice/01.wav",
+   "duration_s": 6.0,
+   "words": [
+    {
+     "text": "Mode",
+     "start": 0.991,
+     "end": 1.252
+    },
+    {
+     "text": "avion",
+     "start": 1.252,
+     "end": 1.499
+    },
+    {
+     "text": "activé",
+     "start": 1.499,
+     "end": 2.124
+    },
+    {
+     "text": "Et",
+     "start": 3.586,
+     "end": 3.73
+    },
+    {
+     "text": "pourtant",
+     "start": 3.73,
+     "end": 4.251
+    },
+    {
+     "text": "elle",
+     "start": 4.589,
+     "end": 4.719
+    },
+    {
+     "text": "répond",
+     "start": 4.719,
+     "end": 5.227
+    }
+   ]
+  },
+  {
+   "frame": 2,
+   "path": "assets/voice/02.wav",
+   "duration_s": 4.5,
+   "words": [
+    {
+     "text": "Voici",
+     "start": 1.665,
+     "end": 2.095
+    },
+    {
+     "text": "Altrex",
+     "start": 2.095,
+     "end": 2.824
+    }
+   ]
+  },
+  {
+   "frame": 3,
+   "path": "assets/voice/03.wav",
+   "duration_s": 7.5,
+   "words": [
+    {
+     "text": "Une",
+     "start": 0.451,
+     "end": 0.659
+    },
+    {
+     "text": "intelligence",
+     "start": 0.659,
+     "end": 1.219
+    },
+    {
+     "text": "artificielle",
+     "start": 1.219,
+     "end": 1.818
+    },
+    {
+     "text": "complète",
+     "start": 1.818,
+     "end": 2.443
+    },
+    {
+     "text": "directement",
+     "start": 2.716,
+     "end": 3.276
+    },
+    {
+     "text": "sur",
+     "start": 3.276,
+     "end": 3.445
+    },
+    {
+     "text": "ton",
+     "start": 3.445,
+     "end": 3.562
+    },
+    {
+     "text": "téléphone",
+     "start": 3.563,
+     "end": 4.253
+    },
+    {
+     "text": "Rien",
+     "start": 4.604,
+     "end": 4.955
+    },
+    {
+     "text": "ne",
+     "start": 4.955,
+     "end": 5.046
+    },
+    {
+     "text": "part",
+     "start": 5.046,
+     "end": 5.229
+    },
+    {
+     "text": "sur",
+     "start": 5.229,
+     "end": 5.385
+    },
+    {
+     "text": "Internet",
+     "start": 5.385,
+     "end": 6.114
+    }
+   ]
+  },
+  {
+   "frame": 4,
+   "path": "assets/voice/04.wav",
+   "duration_s": 8.5,
+   "words": [
+    {
+     "text": "Discute",
+     "start": 0.678,
+     "end": 1.329
+    },
+    {
+     "text": "écris",
+     "start": 1.603,
+     "end": 2.176
+    },
+    {
+     "text": "code",
+     "start": 2.176,
+     "end": 2.631
+    },
+    {
+     "text": "Les",
+     "start": 2.981,
+     "end": 3.164
+    },
+    {
+     "text": "réponses",
+     "start": 3.164,
+     "end": 3.541
+    },
+    {
+     "text": "arrivent",
+     "start": 3.541,
+     "end": 3.828
+    },
+    {
+     "text": "en",
+     "start": 3.828,
+     "end": 3.88
+    },
+    {
+     "text": "temps",
+     "start": 3.88,
+     "end": 4.023
+    },
+    {
+     "text": "réel",
+     "start": 4.023,
+     "end": 4.492
+    },
+    {
+     "text": "calculées",
+     "start": 4.804,
+     "end": 5.208
+    },
+    {
+     "text": "par",
+     "start": 5.208,
+     "end": 5.351
+    },
+    {
+     "text": "la",
+     "start": 5.351,
+     "end": 5.429
+    },
+    {
+     "text": "puce",
+     "start": 5.429,
+     "end": 5.624
+    },
+    {
+     "text": "de",
+     "start": 5.624,
+     "end": 5.729
+    },
+    {
+     "text": "ton",
+     "start": 5.729,
+     "end": 5.846
+    },
+    {
+     "text": "téléphone",
+     "start": 5.846,
+     "end": 6.536
+    }
+   ]
+  },
+  {
+   "frame": 5,
+   "path": "assets/voice/05.wav",
+   "duration_s": 8.8,
+   "words": [
+    {
+     "text": "Choisis",
+     "start": 0.551,
+     "end": 0.928
+    },
+    {
+     "text": "ton",
+     "start": 0.928,
+     "end": 1.058
+    },
+    {
+     "text": "modèle",
+     "start": 1.058,
+     "end": 1.527
+    },
+    {
+     "text": "Gemma",
+     "start": 1.996,
+     "end": 2.452
+    },
+    {
+     "text": "Qwen",
+     "start": 2.868,
+     "end": 3.311
+    },
+    {
+     "text": "DeepSeek",
+     "start": 3.663,
+     "end": 4.379
+    },
+    {
+     "text": "Tu",
+     "start": 4.784,
+     "end": 4.875
+    },
+    {
+     "text": "le",
+     "start": 4.875,
+     "end": 4.966
+    },
+    {
+     "text": "télécharges",
+     "start": 4.966,
+     "end": 5.474
+    },
+    {
+     "text": "une",
+     "start": 5.474,
+     "end": 5.578
+    },
+    {
+     "text": "fois",
+     "start": 5.578,
+     "end": 5.917
+    },
+    {
+     "text": "il",
+     "start": 6.242,
+     "end": 6.359
+    },
+    {
+     "text": "est",
+     "start": 6.359,
+     "end": 6.398
+    },
+    {
+     "text": "à",
+     "start": 6.398,
+     "end": 6.529
+    },
+    {
+     "text": "toi",
+     "start": 6.529,
+     "end": 6.906
+    }
+   ]
+  },
+  {
+   "frame": 6,
+   "path": "assets/voice/06.wav",
+   "duration_s": 7.0,
+   "words": [
+    {
+     "text": "Le",
+     "start": 0.617,
+     "end": 0.747
+    },
+    {
+     "text": "mode",
+     "start": 0.747,
+     "end": 0.917
+    },
+    {
+     "text": "auto",
+     "start": 0.917,
+     "end": 1.19
+    },
+    {
+     "text": "choisit",
+     "start": 1.19,
+     "end": 1.529
+    },
+    {
+     "text": "tout",
+     "start": 1.529,
+     "end": 1.672
+    },
+    {
+     "text": "seul",
+     "start": 1.672,
+     "end": 1.88
+    },
+    {
+     "text": "le",
+     "start": 1.88,
+     "end": 1.984
+    },
+    {
+     "text": "meilleur",
+     "start": 1.984,
+     "end": 2.258
+    },
+    {
+     "text": "moteur",
+     "start": 2.258,
+     "end": 2.779
+    },
+    {
+     "text": "processeur",
+     "start": 3.091,
+     "end": 3.807
+    },
+    {
+     "text": "GPU",
+     "start": 4.029,
+     "end": 4.536
+    },
+    {
+     "text": "ou",
+     "start": 4.536,
+     "end": 4.667
+    },
+    {
+     "text": "NPU",
+     "start": 4.667,
+     "end": 5.201
+    }
+   ]
+  },
+  {
+   "frame": 7,
+   "path": "assets/voice/07.wav",
+   "duration_s": 5.5,
+   "words": [
+    {
+     "text": "Parle-lui",
+     "start": 0.551,
+     "end": 1.228
+    },
+    {
+     "text": "Il",
+     "start": 1.579,
+     "end": 1.787
+    },
+    {
+     "text": "t'écoute",
+     "start": 1.788,
+     "end": 2.386
+    },
+    {
+     "text": "sans",
+     "start": 2.66,
+     "end": 2.842
+    },
+    {
+     "text": "rien",
+     "start": 2.842,
+     "end": 3.037
+    },
+    {
+     "text": "envoyer",
+     "start": 3.038,
+     "end": 3.65
+    }
+   ]
+  },
+  {
+   "frame": 8,
+   "path": "assets/voice/08.wav",
+   "duration_s": 5.0,
+   "words": [
+    {
+     "text": "Tes",
+     "start": 0.55,
+     "end": 0.719
+    },
+    {
+     "text": "conversations",
+     "start": 0.719,
+     "end": 1.461
+    },
+    {
+     "text": "restent",
+     "start": 1.461,
+     "end": 1.735
+    },
+    {
+     "text": "à",
+     "start": 1.735,
+     "end": 1.787
+    },
+    {
+     "text": "toi",
+     "start": 1.787,
+     "end": 2.178
+    },
+    {
+     "text": "Pour",
+     "start": 2.57,
+     "end": 2.714
+    },
+    {
+     "text": "de",
+     "start": 2.714,
+     "end": 2.805
+    },
+    {
+     "text": "vrai",
+     "start": 2.805,
+     "end": 3.182
+    }
+   ]
+  },
+  {
+   "frame": 9,
+   "path": "assets/voice/09.wav",
+   "duration_s": 6.5,
+   "words": [
+    {
+     "text": "Altrex",
+     "start": 0.865,
+     "end": 1.62
+    },
+    {
+     "text": "L'IA",
+     "start": 1.97,
+     "end": 2.282
+    },
+    {
+     "text": "qui",
+     "start": 2.282,
+     "end": 2.439
+    },
+    {
+     "text": "reste",
+     "start": 2.439,
+     "end": 2.725
+    },
+    {
+     "text": "chez",
+     "start": 2.725,
+     "end": 2.842
+    },
+    {
+     "text": "toi",
+     "start": 2.842,
+     "end": 3.207
+    }
+   ]
+  }
+ ],
+ "sfx": [
+  {
+   "frame": 1,
+   "file": "assets/sfx/click.wav",
+   "offset_s": 0.95,
+   "duration_s": 0.09,
+   "volume": 0.55,
+   "source": "host"
+  },
+  {
+   "frame": 1,
+   "file": "assets/sfx/whoosh-short.wav",
+   "offset_s": 2.2,
+   "duration_s": 0.4,
+   "volume": 0.35,
+   "source": "host"
+  },
+  {
+   "frame": 1,
+   "file": "assets/sfx/tick-low.wav",
+   "offset_s": 3.25,
+   "duration_s": 0.12,
+   "volume": 0.25,
+   "source": "host"
+  },
+  {
+   "frame": 1,
+   "file": "assets/sfx/shimmer.wav",
+   "offset_s": 3.7,
+   "duration_s": 1.4,
+   "volume": 0.4,
+   "source": "host"
+  },
+  {
+   "frame": 2,
+   "file": "assets/sfx/shimmer.wav",
+   "offset_s": 1.4,
+   "duration_s": 1.4,
+   "volume": 0.45,
+   "source": "host"
+  },
+  {
+   "frame": 3,
+   "file": "assets/sfx/tick.wav",
+   "offset_s": 0.45,
+   "duration_s": 0.12,
+   "volume": 0.22,
+   "source": "host"
+  },
+  {
+   "frame": 3,
+   "file": "assets/sfx/tick.wav",
+   "offset_s": 2.68,
+   "duration_s": 0.12,
+   "volume": 0.22,
+   "source": "host"
+  },
+  {
+   "frame": 3,
+   "file": "assets/sfx/tick-low.wav",
+   "offset_s": 4.58,
+   "duration_s": 0.12,
+   "volume": 0.22,
+   "source": "host"
+  },
+  {
+   "frame": 4,
+   "file": "assets/sfx/whoosh-short.wav",
+   "offset_s": 0.0,
+   "duration_s": 0.4,
+   "volume": 0.25,
+   "source": "host"
+  },
+  {
+   "frame": 4,
+   "file": "assets/sfx/pop.wav",
+   "offset_s": 0.68,
+   "duration_s": 0.14,
+   "volume": 0.35,
+   "source": "host"
+  },
+  {
+   "frame": 4,
+   "file": "assets/sfx/pop.wav",
+   "offset_s": 1.6,
+   "duration_s": 0.14,
+   "volume": 0.35,
+   "source": "host"
+  },
+  {
+   "frame": 4,
+   "file": "assets/sfx/pop.wav",
+   "offset_s": 2.17,
+   "duration_s": 0.14,
+   "volume": 0.35,
+   "source": "host"
+  },
+  {
+   "frame": 4,
+   "file": "assets/sfx/tick.wav",
+   "offset_s": 4.78,
+   "duration_s": 0.12,
+   "volume": 0.22,
+   "source": "host"
+  },
+  {
+   "frame": 5,
+   "file": "assets/sfx/whoosh-short.wav",
+   "offset_s": 1.95,
+   "duration_s": 0.4,
+   "volume": 0.22,
+   "source": "host"
+  },
+  {
+   "frame": 5,
+   "file": "assets/sfx/whoosh-short.wav",
+   "offset_s": 2.82,
+   "duration_s": 0.4,
+   "volume": 0.22,
+   "source": "host"
+  },
+  {
+   "frame": 5,
+   "file": "assets/sfx/whoosh-short.wav",
+   "offset_s": 3.6,
+   "duration_s": 0.4,
+   "volume": 0.22,
+   "source": "host"
+  },
+  {
+   "frame": 5,
+   "file": "assets/sfx/ding.wav",
+   "offset_s": 6.25,
+   "duration_s": 1.2,
+   "volume": 0.4,
+   "source": "host"
+  },
+  {
+   "frame": 6,
+   "file": "assets/sfx/tick.wav",
+   "offset_s": 3.0,
+   "duration_s": 0.12,
+   "volume": 0.22,
+   "source": "host"
+  },
+  {
+   "frame": 6,
+   "file": "assets/sfx/tick.wav",
+   "offset_s": 3.98,
+   "duration_s": 0.12,
+   "volume": 0.22,
+   "source": "host"
+  },
+  {
+   "frame": 6,
+   "file": "assets/sfx/tick.wav",
+   "offset_s": 4.58,
+   "duration_s": 0.12,
+   "volume": 0.22,
+   "source": "host"
+  },
+  {
+   "frame": 6,
+   "file": "assets/sfx/pop.wav",
+   "offset_s": 5.45,
+   "duration_s": 0.14,
+   "volume": 0.35,
+   "source": "host"
+  },
+  {
+   "frame": 6,
+   "file": "assets/sfx/ding.wav",
+   "offset_s": 5.65,
+   "duration_s": 1.2,
+   "volume": 0.3,
+   "source": "host"
+  },
+  {
+   "frame": 7,
+   "file": "assets/sfx/pop.wav",
+   "offset_s": 0.2,
+   "duration_s": 0.14,
+   "volume": 0.25,
+   "source": "host"
+  },
+  {
+   "frame": 7,
+   "file": "assets/sfx/tick.wav",
+   "offset_s": 2.6,
+   "duration_s": 0.12,
+   "volume": 0.2,
+   "source": "host"
+  },
+  {
+   "frame": 8,
+   "file": "assets/sfx/lock.wav",
+   "offset_s": 2.6,
+   "duration_s": 0.25,
+   "volume": 0.6,
+   "source": "host"
+  },
+  {
+   "frame": 9,
+   "file": "assets/sfx/whoosh.wav",
+   "offset_s": 1.85,
+   "duration_s": 0.6,
+   "volume": 0.2,
+   "source": "host"
+  }
+ ]
+}

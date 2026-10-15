@@ -87,6 +87,17 @@ object ToolCalling {
     return sb.toString()
   }
 
+  /**
+   * [ALTREX] The same conversation as a chat request: the engine formats it with the model's own
+   * chat template (Gemma, Llama, Mistral, Qwen...) instead of always using ChatML.
+   */
+  fun buildChatRequest(system: String, messages: List<AgentMsg>): String {
+    val list = ArrayList<Pair<String, String>>()
+    if (system.isNotBlank()) list.add("system" to system)
+    for (m in messages) list.add(m.role to m.content)
+    return org.nehuatl.llamacpp.LlamaHelper.chatRequest(list)
+  }
+
   /** Tool results, sent back as a user message. */
   fun toolResponseMessage(results: List<String>): AgentMsg {
     val sb = StringBuilder()
@@ -142,5 +153,113 @@ object ToolCalling {
         RegexOption.DOT_MATCHES_ALL,
       )
     return text.replace(re, "").trim()
+  }
+
+  internal val THINK_OPEN = "<" + "think>"
+  internal val THINK_CLOSE = "<" + "/think>"
+  internal val TOOL_CALL_OPEN get() = CALL_OPEN
+  internal val TOOL_CALL_CLOSE get() = CALL_CLOSE
+}
+
+/**
+ * [ALTREX] Splits a streamed answer as it arrives: visible text is shown right away, reasoning
+ * between think tags goes to the "thinking" area, and tool_call blocks stay hidden. Tags may be cut
+ * across chunks, so a tail that could be the start of a tag is held back until the next chunk.
+ */
+class StreamSplitter {
+  private enum class Mode { TEXT, THINK, TOOL }
+
+  private var mode = Mode.TEXT
+  private val pending = StringBuilder()
+  private var startedText = false
+
+  data class Out(val text: String, val thinking: String)
+
+  fun feed(chunk: String): Out {
+    pending.append(chunk)
+    return drain(final = false)
+  }
+
+  fun finish(): Out = drain(final = true)
+
+  private fun drain(final: Boolean): Out {
+    val text = StringBuilder()
+    val thinking = StringBuilder()
+    while (pending.isNotEmpty()) {
+      val buf = pending.toString()
+      when (mode) {
+        Mode.TEXT -> {
+          val iThink = buf.indexOf(ToolCalling.THINK_OPEN)
+          val iTool = buf.indexOf(ToolCalling.TOOL_CALL_OPEN)
+          val iStray = buf.indexOf(ToolCalling.THINK_CLOSE)
+          val next = listOf(iThink, iTool, iStray).filter { it >= 0 }.minOrNull()
+          if (next != null) {
+            text.append(buf, 0, next)
+            if (next == iStray) {
+              // A closing tag without its opening one (the template opened it): drop the tag.
+              pending.delete(0, next + ToolCalling.THINK_CLOSE.length)
+            } else if (next == iThink) {
+              mode = Mode.THINK
+              pending.delete(0, next + ToolCalling.THINK_OPEN.length)
+            } else {
+              mode = Mode.TOOL
+              pending.delete(0, next + ToolCalling.TOOL_CALL_OPEN.length)
+            }
+            continue
+          }
+          val keep =
+            if (final) 0
+            else partialTagTail(buf, listOf(ToolCalling.THINK_OPEN, ToolCalling.TOOL_CALL_OPEN, ToolCalling.THINK_CLOSE))
+          text.append(buf, 0, buf.length - keep)
+          pending.delete(0, buf.length - keep)
+          break
+        }
+        Mode.THINK -> {
+          val end = buf.indexOf(ToolCalling.THINK_CLOSE)
+          if (end >= 0) {
+            thinking.append(buf, 0, end)
+            pending.delete(0, end + ToolCalling.THINK_CLOSE.length)
+            mode = Mode.TEXT
+            continue
+          }
+          val keep = if (final) 0 else partialTagTail(buf, listOf(ToolCalling.THINK_CLOSE))
+          thinking.append(buf, 0, buf.length - keep)
+          pending.delete(0, buf.length - keep)
+          break
+        }
+        Mode.TOOL -> {
+          val end = buf.indexOf(ToolCalling.TOOL_CALL_CLOSE)
+          if (end >= 0) {
+            pending.delete(0, end + ToolCalling.TOOL_CALL_CLOSE.length)
+            mode = Mode.TEXT
+            continue
+          }
+          val keep = if (final) 0 else partialTagTail(buf, listOf(ToolCalling.TOOL_CALL_CLOSE))
+          pending.delete(0, buf.length - keep)
+          break
+        }
+      }
+    }
+    // No leading blank lines before the first visible word.
+    var visible = text.toString()
+    if (!startedText) {
+      visible = visible.trimStart()
+      if (visible.isNotEmpty()) startedText = true
+    }
+    return Out(visible, thinking.toString())
+  }
+
+  /** Length of the longest end of [buf] that is the beginning of one of [tags]. */
+  private fun partialTagTail(buf: String, tags: List<String>): Int {
+    var best = 0
+    for (tag in tags) {
+      for (len in minOf(tag.length - 1, buf.length) downTo 1) {
+        if (buf.regionMatches(buf.length - len, tag, 0, len)) {
+          if (len > best) best = len
+          break
+        }
+      }
+    }
+    return best
   }
 }

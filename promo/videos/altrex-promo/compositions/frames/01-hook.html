@@ -1,0 +1,105 @@
+<template id="01-hook">
+  <div id="root" data-composition-id="01-hook" data-start="0" data-duration="6.5" data-width="1080" data-height="1920">
+    <style>
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_medium.ttf"); font-weight: 500; }
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_semibold.ttf"); font-weight: 600; }
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_bold.ttf"); font-weight: 700; }
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_extrabold.ttf"); font-weight: 800; }
+@font-face { font-family: "JetBrains Mono"; src: url("assets/fonts/jetbrains_mono_medium.ttf"); font-weight: 500; }
+#root { position: relative; width: 100%; height: 100%; overflow: hidden; font-family: "Manrope", sans-serif; color: #E8EEF2; }
+.f1-bg { position: absolute; inset: 0; background: #0C151B; overflow: hidden; }
+.f1-halo { position: absolute; left: 50%; top: var(--f1-hy, 46%); width: 1500px; height: 1500px; margin: -750px 0 0 -750px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(140,203,245,0.15) 0%, rgba(114,214,219,0.06) 34%, rgba(12,21,27,0) 68%); }
+.f1-vig { position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 52%, rgba(0,0,0,0.5) 100%); }
+.f1-grain { position: absolute; inset: 0; opacity: 0.035; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.f1-stage { position: absolute; inset: 0; }
+.f1-eyebrow { font-family: "JetBrains Mono", monospace; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: #8CCBF5; }
+.f1-grad { background: linear-gradient(100deg, #8CCBF5 0%, #72D6DB 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.f1-pill { display: flex; align-items: center; gap: 0.5em; padding: 0.55em 1.05em; border-radius: 999px; background: rgba(26,39,49,0.92);
+  border: 1px solid rgba(140,203,245,0.16); font-weight: 600; white-space: nowrap; }
+.f1-pill svg { width: 1.15em; height: 1.15em; flex: none; }
+/* phone */
+.f1-ph { position: absolute; width: var(--f1-pw); left: var(--f1-px); top: var(--f1-py); padding: calc(var(--f1-pw) * 0.022);
+  border-radius: calc(var(--f1-pw) * 0.105); background: #0A1116; border: 1px solid rgba(140,203,245,0.16);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.6) inset, 0 40px 120px rgba(0,0,0,0.45); }
+.f1-scr { position: relative; border-radius: calc(var(--f1-pw) * 0.085); overflow: hidden; background: #0E151B; }
+.f1-sb { position: relative; height: calc(var(--f1-pw) * 0.075); display: flex; align-items: center; justify-content: space-between;
+  padding: 0 calc(var(--f1-pw) * 0.075); font-size: calc(var(--f1-pw) * 0.034); font-weight: 700; color: #E8EEF2; background: #0E151B; }
+.f1-sbr { display: flex; align-items: center; gap: calc(var(--f1-pw) * 0.014); }
+.f1-sbr svg { width: calc(var(--f1-pw) * 0.042); height: calc(var(--f1-pw) * 0.042); display: block; }
+.f1-shot { position: relative; width: 100%; aspect-ratio: 933 / 1860; overflow: hidden; }
+.f1-shot img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
+@media (orientation: portrait) {
+  #root { --f1-pw: 600px; --f1-px: 240px; --f1-py: 300px; }
+}
+@media (orientation: landscape) {
+  #root { --f1-pw: 404px; --f1-px: 250px; --f1-py: 36px; --f1-hy: 50%; }
+}
+
+.f1-img1, .f1-img2 { opacity: 0; }
+.f1-plane { display: inline-flex; width: 0; overflow: visible; }
+.f1-plane svg { color: #8CCBF5; }
+.f1-chip { position: absolute; left: 0; right: 0; display: flex; justify-content: center; }
+.f1-chip .f1-pill { font-family: "JetBrains Mono", monospace; font-weight: 500; letter-spacing: 0.14em; color: #8A9AA6; }
+.f1-hero { position: absolute; display: flex; align-items: center; gap: 0.32em; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+.f1-dot { width: 0.28em; height: 0.28em; border-radius: 50%; background: #5FD4A0; box-shadow: 0 0 0.4em rgba(95,212,160,0.6); flex: none; }
+@media (orientation: portrait) {
+  .f1-chip { top: 92px; font-size: 30px; }
+  .f1-hero { left: 0; right: 0; justify-content: center; top: 172px; font-size: 92px; }
+}
+@media (orientation: landscape) {
+  .f1-chip { left: 860px; right: auto; top: 330px; font-size: 28px; }
+  .f1-hero { left: 860px; top: 420px; font-size: 128px; }
+}
+    </style>
+    <div id="f1-bg" class="f1-bg clip" data-start="0" data-duration="6.5" data-track-index="0">
+      <div id="f1-halo" class="f1-halo"></div>
+      <div class="f1-vig"></div>
+      <div class="f1-grain"></div>
+    </div>
+    <div id="f1-stage" class="f1-stage clip" data-start="0" data-duration="6.5" data-track-index="1">
+      <div class="f1-chip"><div id="f1-chip" class="f1-pill"><span id="f1-chipicon" style="display:inline-flex"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg></span><span>Mode avion</span></div></div>
+      <div id="f1-hero" class="f1-hero"><span class="f1-dot"></span><span>Hors ligne.</span></div>
+
+      <div id="f1-ph" class="f1-ph">
+        <div class="f1-scr">
+          <div class="f1-sb"><span>9:41</span><span class="f1-sbr"><span id="f1-plane" class="f1-plane"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg></span><span id="f1-net" style="display:flex;gap:inherit"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M12 19h.01M8.6 15.4a4.8 4.8 0 0 1 6.8 0M5.6 12.4a9 9 0 0 1 12.8 0M2.6 9.3a13.2 13.2 0 0 1 18.8 0"/></svg><svg viewBox="0 0 24 24"><rect x="2" y="15" width="3.6" height="6" rx="1" fill="currentColor"/><rect x="7.4" y="11" width="3.6" height="10" rx="1" fill="currentColor"/><rect x="12.8" y="7" width="3.6" height="14" rx="1" fill="currentColor"/><rect x="18.2" y="3" width="3.6" height="18" rx="1" fill="currentColor"/></svg></span><svg viewBox="0 0 28 24"><rect x="1" y="6" width="22" height="12" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="3.5" y="8.5" width="15" height="7" rx="1.5" fill="currentColor"/><rect x="24.2" y="10" width="2.4" height="4" rx="1" fill="currentColor"/></svg></span></div>
+          <div id="f1-shotbox" class="f1-shot">
+          <div id="f1-shot0" class="f1-img0" style="position:absolute;inset:0;background:url('assets/screens/chat-saisie.jpg') center / 100% 100% no-repeat;"></div>
+          <div id="f1-shot1" class="f1-img1" style="position:absolute;inset:0;background:url('assets/screens/chat-attente.jpg') center / 100% 100% no-repeat;"></div>
+          <div id="f1-shot2" class="f1-img2" style="position:absolute;inset:0;background:url('assets/screens/chat-code.jpg') center / 100% 100% no-repeat;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script>
+      (function () {
+        var D = 6;
+        var tl = gsap.timeline({ paused: true });
+        var q = function (s) { return document.querySelector("[data-composition-id='01-hook'] " + s); };
+        // ambient layer: the halo breathes once per ~6 s
+        var halo = q("#f1-halo");
+        tl.fromTo(halo, { scale: 0.94, opacity: 0.75 }, { scale: 1.06, opacity: 1, duration: D / 2, ease: "sine.inOut" }, 0);
+        tl.to(halo, { scale: 0.98, opacity: 0.85, duration: D / 2, ease: "sine.inOut" }, D / 2);
+
+        tl.fromTo(q("#f1-ph"), { y: 56, scale: 0.97, opacity: 0 }, { y: 0, scale: 1, opacity: 1, duration: 0.6, ease: "power2.out" }, 0);
+        tl.to(q("#f1-ph"), { scale: 1.03, duration: D - 0.6, ease: "sine.inOut" }, 0 + 0.6);
+        tl.fromTo(q("#f1-chip"), { y: 16, opacity: 0 }, { y: 0, opacity: 0.6, duration: 0.5, ease: "power2.out" }, 0.15);
+        // "Mode avion" — airplane lights up, network dies
+        tl.fromTo(q("#f1-plane"), { width: 0, opacity: 0, scale: 0.4 }, { width: "1.5em", opacity: 1, scale: 1, duration: 0.45, ease: "power2.out" }, 0.95);
+        tl.to(q("#f1-net"), { opacity: 0.18, duration: 0.4, ease: "power1.in" }, 1.0);
+        tl.to(q("#f1-chip"), { opacity: 1, color: "#8CCBF5", borderColor: "rgba(140,203,245,0.55)", backgroundColor: "rgba(140,203,245,0.12)", duration: 0.45, ease: "power2.out" }, 0.95);
+        // send — typed message leaves, answer pending
+        tl.fromTo(q("#f1-shot1"), { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }, 2.25);
+        // "pourtant" — the real answer arrives anyway
+        tl.fromTo(q("#f1-shot2"), { opacity: 1, clipPath: "inset(100% 0% 0% 0%)" }, { clipPath: "inset(0% 0% 0% 0%)", duration: 0.9, ease: "power2.out" }, 3.7);
+        // "répond" — hero word
+        tl.fromTo(q("#f1-hero"), { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.55, ease: "power2.out" }, 4.65);
+        tl.to(q("#f1-chip"), { opacity: 0, y: -12, duration: 0.35, ease: "power1.in" }, 4.55);
+        tl.to({}, { duration: D }, 0);
+        window.__timelines["01-hook"] = tl;
+      })();
+    </script>
+  </div>
+</template>

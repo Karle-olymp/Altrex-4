@@ -18,6 +18,8 @@ package com.google.ai.edge.gallery.agent
 
 import android.content.Context
 import android.util.Log
+import com.google.ai.edge.gallery.data.ConfigKeys
+import com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.RuntimeType
 import com.google.ai.edge.gallery.data.awaitInitialization
@@ -27,6 +29,7 @@ import com.google.ai.edge.gallery.tools.ToolDispatcher
 import com.google.ai.edge.gallery.tools.ToolExecutionContext
 import com.google.ai.edge.gallery.tools.ToolsProvider
 import com.google.ai.edge.gallery.ui.llmsingleturn.AgentMsg
+import com.google.ai.edge.gallery.ui.llmsingleturn.StreamSplitter
 import com.google.ai.edge.gallery.ui.llmsingleturn.ToolCalling
 import com.google.ai.edge.litertlm.Contents
 import java.util.concurrent.atomic.AtomicBoolean
@@ -46,6 +49,9 @@ private const val TAG = "AGDefaultAgentRuntimeExecutor"
 
 /** Maximum number of tool-calling steps for local llama.cpp models before giving up. */
 private const val MAX_LLAMA_AGENT_STEPS = 6
+
+/** Messages kept in the llama.cpp conversation memory (user + assistant). */
+private const val MAX_LLAMA_HISTORY = 20
 
 /**
  * Default implementation of [AgentRuntimeExecutor] orchestrating context assembly, execution
@@ -73,8 +79,14 @@ open class DefaultAgentRuntimeExecutor(
   /** Atomic reference to the active session. */
   private val activeSession = AtomicReference<ActiveSession?>(null)
 
-  /** Set when the user interrupts an in-flight generation; reset at the start of each session. */
+  /** Set when the user interrupts an in-flight generation; reset at the start of each request. */
   private val interrupted = AtomicBoolean(false)
+
+  /**
+   * [ALTREX] Conversation so far for local llama.cpp models (user questions and final answers), so
+   * the model remembers the previous turns. LiteRT-LM keeps its own conversation natively.
+   */
+  private val llamaHistory = ArrayList<AgentMsg>()
 
   override suspend fun initialize(
     context: Context,
@@ -86,6 +98,7 @@ open class DefaultAgentRuntimeExecutor(
       ToolExecutionContext(taskId = config.taskId, actionChannel = config.actionChannel)
 
     interrupted.set(false)
+    synchronized(llamaHistory) { llamaHistory.clear() }
     activeSession.set(
       ActiveSession(
         model = config.model,
@@ -161,6 +174,8 @@ open class DefaultAgentRuntimeExecutor(
     // same tool definitions through the ChatML / Hermes protocol. LiteRT-LM models keep using the
     // engine's built-in automatic tool calling (single runInference call below).
     if (curModel.runtimeType == RuntimeType.LLAMA_CPP) {
+      // A Stop pressed for the previous request must not cancel this one.
+      interrupted.set(false)
       val producer = this
       val loopJob =
         launch(Dispatchers.IO) {
@@ -265,6 +280,7 @@ open class DefaultAgentRuntimeExecutor(
       ToolExecutionContext(taskId = config.taskId, actionChannel = config.actionChannel)
 
     interrupted.set(false)
+    synchronized(llamaHistory) { llamaHistory.clear() }
     activeSession.set(
       ActiveSession(
         model = config.model,
@@ -338,31 +354,41 @@ open class DefaultAgentRuntimeExecutor(
     emit(AgentEvent.StreamToken(token = "", done = false))
 
     val system = ToolCalling.systemPrompt(LlamaCppToolBridge.specs, systemInstruction.orEmpty())
-    val messages = mutableListOf(AgentMsg("user", request.query))
+    val messages = ArrayList<AgentMsg>()
+    messages.addAll(fitHistory(model, system, request.query))
+    messages.add(AgentMsg("user", request.query))
+    val shown = StringBuilder()
 
     for (step in 0 until MAX_LLAMA_AGENT_STEPS) {
       if (interrupted.get()) {
         return null
       }
-      val prompt = ToolCalling.buildPrompt(system, messages)
-      val response = runLlamaCppTurn(model = model, prompt = prompt)
-      val calls = ToolCalling.parseToolCalls(response)
-      val visible = ToolCalling.stripToolCalls(response)
-
-      if (calls.isEmpty()) {
-        emit(AgentEvent.StreamToken(token = visible, done = true))
-        return visible
+      val prompt = ToolCalling.buildChatRequest(system, messages)
+      // [ALTREX] Stream the answer as it is written; tool calls stay hidden, reasoning goes to the
+      // thinking area.
+      val splitter = StreamSplitter()
+      if (shown.isNotEmpty()) {
+        emit(AgentEvent.StreamToken(token = "\n\n", done = false))
       }
+      val response =
+        runLlamaCppTurn(model = model, prompt = prompt) { chunk ->
+          emitSplit(splitter.feed(chunk), shown, emit)
+        }
+      emitSplit(splitter.finish(), shown, emit)
 
-      if (visible.isNotEmpty()) {
-        emit(AgentEvent.StreamToken(token = visible, done = false))
+      val calls = ToolCalling.parseToolCalls(response)
+
+      if (calls.isEmpty() || interrupted.get()) {
+        emit(AgentEvent.StreamToken(token = "", done = true))
+        rememberTurn(request.query, shown.toString().trim())
+        return shown.toString().trim()
       }
 
       val results = ArrayList<String>()
       for (call in calls.take(4)) {
         results.add(LlamaCppToolBridge.dispatch(call = call, toolsProvider = toolsProvider))
       }
-      messages.add(AgentMsg("assistant", response.trim()))
+      messages.add(AgentMsg("assistant", stripThinking(response).trim()))
       messages.add(ToolCalling.toolResponseMessage(results))
     }
 
@@ -371,16 +397,69 @@ open class DefaultAgentRuntimeExecutor(
     return message
   }
 
+  // The chat screen handles a token carrying both thinking and text as thinking only: send the
+  // two parts as separate events.
+  private fun emitSplit(out: StreamSplitter.Out, shown: StringBuilder, emit: (AgentEvent) -> Unit) {
+    if (out.thinking.isNotEmpty()) {
+      emit(AgentEvent.StreamToken(token = "", thinking = out.thinking, done = false))
+    }
+    if (out.text.isNotEmpty()) {
+      shown.append(out.text)
+      emit(AgentEvent.StreamToken(token = out.text, done = false))
+    }
+  }
+
+  /** Drops reasoning blocks from a raw answer (they must not be fed back to the model). */
+  private fun stripThinking(text: String): String =
+    text
+      .replace(
+        Regex(Regex.escape(ToolCalling.THINK_OPEN) + ".*?(?:" + Regex.escape(ToolCalling.THINK_CLOSE) + "|\\z)", RegexOption.DOT_MATCHES_ALL),
+        "",
+      )
+      .replace(ToolCalling.THINK_CLOSE, "")
+
+  /** Keeps the most recent turns that fit in about half of the context window. */
+  private fun fitHistory(model: Model, system: String, query: String): List<AgentMsg> {
+    val maxTokens = model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN)
+    // About 3 characters per token; half of the context stays free for the answer.
+    var budget = maxTokens * 3 / 2 - system.length - query.length
+    val kept = ArrayList<AgentMsg>()
+    synchronized(llamaHistory) {
+      for (msg in llamaHistory.asReversed()) {
+        budget -= msg.content.length + 16
+        if (budget < 0) break
+        kept.add(0, msg)
+      }
+    }
+    // Start on a user turn.
+    while (kept.isNotEmpty() && kept.first().role != "user") kept.removeAt(0)
+    return kept
+  }
+
+  private fun rememberTurn(query: String, answer: String) {
+    if (answer.isEmpty()) return
+    synchronized(llamaHistory) {
+      llamaHistory.add(AgentMsg("user", query))
+      llamaHistory.add(AgentMsg("assistant", answer))
+      while (llamaHistory.size > MAX_LLAMA_HISTORY) llamaHistory.removeAt(0)
+    }
+  }
+
   /** Runs a single generation on a local llama.cpp model and suspends until it completes. */
-  private suspend fun runLlamaCppTurn(model: Model, prompt: String): String {
+  private suspend fun runLlamaCppTurn(
+    model: Model,
+    prompt: String,
+    onChunk: (String) -> Unit = {},
+  ): String {
     val buffer = StringBuilder()
     val completion = CompletableDeferred<String>()
     model.runtimeHelper.runInference(
       model = model,
       input = prompt,
       resultListener = { partialResult, done, _ ->
-        if (partialResult.isNotEmpty()) {
+        if (partialResult.isNotEmpty() && !completion.isCompleted) {
           buffer.append(partialResult)
+          onChunk(partialResult)
         }
         if (done && !completion.isCompleted) {
           completion.complete(buffer.toString())

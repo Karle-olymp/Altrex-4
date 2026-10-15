@@ -1,0 +1,90 @@
+<template id="03-promesse">
+  <div id="root" data-composition-id="03-promesse" data-start="0" data-duration="8" data-width="1920" data-height="1080">
+    <style>
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_medium.ttf"); font-weight: 500; }
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_semibold.ttf"); font-weight: 600; }
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_bold.ttf"); font-weight: 700; }
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_extrabold.ttf"); font-weight: 800; }
+@font-face { font-family: "JetBrains Mono"; src: url("assets/fonts/jetbrains_mono_medium.ttf"); font-weight: 500; }
+#root { position: relative; width: 100%; height: 100%; overflow: hidden; font-family: "Manrope", sans-serif; color: #E8EEF2; }
+.f3-bg { position: absolute; inset: 0; background: #0C151B; overflow: hidden; }
+.f3-halo { position: absolute; left: 50%; top: var(--f3-hy, 46%); width: 1500px; height: 1500px; margin: -750px 0 0 -750px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(140,203,245,0.15) 0%, rgba(114,214,219,0.06) 34%, rgba(12,21,27,0) 68%); }
+.f3-vig { position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 52%, rgba(0,0,0,0.5) 100%); }
+.f3-grain { position: absolute; inset: 0; opacity: 0.035; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.f3-stage { position: absolute; inset: 0; }
+.f3-eyebrow { font-family: "JetBrains Mono", monospace; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: #8CCBF5; }
+.f3-grad { background: linear-gradient(100deg, #8CCBF5 0%, #72D6DB 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.f3-pill { display: flex; align-items: center; gap: 0.5em; padding: 0.55em 1.05em; border-radius: 999px; background: rgba(26,39,49,0.92);
+  border: 1px solid rgba(140,203,245,0.16); font-weight: 600; white-space: nowrap; }
+.f3-pill svg { width: 1.15em; height: 1.15em; flex: none; }
+/* phone */
+.f3-ph { position: absolute; width: var(--f3-pw); left: var(--f3-px); top: var(--f3-py); padding: calc(var(--f3-pw) * 0.022);
+  border-radius: calc(var(--f3-pw) * 0.105); background: #0A1116; border: 1px solid rgba(140,203,245,0.16);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.6) inset, 0 40px 120px rgba(0,0,0,0.45); }
+.f3-scr { position: relative; border-radius: calc(var(--f3-pw) * 0.085); overflow: hidden; background: #0E151B; }
+.f3-sb { position: relative; height: calc(var(--f3-pw) * 0.075); display: flex; align-items: center; justify-content: space-between;
+  padding: 0 calc(var(--f3-pw) * 0.075); font-size: calc(var(--f3-pw) * 0.034); font-weight: 700; color: #E8EEF2; background: #0E151B; }
+.f3-sbr { display: flex; align-items: center; gap: calc(var(--f3-pw) * 0.014); }
+.f3-sbr svg { width: calc(var(--f3-pw) * 0.042); height: calc(var(--f3-pw) * 0.042); display: block; }
+.f3-shot { position: relative; width: 100%; aspect-ratio: 933 / 1860; overflow: hidden; }
+.f3-shot img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
+@media (orientation: portrait) {
+  #root { --f3-pw: 600px; --f3-px: 240px; --f3-py: 300px; }
+}
+@media (orientation: landscape) {
+  #root { --f3-pw: 404px; --f3-px: 250px; --f3-py: 36px; --f3-hy: 50%; }
+}
+
+.f3-line { position: absolute; font-weight: 800; letter-spacing: -0.035em; line-height: 1.02; }
+.f3-l3 { font-weight: 600; letter-spacing: -0.01em; color: #8A9AA6; display: flex; align-items: center; gap: 0.45em; }
+.f3-l3 .f3-ic { position: relative; width: 1.1em; height: 1.1em; color: #8CCBF5; flex: none; }
+.f3-l3 .f3-ic svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.f3-rule { position: absolute; height: 4px; border-radius: 2px; background: linear-gradient(90deg, #8CCBF5, #72D6DB); transform-origin: 0 50%; }
+@media (orientation: portrait) {
+  .f3-l1 { left: 90px; top: 520px; font-size: 150px; }
+  .f3-l2 { left: 90px; top: 700px; font-size: 120px; width: 900px; }
+  .f3-l3 { left: 90px; top: 1060px; font-size: 54px; }
+  .f3-rule { left: 90px; top: 1010px; width: 520px; }
+}
+@media (orientation: landscape) {
+  .f3-l1 { left: 180px; top: 200px; font-size: 150px; }
+  .f3-l2 { left: 180px; top: 370px; font-size: 120px; }
+  .f3-l3 { left: 180px; top: 660px; font-size: 54px; }
+  .f3-rule { left: 180px; top: 600px; width: 560px; }
+}
+    </style>
+    <div id="f3-bg" class="f3-bg clip" data-start="0" data-duration="8" data-track-index="0">
+      <div id="f3-halo" class="f3-halo"></div>
+      <div class="f3-vig"></div>
+      <div class="f3-grain"></div>
+    </div>
+    <div id="f3-stage" class="f3-stage clip" data-start="0" data-duration="8" data-track-index="1">
+      <div id="f3-l1" class="f3-line f3-l1">Ton IA.</div>
+      <div id="f3-l2" class="f3-line f3-l2">Sur ton <span class="f3-grad">téléphone.</span></div>
+      <div id="f3-rule" class="f3-rule"></div>
+      <div id="f3-l3" class="f3-line f3-l3"><span class="f3-ic"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M12 19h.01M8.6 15.4a4.8 4.8 0 0 1 6.8 0M5.6 12.4a9 9 0 0 1 12.8 0M2.6 9.3a13.2 13.2 0 0 1 18.8 0"/></svg><svg viewBox="0 0 24 24"><path id="f3-slash" d="M3.5 3.5L20.5 20.5" pathLength="1" stroke-dasharray="1" fill="none" stroke="#E8EEF2" stroke-width="2.4" stroke-linecap="round"/></svg></span><span>Rien ne part sur Internet.</span></div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script>
+      (function () {
+        var D = 7.5;
+        var tl = gsap.timeline({ paused: true });
+        var q = function (s) { return document.querySelector("[data-composition-id='03-promesse'] " + s); };
+        // ambient layer: the halo breathes once per ~6 s
+        var halo = q("#f3-halo");
+        tl.fromTo(halo, { scale: 0.94, opacity: 0.75 }, { scale: 1.06, opacity: 1, duration: D / 2, ease: "sine.inOut" }, 0);
+        tl.to(halo, { scale: 0.98, opacity: 0.85, duration: D / 2, ease: "sine.inOut" }, D / 2);
+
+        tl.fromTo(q("#f3-l1"), { y: 44, opacity: 0, filter: "blur(10px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.6, ease: "power2.out" }, 0.4);
+        tl.fromTo(q("#f3-l2"), { y: 44, opacity: 0, filter: "blur(10px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.6, ease: "power2.out" }, 2.65);
+        tl.fromTo(q("#f3-rule"), { scaleX: 0 }, { scaleX: 1, duration: 0.7, ease: "power2.out" }, 4.4);
+        tl.fromTo(q("#f3-l3"), { y: 26, opacity: 0 }, { y: 0, opacity: 1, duration: 0.55, ease: "power2.out" }, 4.55);
+        tl.fromTo(q("#f3-slash"), { attr: { "stroke-dashoffset": 1 } }, { attr: { "stroke-dashoffset": 0 }, duration: 0.45, ease: "power2.out" }, 5.35);
+        tl.fromTo([q("#f3-l1"), q("#f3-l2")], { scale: 1 }, { scale: 1.02, transformOrigin: "0% 50%", duration: 4, ease: "sine.inOut" }, 3.4);
+        tl.to({}, { duration: D }, 0);
+        window.__timelines["03-promesse"] = tl;
+      })();
+    </script>
+  </div>
+</template>

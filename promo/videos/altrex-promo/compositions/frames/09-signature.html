@@ -1,0 +1,95 @@
+<template id="09-signature">
+  <div id="root" data-composition-id="09-signature" data-start="0" data-duration="6.5" data-width="1080" data-height="1920">
+    <style>
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_medium.ttf"); font-weight: 500; }
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_semibold.ttf"); font-weight: 600; }
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_bold.ttf"); font-weight: 700; }
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_extrabold.ttf"); font-weight: 800; }
+@font-face { font-family: "JetBrains Mono"; src: url("assets/fonts/jetbrains_mono_medium.ttf"); font-weight: 500; }
+#root { position: relative; width: 100%; height: 100%; overflow: hidden; font-family: "Manrope", sans-serif; color: #E8EEF2; }
+.f9-bg { position: absolute; inset: 0; background: #0C151B; overflow: hidden; }
+.f9-halo { position: absolute; left: 50%; top: var(--f9-hy, 46%); width: 1500px; height: 1500px; margin: -750px 0 0 -750px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(140,203,245,0.15) 0%, rgba(114,214,219,0.06) 34%, rgba(12,21,27,0) 68%); }
+.f9-vig { position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 52%, rgba(0,0,0,0.5) 100%); }
+.f9-grain { position: absolute; inset: 0; opacity: 0.035; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.f9-stage { position: absolute; inset: 0; }
+.f9-eyebrow { font-family: "JetBrains Mono", monospace; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: #8CCBF5; }
+.f9-grad { background: linear-gradient(100deg, #8CCBF5 0%, #72D6DB 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.f9-pill { display: flex; align-items: center; gap: 0.5em; padding: 0.55em 1.05em; border-radius: 999px; background: rgba(26,39,49,0.92);
+  border: 1px solid rgba(140,203,245,0.16); font-weight: 600; white-space: nowrap; }
+.f9-pill svg { width: 1.15em; height: 1.15em; flex: none; }
+/* phone */
+.f9-ph { position: absolute; width: var(--f9-pw); left: var(--f9-px); top: var(--f9-py); padding: calc(var(--f9-pw) * 0.022);
+  border-radius: calc(var(--f9-pw) * 0.105); background: #0A1116; border: 1px solid rgba(140,203,245,0.16);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.6) inset, 0 40px 120px rgba(0,0,0,0.45); }
+.f9-scr { position: relative; border-radius: calc(var(--f9-pw) * 0.085); overflow: hidden; background: #0E151B; }
+.f9-sb { position: relative; height: calc(var(--f9-pw) * 0.075); display: flex; align-items: center; justify-content: space-between;
+  padding: 0 calc(var(--f9-pw) * 0.075); font-size: calc(var(--f9-pw) * 0.034); font-weight: 700; color: #E8EEF2; background: #0E151B; }
+.f9-sbr { display: flex; align-items: center; gap: calc(var(--f9-pw) * 0.014); }
+.f9-sbr svg { width: calc(var(--f9-pw) * 0.042); height: calc(var(--f9-pw) * 0.042); display: block; }
+.f9-shot { position: relative; width: 100%; aspect-ratio: 933 / 1860; overflow: hidden; }
+.f9-shot img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
+@media (orientation: portrait) {
+  #root { --f9-pw: 600px; --f9-px: 240px; --f9-py: 300px; }
+}
+@media (orientation: landscape) {
+  #root { --f9-pw: 404px; --f9-px: 250px; --f9-py: 36px; --f9-hy: 50%; }
+}
+
+.f9-logo { position: absolute; left: 50%; }
+.f9-logo svg { width: 100%; height: 100%; display: block; }
+.f9-word { position: absolute; left: 0; right: 0; text-align: center; font-weight: 800; letter-spacing: 0.3em; padding-left: 0.3em; }
+.f9-ch { display: inline-block; }
+.f9-slogan { position: absolute; left: 0; right: 0; text-align: center; font-weight: 800; letter-spacing: -0.03em; line-height: 1.05; }
+.f9-chipw { position: absolute; left: 0; right: 0; display: flex; justify-content: center; }
+.f9-chipw .f9-pill { font-family: "JetBrains Mono", monospace; font-weight: 500; color: #8A9AA6; letter-spacing: 0.06em; }
+.f9-dot { width: 0.5em; height: 0.5em; border-radius: 50%; background: #5FD4A0; }
+@media (orientation: portrait) {
+  .f9-logo { width: 300px; height: 300px; margin-left: -150px; top: 430px; }
+  .f9-word { top: 790px; font-size: 64px; color: #8A9AA6; }
+  .f9-slogan { top: 930px; font-size: 104px; }
+  .f9-chipw { top: 1270px; font-size: 32px; }
+}
+@media (orientation: landscape) {
+  .f9-logo { width: 230px; height: 230px; margin-left: -115px; top: 110px; }
+  .f9-word { top: 375px; font-size: 52px; color: #8A9AA6; }
+  .f9-slogan { top: 480px; font-size: 120px; }
+  .f9-chipw { top: 690px; font-size: 30px; }
+}
+#root { --f9-hy: 38%; }
+    </style>
+    <div id="f9-bg" class="f9-bg clip" data-start="0" data-duration="6.5" data-track-index="0">
+      <div id="f9-halo" class="f9-halo"></div>
+      <div class="f9-vig"></div>
+      <div class="f9-grain"></div>
+    </div>
+    <div id="f9-stage" class="f9-stage clip" data-start="0" data-duration="6.5" data-track-index="1">
+      <div id="f9-logo" class="f9-logo"><svg viewBox="22 18 64 70"><defs><linearGradient id="f9-fill" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8CCBF5"/><stop offset="1" stop-color="#72D6DB"/></linearGradient></defs><path d="M54,28L76,78L65,78L60.5,67L47.5,67L43,78L32,78Z M54,41L49.5,59L58.5,59Z" fill="url(#f9-fill)" fill-rule="evenodd"/></svg></div>
+      <div id="f9-word" class="f9-word"><span class="f9-ch" id="f9-ch0">A</span><span class="f9-ch" id="f9-ch1">L</span><span class="f9-ch" id="f9-ch2">T</span><span class="f9-ch" id="f9-ch3">R</span><span class="f9-ch" id="f9-ch4">E</span><span class="f9-ch" id="f9-ch5">X</span></div>
+      <div id="f9-slogan" class="f9-slogan">L'IA qui reste<br/><span class="f9-grad">chez toi.</span></div>
+      <div class="f9-chipw"><div id="f9-chip" class="f9-pill"><span class="f9-dot"></span><span>Android · 100 % hors ligne</span></div></div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script>
+      (function () {
+        var D = 6.5;
+        var tl = gsap.timeline({ paused: true });
+        var q = function (s) { return document.querySelector("[data-composition-id='09-signature'] " + s); };
+        // ambient layer: the halo breathes once per ~6 s
+        var halo = q("#f9-halo");
+        tl.fromTo(halo, { scale: 0.94, opacity: 0.75 }, { scale: 1.06, opacity: 1, duration: D / 2, ease: "sine.inOut" }, 0);
+        tl.to(halo, { scale: 0.98, opacity: 0.85, duration: D / 2, ease: "sine.inOut" }, D / 2);
+
+        tl.fromTo(q("#f9-logo"), { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.7, ease: "power2.out" }, 0.1);
+        tl.fromTo(q("#f9-word"), { y: 16 }, { y: 0, duration: 0.8, ease: "power2.out" }, 0.8);
+        tl.fromTo(gsap.utils.toArray(document.querySelectorAll("[data-composition-id] .f9-ch")), { x: function (i) { return (i - 2.5) * 16; }, opacity: 0 }, { x: 0, opacity: 1, duration: 0.8, ease: "power2.out" }, 0.8);
+        tl.fromTo(q("#f9-slogan"), { y: 40, opacity: 0, filter: "blur(8px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.65, ease: "power2.out" }, 1.9);
+        tl.fromTo(q("#f9-chip"), { y: 20, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: "power2.out" }, 3.4);
+        tl.fromTo(q("#f9-stage"), { scale: 1 }, { scale: 1.025, duration: 5.6, ease: "sine.inOut" }, 0.3);
+        tl.to(q("#f9-stage"), { opacity: 0, duration: 0.6, ease: "power1.in" }, D - 0.6);
+        tl.to({}, { duration: D }, 0);
+        window.__timelines["09-signature"] = tl;
+      })();
+    </script>
+  </div>
+</template>

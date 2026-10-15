@@ -1,0 +1,107 @@
+<template id="06-moteur">
+  <div id="root" data-composition-id="06-moteur" data-start="0" data-duration="7.5" data-width="1920" data-height="1080">
+    <style>
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_medium.ttf"); font-weight: 500; }
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_semibold.ttf"); font-weight: 600; }
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_bold.ttf"); font-weight: 700; }
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_extrabold.ttf"); font-weight: 800; }
+@font-face { font-family: "JetBrains Mono"; src: url("assets/fonts/jetbrains_mono_medium.ttf"); font-weight: 500; }
+#root { position: relative; width: 100%; height: 100%; overflow: hidden; font-family: "Manrope", sans-serif; color: #E8EEF2; }
+.f6-bg { position: absolute; inset: 0; background: #0C151B; overflow: hidden; }
+.f6-halo { position: absolute; left: 50%; top: var(--f6-hy, 46%); width: 1500px; height: 1500px; margin: -750px 0 0 -750px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(140,203,245,0.15) 0%, rgba(114,214,219,0.06) 34%, rgba(12,21,27,0) 68%); }
+.f6-vig { position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 52%, rgba(0,0,0,0.5) 100%); }
+.f6-grain { position: absolute; inset: 0; opacity: 0.035; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.f6-stage { position: absolute; inset: 0; }
+.f6-eyebrow { font-family: "JetBrains Mono", monospace; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: #8CCBF5; }
+.f6-grad { background: linear-gradient(100deg, #8CCBF5 0%, #72D6DB 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.f6-pill { display: flex; align-items: center; gap: 0.5em; padding: 0.55em 1.05em; border-radius: 999px; background: rgba(26,39,49,0.92);
+  border: 1px solid rgba(140,203,245,0.16); font-weight: 600; white-space: nowrap; }
+.f6-pill svg { width: 1.15em; height: 1.15em; flex: none; }
+/* phone */
+.f6-ph { position: absolute; width: var(--f6-pw); left: var(--f6-px); top: var(--f6-py); padding: calc(var(--f6-pw) * 0.022);
+  border-radius: calc(var(--f6-pw) * 0.105); background: #0A1116; border: 1px solid rgba(140,203,245,0.16);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.6) inset, 0 40px 120px rgba(0,0,0,0.45); }
+.f6-scr { position: relative; border-radius: calc(var(--f6-pw) * 0.085); overflow: hidden; background: #0E151B; }
+.f6-sb { position: relative; height: calc(var(--f6-pw) * 0.075); display: flex; align-items: center; justify-content: space-between;
+  padding: 0 calc(var(--f6-pw) * 0.075); font-size: calc(var(--f6-pw) * 0.034); font-weight: 700; color: #E8EEF2; background: #0E151B; }
+.f6-sbr { display: flex; align-items: center; gap: calc(var(--f6-pw) * 0.014); }
+.f6-sbr svg { width: calc(var(--f6-pw) * 0.042); height: calc(var(--f6-pw) * 0.042); display: block; }
+.f6-shot { position: relative; width: 100%; aspect-ratio: 933 / 1860; overflow: hidden; }
+.f6-shot img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
+@media (orientation: portrait) {
+  #root { --f6-pw: 600px; --f6-px: 240px; --f6-py: 300px; }
+}
+@media (orientation: landscape) {
+  #root { --f6-pw: 404px; --f6-px: 250px; --f6-py: 36px; --f6-hy: 50%; }
+}
+
+.f6-head { position: absolute; left: 0; right: 0; text-align: center; }
+.f6-head .f6-eyebrow { display: block; }
+.f6-title { display: block; font-weight: 800; letter-spacing: -0.03em; line-height: 1.05; margin-top: 0.35em; }
+.f6-row { position: absolute; left: 50%; display: flex; gap: var(--f6-gap); }
+.f6-c { position: relative; width: var(--f6-cw); height: var(--f6-ch); border-radius: 28px; background: #121D25; border: 1px solid rgba(140,203,245,0.14);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+.f6-c b { font-family: "JetBrains Mono", monospace; font-weight: 500; font-size: var(--f6-cf); color: #E8EEF2; letter-spacing: 0.04em; }
+.f6-c i { font-style: normal; font-size: calc(var(--f6-cf) * 0.42); color: #8A9AA6; font-weight: 600; }
+.f6-sel { position: absolute; left: 0; top: 0; width: var(--f6-cw); height: var(--f6-ch); border-radius: 28px; border: 3px solid #8CCBF5;
+  box-shadow: 0 0 60px rgba(140,203,245,0.35), inset 0 0 30px rgba(140,203,245,0.12); }
+.f6-out { position: absolute; left: 0; right: 0; display: flex; justify-content: center; }
+.f6-out .f6-pill { color: #E8EEF2; }
+.f6-out svg { color: #5FD4A0; }
+@media (orientation: portrait) {
+  #root { --f6-cw: 280px; --f6-ch: 300px; --f6-gap: 30px; --f6-cf: 72px; }
+  .f6-head { top: 360px; } .f6-head .f6-eyebrow { font-size: 32px; } .f6-title { font-size: 104px; }
+  .f6-row { top: 860px; margin-left: -450px; }
+  .f6-out { top: 1260px; font-size: 40px; }
+}
+@media (orientation: landscape) {
+  #root { --f6-cw: 300px; --f6-ch: 260px; --f6-gap: 40px; --f6-cf: 76px; }
+  .f6-head { top: 120px; } .f6-head .f6-eyebrow { font-size: 30px; } .f6-title { font-size: 104px; } .f6-title br { display: none; }
+  .f6-row { top: 420px; margin-left: -490px; }
+  .f6-out { top: 760px; font-size: 40px; }
+}
+    </style>
+    <div id="f6-bg" class="f6-bg clip" data-start="0" data-duration="7.5" data-track-index="0">
+      <div id="f6-halo" class="f6-halo"></div>
+      <div class="f6-vig"></div>
+      <div class="f6-grain"></div>
+    </div>
+    <div id="f6-stage" class="f6-stage clip" data-start="0" data-duration="7.5" data-track-index="1">
+      <div id="f6-head" class="f6-head"><span class="f6-eyebrow">Mode auto</span><span class="f6-title">Le bon moteur, <br/>tout seul.</span></div>
+      <div class="f6-row">
+        <div id="f6-c1" class="f6-c"><b>CPU</b><i>Processeur</i></div>
+        <div id="f6-c2" class="f6-c"><b>GPU</b><i>Graphique</i></div>
+        <div id="f6-c3" class="f6-c"><b>NPU</b><i>Neuronal</i></div>
+        <div id="f6-sel" class="f6-sel"></div>
+      </div>
+      <div class="f6-out"><div id="f6-out" class="f6-pill"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Le plus rapide pour ton téléphone</span></div></div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script>
+      (function () {
+        var D = 7;
+        var tl = gsap.timeline({ paused: true });
+        var q = function (s) { return document.querySelector("[data-composition-id='06-moteur'] " + s); };
+        // ambient layer: the halo breathes once per ~6 s
+        var halo = q("#f6-halo");
+        tl.fromTo(halo, { scale: 0.94, opacity: 0.75 }, { scale: 1.06, opacity: 1, duration: D / 2, ease: "sine.inOut" }, 0);
+        tl.to(halo, { scale: 0.98, opacity: 0.85, duration: D / 2, ease: "sine.inOut" }, D / 2);
+
+        var step = function () { var r = getComputedStyle(q(".f6-row")); return parseFloat(getComputedStyle(q("#f6-c1")).width) + parseFloat(r.columnGap || r.gap); };
+        var S = step();
+        tl.fromTo(q("#f6-head"), { y: 36, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, ease: "power2.out" }, 0.4);
+        tl.fromTo([q("#f6-c1"), q("#f6-c2"), q("#f6-c3")], { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: "power2.out", stagger: 0.12 }, 1.6);
+        tl.fromTo(q("#f6-sel"), { x: 0, opacity: 0, scale: 1.06 }, { opacity: 1, scale: 1, duration: 0.4, ease: "power2.out" }, 3.0);
+        tl.to(q("#f6-sel"), { x: S, duration: 0.45, ease: "power2.inOut" }, 3.95);
+        tl.to(q("#f6-sel"), { x: 2 * S, duration: 0.45, ease: "power2.inOut" }, 4.55);
+        tl.to(q("#f6-sel"), { x: S, duration: 0.6, ease: "power2.inOut" }, 5.2);
+        tl.to([q("#f6-c1"), q("#f6-c3")], { opacity: 0.4, duration: 0.5, ease: "power1.out" }, 5.5);
+        tl.to(q("#f6-c2"), { backgroundColor: "#16303D", duration: 0.5, ease: "power2.out" }, 5.5);
+        tl.fromTo(q("#f6-out"), { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: "power2.out" }, 5.6);
+        tl.to({}, { duration: D }, 0);
+        window.__timelines["06-moteur"] = tl;
+      })();
+    </script>
+  </div>
+</template>

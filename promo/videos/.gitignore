@@ -1,0 +1,6 @@
+node_modules
+**/renders/
+**/.hyperframes/*
+!**/.hyperframes/caption-skin.html
+package-lock.json
+audio_request.json

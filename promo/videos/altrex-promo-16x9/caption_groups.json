@@ -1,0 +1,892 @@
+{
+  "total_duration_s": 59.3,
+  "width": 1920,
+  "height": 1080,
+  "groups": [
+    {
+      "id": "caption-group-0",
+      "frame": 1,
+      "start": 0.991,
+      "end": 2.244,
+      "text": "Mode avion activé",
+      "words": [
+        {
+          "id": "caption-word-0-0",
+          "text": "Mode",
+          "start": 0.991,
+          "end": 1.252
+        },
+        {
+          "id": "caption-word-0-1",
+          "text": "avion",
+          "start": 1.252,
+          "end": 1.499
+        },
+        {
+          "id": "caption-word-0-2",
+          "text": "activé",
+          "start": 1.499,
+          "end": 2.124
+        }
+      ]
+    },
+    {
+      "id": "caption-group-1",
+      "frame": 1,
+      "start": 3.586,
+      "end": 4.371,
+      "text": "Et pourtant",
+      "words": [
+        {
+          "id": "caption-word-1-0",
+          "text": "Et",
+          "start": 3.586,
+          "end": 3.73
+        },
+        {
+          "id": "caption-word-1-1",
+          "text": "pourtant",
+          "start": 3.73,
+          "end": 4.251
+        }
+      ]
+    },
+    {
+      "id": "caption-group-2",
+      "frame": 1,
+      "start": 4.589,
+      "end": 5.347,
+      "text": "elle répond",
+      "words": [
+        {
+          "id": "caption-word-2-0",
+          "text": "elle",
+          "start": 4.589,
+          "end": 4.719
+        },
+        {
+          "id": "caption-word-2-1",
+          "text": "répond",
+          "start": 4.719,
+          "end": 5.227
+        }
+      ]
+    },
+    {
+      "id": "caption-group-3",
+      "frame": 2,
+      "start": 7.665,
+      "end": 8.944,
+      "text": "Voici Altrex",
+      "words": [
+        {
+          "id": "caption-word-3-0",
+          "text": "Voici",
+          "start": 7.665,
+          "end": 8.095
+        },
+        {
+          "id": "caption-word-3-1",
+          "text": "Altrex",
+          "start": 8.095,
+          "end": 8.824
+        }
+      ]
+    },
+    {
+      "id": "caption-group-4",
+      "frame": 3,
+      "start": 10.951,
+      "end": 12.318,
+      "text": "Une intelligence artificielle",
+      "words": [
+        {
+          "id": "caption-word-4-0",
+          "text": "Une",
+          "start": 10.951,
+          "end": 11.159
+        },
+        {
+          "id": "caption-word-4-1",
+          "text": "intelligence",
+          "start": 11.159,
+          "end": 11.719
+        },
+        {
+          "id": "caption-word-4-2",
+          "text": "artificielle",
+          "start": 11.719,
+          "end": 12.318
+        }
+      ]
+    },
+    {
+      "id": "caption-group-5",
+      "frame": 3,
+      "start": 12.318,
+      "end": 13.063,
+      "text": "complète",
+      "words": [
+        {
+          "id": "caption-word-5-0",
+          "text": "complète",
+          "start": 12.318,
+          "end": 12.943
+        }
+      ]
+    },
+    {
+      "id": "caption-group-6",
+      "frame": 3,
+      "start": 13.216,
+      "end": 13.945,
+      "text": "directement sur",
+      "words": [
+        {
+          "id": "caption-word-6-0",
+          "text": "directement",
+          "start": 13.216,
+          "end": 13.776
+        },
+        {
+          "id": "caption-word-6-1",
+          "text": "sur",
+          "start": 13.776,
+          "end": 13.945
+        }
+      ]
+    },
+    {
+      "id": "caption-group-7",
+      "frame": 3,
+      "start": 13.945,
+      "end": 14.873,
+      "text": "ton téléphone",
+      "words": [
+        {
+          "id": "caption-word-7-0",
+          "text": "ton",
+          "start": 13.945,
+          "end": 14.062
+        },
+        {
+          "id": "caption-word-7-1",
+          "text": "téléphone",
+          "start": 14.063,
+          "end": 14.753
+        }
+      ]
+    },
+    {
+      "id": "caption-group-8",
+      "frame": 3,
+      "start": 15.104,
+      "end": 15.546,
+      "text": "Rien ne",
+      "words": [
+        {
+          "id": "caption-word-8-0",
+          "text": "Rien",
+          "start": 15.104,
+          "end": 15.455
+        },
+        {
+          "id": "caption-word-8-1",
+          "text": "ne",
+          "start": 15.455,
+          "end": 15.546
+        }
+      ]
+    },
+    {
+      "id": "caption-group-9",
+      "frame": 3,
+      "start": 15.546,
+      "end": 16.734,
+      "text": "part sur Internet",
+      "words": [
+        {
+          "id": "caption-word-9-0",
+          "text": "part",
+          "start": 15.546,
+          "end": 15.729
+        },
+        {
+          "id": "caption-word-9-1",
+          "text": "sur",
+          "start": 15.729,
+          "end": 15.885
+        },
+        {
+          "id": "caption-word-9-2",
+          "text": "Internet",
+          "start": 15.885,
+          "end": 16.614
+        }
+      ]
+    },
+    {
+      "id": "caption-group-10",
+      "frame": 4,
+      "start": 18.678,
+      "end": 19.449,
+      "text": "Discute",
+      "words": [
+        {
+          "id": "caption-word-10-0",
+          "text": "Discute",
+          "start": 18.678,
+          "end": 19.329
+        }
+      ]
+    },
+    {
+      "id": "caption-group-11",
+      "frame": 4,
+      "start": 19.603,
+      "end": 20.751,
+      "text": "écris code",
+      "words": [
+        {
+          "id": "caption-word-11-0",
+          "text": "écris",
+          "start": 19.603,
+          "end": 20.176
+        },
+        {
+          "id": "caption-word-11-1",
+          "text": "code",
+          "start": 20.176,
+          "end": 20.631
+        }
+      ]
+    },
+    {
+      "id": "caption-group-12",
+      "frame": 4,
+      "start": 20.981,
+      "end": 21.541,
+      "text": "Les réponses",
+      "words": [
+        {
+          "id": "caption-word-12-0",
+          "text": "Les",
+          "start": 20.981,
+          "end": 21.164
+        },
+        {
+          "id": "caption-word-12-1",
+          "text": "réponses",
+          "start": 21.164,
+          "end": 21.541
+        }
+      ]
+    },
+    {
+      "id": "caption-group-13",
+      "frame": 4,
+      "start": 21.541,
+      "end": 21.88,
+      "text": "arrivent en",
+      "words": [
+        {
+          "id": "caption-word-13-0",
+          "text": "arrivent",
+          "start": 21.541,
+          "end": 21.828
+        },
+        {
+          "id": "caption-word-13-1",
+          "text": "en",
+          "start": 21.828,
+          "end": 21.88
+        }
+      ]
+    },
+    {
+      "id": "caption-group-14",
+      "frame": 4,
+      "start": 21.88,
+      "end": 22.612,
+      "text": "temps réel",
+      "words": [
+        {
+          "id": "caption-word-14-0",
+          "text": "temps",
+          "start": 21.88,
+          "end": 22.023
+        },
+        {
+          "id": "caption-word-14-1",
+          "text": "réel",
+          "start": 22.023,
+          "end": 22.492
+        }
+      ]
+    },
+    {
+      "id": "caption-group-15",
+      "frame": 4,
+      "start": 22.804,
+      "end": 23.351,
+      "text": "calculées par",
+      "words": [
+        {
+          "id": "caption-word-15-0",
+          "text": "calculées",
+          "start": 22.804,
+          "end": 23.208
+        },
+        {
+          "id": "caption-word-15-1",
+          "text": "par",
+          "start": 23.208,
+          "end": 23.351
+        }
+      ]
+    },
+    {
+      "id": "caption-group-16",
+      "frame": 4,
+      "start": 23.351,
+      "end": 23.624,
+      "text": "la puce",
+      "words": [
+        {
+          "id": "caption-word-16-0",
+          "text": "la",
+          "start": 23.351,
+          "end": 23.429
+        },
+        {
+          "id": "caption-word-16-1",
+          "text": "puce",
+          "start": 23.429,
+          "end": 23.624
+        }
+      ]
+    },
+    {
+      "id": "caption-group-17",
+      "frame": 4,
+      "start": 23.624,
+      "end": 24.656,
+      "text": "de ton téléphone",
+      "words": [
+        {
+          "id": "caption-word-17-0",
+          "text": "de",
+          "start": 23.624,
+          "end": 23.729
+        },
+        {
+          "id": "caption-word-17-1",
+          "text": "ton",
+          "start": 23.729,
+          "end": 23.846
+        },
+        {
+          "id": "caption-word-17-2",
+          "text": "téléphone",
+          "start": 23.846,
+          "end": 24.536
+        }
+      ]
+    },
+    {
+      "id": "caption-group-18",
+      "frame": 5,
+      "start": 27.051,
+      "end": 28.147,
+      "text": "Choisis ton modèle",
+      "words": [
+        {
+          "id": "caption-word-18-0",
+          "text": "Choisis",
+          "start": 27.051,
+          "end": 27.428
+        },
+        {
+          "id": "caption-word-18-1",
+          "text": "ton",
+          "start": 27.428,
+          "end": 27.558
+        },
+        {
+          "id": "caption-word-18-2",
+          "text": "modèle",
+          "start": 27.558,
+          "end": 28.027
+        }
+      ]
+    },
+    {
+      "id": "caption-group-19",
+      "frame": 5,
+      "start": 28.496,
+      "end": 29.072,
+      "text": "Gemma",
+      "words": [
+        {
+          "id": "caption-word-19-0",
+          "text": "Gemma",
+          "start": 28.496,
+          "end": 28.952
+        }
+      ]
+    },
+    {
+      "id": "caption-group-20",
+      "frame": 5,
+      "start": 29.368,
+      "end": 29.931,
+      "text": "Qwen",
+      "words": [
+        {
+          "id": "caption-word-20-0",
+          "text": "Qwen",
+          "start": 29.368,
+          "end": 29.811
+        }
+      ]
+    },
+    {
+      "id": "caption-group-21",
+      "frame": 5,
+      "start": 30.163,
+      "end": 30.999,
+      "text": "DeepSeek",
+      "words": [
+        {
+          "id": "caption-word-21-0",
+          "text": "DeepSeek",
+          "start": 30.163,
+          "end": 30.879
+        }
+      ]
+    },
+    {
+      "id": "caption-group-22",
+      "frame": 5,
+      "start": 31.284,
+      "end": 31.466,
+      "text": "Tu le",
+      "words": [
+        {
+          "id": "caption-word-22-0",
+          "text": "Tu",
+          "start": 31.284,
+          "end": 31.375
+        },
+        {
+          "id": "caption-word-22-1",
+          "text": "le",
+          "start": 31.375,
+          "end": 31.466
+        }
+      ]
+    },
+    {
+      "id": "caption-group-23",
+      "frame": 5,
+      "start": 31.466,
+      "end": 32.537,
+      "text": "télécharges une fois",
+      "words": [
+        {
+          "id": "caption-word-23-0",
+          "text": "télécharges",
+          "start": 31.466,
+          "end": 31.974
+        },
+        {
+          "id": "caption-word-23-1",
+          "text": "une",
+          "start": 31.974,
+          "end": 32.078
+        },
+        {
+          "id": "caption-word-23-2",
+          "text": "fois",
+          "start": 32.078,
+          "end": 32.417
+        }
+      ]
+    },
+    {
+      "id": "caption-group-24",
+      "frame": 5,
+      "start": 32.742,
+      "end": 32.898,
+      "text": "il est",
+      "words": [
+        {
+          "id": "caption-word-24-0",
+          "text": "il",
+          "start": 32.742,
+          "end": 32.859
+        },
+        {
+          "id": "caption-word-24-1",
+          "text": "est",
+          "start": 32.859,
+          "end": 32.898
+        }
+      ]
+    },
+    {
+      "id": "caption-group-25",
+      "frame": 5,
+      "start": 32.898,
+      "end": 33.526,
+      "text": "à toi",
+      "words": [
+        {
+          "id": "caption-word-25-0",
+          "text": "à",
+          "start": 32.898,
+          "end": 33.029
+        },
+        {
+          "id": "caption-word-25-1",
+          "text": "toi",
+          "start": 33.029,
+          "end": 33.406
+        }
+      ]
+    },
+    {
+      "id": "caption-group-26",
+      "frame": 6,
+      "start": 35.917,
+      "end": 36.217,
+      "text": "Le mode",
+      "words": [
+        {
+          "id": "caption-word-26-0",
+          "text": "Le",
+          "start": 35.917,
+          "end": 36.047
+        },
+        {
+          "id": "caption-word-26-1",
+          "text": "mode",
+          "start": 36.047,
+          "end": 36.217
+        }
+      ]
+    },
+    {
+      "id": "caption-group-27",
+      "frame": 6,
+      "start": 36.217,
+      "end": 36.829,
+      "text": "auto choisit",
+      "words": [
+        {
+          "id": "caption-word-27-0",
+          "text": "auto",
+          "start": 36.217,
+          "end": 36.49
+        },
+        {
+          "id": "caption-word-27-1",
+          "text": "choisit",
+          "start": 36.49,
+          "end": 36.829
+        }
+      ]
+    },
+    {
+      "id": "caption-group-28",
+      "frame": 6,
+      "start": 36.829,
+      "end": 37.18,
+      "text": "tout seul",
+      "words": [
+        {
+          "id": "caption-word-28-0",
+          "text": "tout",
+          "start": 36.829,
+          "end": 36.972
+        },
+        {
+          "id": "caption-word-28-1",
+          "text": "seul",
+          "start": 36.972,
+          "end": 37.18
+        }
+      ]
+    },
+    {
+      "id": "caption-group-29",
+      "frame": 6,
+      "start": 37.18,
+      "end": 38.199,
+      "text": "le meilleur moteur",
+      "words": [
+        {
+          "id": "caption-word-29-0",
+          "text": "le",
+          "start": 37.18,
+          "end": 37.284
+        },
+        {
+          "id": "caption-word-29-1",
+          "text": "meilleur",
+          "start": 37.284,
+          "end": 37.558
+        },
+        {
+          "id": "caption-word-29-2",
+          "text": "moteur",
+          "start": 37.558,
+          "end": 38.079
+        }
+      ]
+    },
+    {
+      "id": "caption-group-30",
+      "frame": 6,
+      "start": 38.391,
+      "end": 39.227,
+      "text": "processeur",
+      "words": [
+        {
+          "id": "caption-word-30-0",
+          "text": "processeur",
+          "start": 38.391,
+          "end": 39.107
+        }
+      ]
+    },
+    {
+      "id": "caption-group-31",
+      "frame": 6,
+      "start": 39.329,
+      "end": 40.621,
+      "text": "GPU ou NPU",
+      "words": [
+        {
+          "id": "caption-word-31-0",
+          "text": "GPU",
+          "start": 39.329,
+          "end": 39.836
+        },
+        {
+          "id": "caption-word-31-1",
+          "text": "ou",
+          "start": 39.836,
+          "end": 39.967
+        },
+        {
+          "id": "caption-word-31-2",
+          "text": "NPU",
+          "start": 39.967,
+          "end": 40.501
+        }
+      ]
+    },
+    {
+      "id": "caption-group-32",
+      "frame": 7,
+      "start": 42.851,
+      "end": 43.648,
+      "text": "Parle-lui",
+      "words": [
+        {
+          "id": "caption-word-32-0",
+          "text": "Parle-lui",
+          "start": 42.851,
+          "end": 43.528
+        }
+      ]
+    },
+    {
+      "id": "caption-group-33",
+      "frame": 7,
+      "start": 43.879,
+      "end": 44.806,
+      "text": "Il t'écoute",
+      "words": [
+        {
+          "id": "caption-word-33-0",
+          "text": "Il",
+          "start": 43.879,
+          "end": 44.087
+        },
+        {
+          "id": "caption-word-33-1",
+          "text": "t'écoute",
+          "start": 44.088,
+          "end": 44.686
+        }
+      ]
+    },
+    {
+      "id": "caption-group-34",
+      "frame": 7,
+      "start": 44.96,
+      "end": 46.07,
+      "text": "sans rien envoyer",
+      "words": [
+        {
+          "id": "caption-word-34-0",
+          "text": "sans",
+          "start": 44.96,
+          "end": 45.142
+        },
+        {
+          "id": "caption-word-34-1",
+          "text": "rien",
+          "start": 45.142,
+          "end": 45.337
+        },
+        {
+          "id": "caption-word-34-2",
+          "text": "envoyer",
+          "start": 45.338,
+          "end": 45.95
+        }
+      ]
+    },
+    {
+      "id": "caption-group-35",
+      "frame": 8,
+      "start": 48.35,
+      "end": 49.535,
+      "text": "Tes conversations restent",
+      "words": [
+        {
+          "id": "caption-word-35-0",
+          "text": "Tes",
+          "start": 48.35,
+          "end": 48.519
+        },
+        {
+          "id": "caption-word-35-1",
+          "text": "conversations",
+          "start": 48.519,
+          "end": 49.261
+        },
+        {
+          "id": "caption-word-35-2",
+          "text": "restent",
+          "start": 49.261,
+          "end": 49.535
+        }
+      ]
+    },
+    {
+      "id": "caption-group-36",
+      "frame": 8,
+      "start": 49.535,
+      "end": 50.098,
+      "text": "à toi",
+      "words": [
+        {
+          "id": "caption-word-36-0",
+          "text": "à",
+          "start": 49.535,
+          "end": 49.587
+        },
+        {
+          "id": "caption-word-36-1",
+          "text": "toi",
+          "start": 49.587,
+          "end": 49.978
+        }
+      ]
+    },
+    {
+      "id": "caption-group-37",
+      "frame": 8,
+      "start": 50.37,
+      "end": 51.102,
+      "text": "Pour de vrai",
+      "words": [
+        {
+          "id": "caption-word-37-0",
+          "text": "Pour",
+          "start": 50.37,
+          "end": 50.514
+        },
+        {
+          "id": "caption-word-37-1",
+          "text": "de",
+          "start": 50.514,
+          "end": 50.605
+        },
+        {
+          "id": "caption-word-37-2",
+          "text": "vrai",
+          "start": 50.605,
+          "end": 50.982
+        }
+      ]
+    },
+    {
+      "id": "caption-group-38",
+      "frame": 9,
+      "start": 53.665,
+      "end": 54.54,
+      "text": "Altrex",
+      "words": [
+        {
+          "id": "caption-word-38-0",
+          "text": "Altrex",
+          "start": 53.665,
+          "end": 54.42
+        }
+      ]
+    },
+    {
+      "id": "caption-group-39",
+      "frame": 9,
+      "start": 54.77,
+      "end": 55.239,
+      "text": "L'IA qui",
+      "words": [
+        {
+          "id": "caption-word-39-0",
+          "text": "L'IA",
+          "start": 54.77,
+          "end": 55.082
+        },
+        {
+          "id": "caption-word-39-1",
+          "text": "qui",
+          "start": 55.082,
+          "end": 55.239
+        }
+      ]
+    },
+    {
+      "id": "caption-group-40",
+      "frame": 9,
+      "start": 55.239,
+      "end": 56.127,
+      "text": "reste chez toi",
+      "words": [
+        {
+          "id": "caption-word-40-0",
+          "text": "reste",
+          "start": 55.239,
+          "end": 55.525
+        },
+        {
+          "id": "caption-word-40-1",
+          "text": "chez",
+          "start": 55.525,
+          "end": 55.642
+        },
+        {
+          "id": "caption-word-40-2",
+          "text": "toi",
+          "start": 55.642,
+          "end": 56.007
+        }
+      ]
+    }
+  ]
+}

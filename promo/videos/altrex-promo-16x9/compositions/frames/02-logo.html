@@ -1,0 +1,98 @@
+<template id="02-logo">
+  <div id="root" data-composition-id="02-logo" data-start="0" data-duration="5" data-width="1920" data-height="1080">
+    <style>
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_medium.ttf"); font-weight: 500; }
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_semibold.ttf"); font-weight: 600; }
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_bold.ttf"); font-weight: 700; }
+@font-face { font-family: "Manrope"; src: url("assets/fonts/manrope_extrabold.ttf"); font-weight: 800; }
+@font-face { font-family: "JetBrains Mono"; src: url("assets/fonts/jetbrains_mono_medium.ttf"); font-weight: 500; }
+#root { position: relative; width: 100%; height: 100%; overflow: hidden; font-family: "Manrope", sans-serif; color: #E8EEF2; }
+.f2-bg { position: absolute; inset: 0; background: #0C151B; overflow: hidden; }
+.f2-halo { position: absolute; left: 50%; top: var(--f2-hy, 46%); width: 1500px; height: 1500px; margin: -750px 0 0 -750px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(140,203,245,0.15) 0%, rgba(114,214,219,0.06) 34%, rgba(12,21,27,0) 68%); }
+.f2-vig { position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 52%, rgba(0,0,0,0.5) 100%); }
+.f2-grain { position: absolute; inset: 0; opacity: 0.035; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.f2-stage { position: absolute; inset: 0; }
+.f2-eyebrow { font-family: "JetBrains Mono", monospace; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: #8CCBF5; }
+.f2-grad { background: linear-gradient(100deg, #8CCBF5 0%, #72D6DB 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.f2-pill { display: flex; align-items: center; gap: 0.5em; padding: 0.55em 1.05em; border-radius: 999px; background: rgba(26,39,49,0.92);
+  border: 1px solid rgba(140,203,245,0.16); font-weight: 600; white-space: nowrap; }
+.f2-pill svg { width: 1.15em; height: 1.15em; flex: none; }
+/* phone */
+.f2-ph { position: absolute; width: var(--f2-pw); left: var(--f2-px); top: var(--f2-py); padding: calc(var(--f2-pw) * 0.022);
+  border-radius: calc(var(--f2-pw) * 0.105); background: #0A1116; border: 1px solid rgba(140,203,245,0.16);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.6) inset, 0 40px 120px rgba(0,0,0,0.45); }
+.f2-scr { position: relative; border-radius: calc(var(--f2-pw) * 0.085); overflow: hidden; background: #0E151B; }
+.f2-sb { position: relative; height: calc(var(--f2-pw) * 0.075); display: flex; align-items: center; justify-content: space-between;
+  padding: 0 calc(var(--f2-pw) * 0.075); font-size: calc(var(--f2-pw) * 0.034); font-weight: 700; color: #E8EEF2; background: #0E151B; }
+.f2-sbr { display: flex; align-items: center; gap: calc(var(--f2-pw) * 0.014); }
+.f2-sbr svg { width: calc(var(--f2-pw) * 0.042); height: calc(var(--f2-pw) * 0.042); display: block; }
+.f2-shot { position: relative; width: 100%; aspect-ratio: 933 / 1860; overflow: hidden; }
+.f2-shot img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
+@media (orientation: portrait) {
+  #root { --f2-pw: 600px; --f2-px: 240px; --f2-py: 300px; }
+}
+@media (orientation: landscape) {
+  #root { --f2-pw: 404px; --f2-px: 250px; --f2-py: 36px; --f2-hy: 50%; }
+}
+
+.f2-logo { position: absolute; left: 50%; }
+.f2-logo svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.f2-word { position: absolute; left: 0; right: 0; text-align: center; font-weight: 800; color: #E8EEF2; letter-spacing: 0.3em; padding-left: 0.3em; }
+.f2-ch { display: inline-block; }
+@media (orientation: portrait) {
+  .f2-logo { width: 460px; height: 460px; margin-left: -230px; top: 470px; }
+  .f2-word { top: 1030px; font-size: 104px; }
+}
+@media (orientation: landscape) {
+  .f2-logo { width: 380px; height: 380px; margin-left: -190px; top: 150px; }
+  .f2-word { top: 600px; font-size: 104px; }
+}
+#root { --f2-hy: 40%; }
+    </style>
+    <div id="f2-bg" class="f2-bg clip" data-start="0" data-duration="5" data-track-index="0">
+      <div id="f2-halo" class="f2-halo"></div>
+      <div class="f2-vig"></div>
+      <div class="f2-grain"></div>
+    </div>
+    <div id="f2-stage" class="f2-stage clip" data-start="0" data-duration="5" data-track-index="1">
+      <div id="f2-logo" class="f2-logo">
+        <svg viewBox="22 18 64 70">
+          <defs>
+            <linearGradient id="f2-fill" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8CCBF5"/><stop offset="1" stop-color="#72D6DB"/></linearGradient>
+            <linearGradient id="f2-sheen" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="0.5" stop-color="#fff" stop-opacity="0.55"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+            <clipPath id="f2-clip"><path d="M54,28L76,78L65,78L60.5,67L47.5,67L43,78L32,78Z" /></clipPath>
+          </defs>
+          <path id="f2-fillpath" d="M54,28L76,78L65,78L60.5,67L47.5,67L43,78L32,78Z M54,41L49.5,59L58.5,59Z" fill="url(#f2-fill)" fill-rule="evenodd" />
+          <g clip-path="url(#f2-clip)"><rect id="f2-sheenrect" x="0" y="18" width="18" height="70" fill="url(#f2-sheen)" transform="skewX(-18)" /></g>
+          <path id="f2-stroke1" d="M54,28L76,78L65,78L60.5,67L47.5,67L43,78L32,78Z" pathLength="1" fill="none" stroke="#8CCBF5" stroke-width="0.9" stroke-linejoin="round" stroke-dasharray="1" />
+          <path id="f2-stroke2" d="M54,41L49.5,59L58.5,59Z" pathLength="1" fill="none" stroke="#8CCBF5" stroke-width="0.9" stroke-linejoin="round" stroke-dasharray="1" />
+        </svg>
+      </div>
+      <div id="f2-word" class="f2-word"><span class="f2-ch" id="f2-ch0">A</span><span class="f2-ch" id="f2-ch1">L</span><span class="f2-ch" id="f2-ch2">T</span><span class="f2-ch" id="f2-ch3">R</span><span class="f2-ch" id="f2-ch4">E</span><span class="f2-ch" id="f2-ch5">X</span></div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script>
+      (function () {
+        var D = 4.5;
+        var tl = gsap.timeline({ paused: true });
+        var q = function (s) { return document.querySelector("[data-composition-id='02-logo'] " + s); };
+        // ambient layer: the halo breathes once per ~6 s
+        var halo = q("#f2-halo");
+        tl.fromTo(halo, { scale: 0.94, opacity: 0.75 }, { scale: 1.06, opacity: 1, duration: D / 2, ease: "sine.inOut" }, 0);
+        tl.to(halo, { scale: 0.98, opacity: 0.85, duration: D / 2, ease: "sine.inOut" }, D / 2);
+
+        tl.fromTo(q("#f2-stroke1"), { attr: { "stroke-dashoffset": 1 } }, { attr: { "stroke-dashoffset": 0 }, duration: 1.1, ease: "power2.inOut" }, 0.05);
+        tl.fromTo(q("#f2-stroke2"), { attr: { "stroke-dashoffset": 1 } }, { attr: { "stroke-dashoffset": 0 }, duration: 0.7, ease: "power2.inOut" }, 0.45);
+        tl.fromTo(q("#f2-fillpath"), { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power2.out" }, 1.1);
+        tl.to([q("#f2-stroke1"), q("#f2-stroke2")], { opacity: 0, duration: 0.5, ease: "power1.in" }, 1.5);
+        tl.fromTo(q("#f2-sheenrect"), { attr: { x: 0 } }, { attr: { x: 110 }, duration: 0.9, ease: "power2.inOut" }, 1.45);
+        tl.fromTo(q("#f2-logo"), { scale: 0.94 }, { scale: 1.04, duration: D, ease: "sine.inOut" }, 0);
+        tl.fromTo(q("#f2-word"), { y: 18 }, { y: 0, duration: 0.9, ease: "power2.out" }, 1.95);
+        tl.fromTo(gsap.utils.toArray(document.querySelectorAll("[data-composition-id] .f2-ch")), { x: function (i) { return (i - 2.5) * 16; }, opacity: 0 }, { x: 0, opacity: 1, duration: 0.9, ease: "power2.out" }, 1.95);
+        tl.to({}, { duration: D }, 0);
+        window.__timelines["02-logo"] = tl;
+      })();
+    </script>
+  </div>
+</template>

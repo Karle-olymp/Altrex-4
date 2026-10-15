@@ -199,6 +199,32 @@ class LlamaAndroid(val resolver: ContentResolver) {
         }
     }
 
+    /** [ALTREX] Chat-template formatting (blocking, quick). Null when it cannot be done. */
+    fun formatChat(id: Int, messagesJson: String, enableThinking: Boolean = false): String? =
+        try {
+            contexts[id]?.formatChat(messagesJson, enableThinking)?.ifEmpty { null }
+        } catch (e: Throwable) {
+            Log.e(NAME, "Error formatting chat", e)
+            null
+        }
+
+    /** [ALTREX] Sets the native interrupt flag right away (it is only a flag, safe on any thread). */
+    fun stopCompletionNow(id: Int) {
+        try {
+            contexts[id]?.stopCompletion()
+        } catch (e: Throwable) {
+            Log.e(NAME, "Error stopping completion", e)
+        }
+    }
+
+    /** True while the native side is still generating for this context. */
+    fun isPredicting(id: Int): Boolean =
+        try {
+            contexts[id]?.isPredicting() ?: false
+        } catch (e: Throwable) {
+            false
+        }
+
     suspend fun stopCompletion(id: Int) = withContext(Dispatchers.IO) {
         val context = contexts[id] ?: throw Exception("Context not found")
         context.stopCompletion()
