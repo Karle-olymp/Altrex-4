@@ -1,9 +1,6 @@
 node_modules
-renders/
-.hyperframes/artifacts/
-.hyperframes/video-state*
-.hyperframes/history-id
-.hyperframes/frame-packets/
+**/renders/
+**/.hyperframes/*
+!**/.hyperframes/caption-skin.html
 package-lock.json
 audio_request.json
-.hyperframes/render-outputs.json
