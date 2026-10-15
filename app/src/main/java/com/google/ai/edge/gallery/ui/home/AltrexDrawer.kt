@@ -1,5 +1,16 @@
 package com.google.ai.edge.gallery.ui.home
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
+import com.google.ai.edge.gallery.ui.common.AltrexAvatar
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -109,7 +120,10 @@ private val TOOLS =
     ),
   )
 
-/** Altrex side menu: spaces first, then tools, then models and settings. Rows slide in one by one. */
+/**
+ * Altrex side menu: logo, loaded model, then a single list of spaces and tools. The active entry
+ * sits on an animated pill; rows slide in one after the other when the menu opens.
+ */
 @Composable
 fun AltrexDrawer(
   isOpen: Boolean,
@@ -119,66 +133,71 @@ fun AltrexDrawer(
   onOpenModels: () -> Unit,
   onOpenSettings: () -> Unit,
 ) {
-  ModalDrawerSheet(drawerContainerColor = MaterialTheme.colorScheme.surface) {
-    Column(
-      modifier =
-        Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
-    ) {
-      StaggerIn(index = 0, trigger = isOpen) { DrawerHeader() }
-
-      StaggerIn(index = 1, trigger = isOpen) { LoadedModelChip(loadedModelName) }
-
-      StaggerIn(index = 2, trigger = isOpen) { SectionLabel("ESPACES") }
-      SPACES.forEachIndexed { i, entry ->
-        StaggerIn(index = 3 + i, trigger = isOpen) {
-          SpaceCard(
-            entry = entry,
-            active = entry.taskId == currentTaskId,
-            onClick = { onOpenTask(entry.taskId) },
-          )
+  ModalDrawerSheet(
+    drawerContainerColor = MaterialTheme.colorScheme.surface,
+    drawerShape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp),
+  ) {
+    Column(modifier = Modifier.fillMaxHeight().padding(horizontal = 14.dp)) {
+      Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+        StaggerIn(index = 0, trigger = isOpen) { DrawerHeader() }
+        StaggerIn(index = 1, trigger = isOpen) {
+          LoadedModelCard(modelName = loadedModelName, onClick = onOpenModels)
         }
-        Spacer(modifier = Modifier.height(10.dp))
+
+        StaggerIn(index = 2, trigger = isOpen) { SectionLabel("Espaces") }
+        SPACES.forEachIndexed { i, entry ->
+          StaggerIn(index = 3 + i, trigger = isOpen) {
+            NavRow(
+              title = entry.title,
+              subtitle = entry.subtitle,
+              icon = entry.icon,
+              active = entry.taskId == currentTaskId,
+              onClick = { onOpenTask(entry.taskId) },
+            )
+          }
+        }
+
+        StaggerIn(index = 6, trigger = isOpen) { SectionLabel("Outils") }
+        TOOLS.forEachIndexed { i, entry ->
+          StaggerIn(index = 7 + i, trigger = isOpen) {
+            NavRow(
+              title = entry.title,
+              subtitle = entry.subtitle,
+              icon = entry.icon,
+              active = entry.taskId == currentTaskId,
+              onClick = { onOpenTask(entry.taskId) },
+            )
+          }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
       }
 
-      Spacer(modifier = Modifier.height(8.dp))
-      StaggerIn(index = 6, trigger = isOpen) { SectionLabel("OUTILS") }
-      TOOLS.forEachIndexed { i, entry ->
-        StaggerIn(index = 7 + i, trigger = isOpen) {
-          ToolRow(
-            title = entry.title,
-            subtitle = entry.subtitle,
-            icon = entry.icon,
-            active = entry.taskId == currentTaskId,
-            onClick = { onOpenTask(entry.taskId) },
-          )
-        }
-      }
-
-      Spacer(modifier = Modifier.height(12.dp))
+      // Models and settings stay at the bottom, always visible.
       StaggerIn(index = 10, trigger = isOpen) {
-        Box(
-          modifier =
-            Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outlineVariant)
-        )
+        Column(modifier = Modifier.padding(bottom = 16.dp)) {
+          Box(
+            modifier =
+              Modifier.fillMaxWidth()
+                .padding(bottom = 10.dp)
+                .height(1.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+          )
+          Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            BottomButton(
+              label = "Modèles",
+              icon = Icons.AutoMirrored.Rounded.ListAlt,
+              onClick = onOpenModels,
+              modifier = Modifier.weight(1f),
+            )
+            BottomButton(
+              label = "Réglages",
+              icon = Icons.Rounded.Settings,
+              onClick = onOpenSettings,
+              modifier = Modifier.weight(1f),
+            )
+          }
+        }
       }
-      Spacer(modifier = Modifier.height(8.dp))
-      StaggerIn(index = 11, trigger = isOpen) {
-        ToolRow(
-          title = "Modèles",
-          subtitle = "Importer, choisir et gérer les modèles",
-          icon = Icons.AutoMirrored.Rounded.ListAlt,
-          onClick = onOpenModels,
-        )
-      }
-      StaggerIn(index = 12, trigger = isOpen) {
-        ToolRow(
-          title = "Réglages",
-          subtitle = "Thème et préférences de l'application",
-          icon = Icons.Rounded.Settings,
-          onClick = onOpenSettings,
-        )
-      }
-      Spacer(modifier = Modifier.height(24.dp))
     }
   }
 }
@@ -190,7 +209,7 @@ private fun StaggerIn(index: Int, trigger: Boolean, content: @Composable () -> U
   LaunchedEffect(trigger) {
     if (trigger) {
       shown = false
-      delay(40L + index * 50L)
+      delay(30L + index * 35L)
       shown = true
     } else {
       shown = false
@@ -199,14 +218,14 @@ private fun StaggerIn(index: Int, trigger: Boolean, content: @Composable () -> U
   val progress by
     animateFloatAsState(
       targetValue = if (shown) 1f else 0f,
-      animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+      animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessLow),
       label = "drawerStagger",
     )
   Box(
     modifier =
       Modifier.graphicsLayer {
-        alpha = progress
-        translationX = (1f - progress) * -32.dp.toPx()
+        alpha = progress.coerceIn(0f, 1f)
+        translationX = (1f - progress) * -24.dp.toPx()
       }
   ) {
     content()
@@ -217,29 +236,13 @@ private fun StaggerIn(index: Int, trigger: Boolean, content: @Composable () -> U
 private fun DrawerHeader() {
   Row(
     verticalAlignment = Alignment.CenterVertically,
-    modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 24.dp),
+    modifier = Modifier.fillMaxWidth().padding(start = 6.dp, top = 24.dp, bottom = 20.dp),
   ) {
-    Box(
-      modifier =
-        Modifier.size(52.dp)
-          .clip(RoundedCornerShape(16.dp))
-          .background(
-            Brush.linearGradient(
-              listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)
-            )
-          ),
-      contentAlignment = Alignment.Center,
-    ) {
-      Image(
-        painter = painterResource(R.drawable.ic_launcher_foreground),
-        contentDescription = null,
-        modifier = Modifier.size(76.dp),
-      )
-    }
+    AltrexAvatar(size = 44.dp)
     Column(modifier = Modifier.padding(start = 14.dp)) {
       Text(
         "Altrex",
-        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
         color = MaterialTheme.colorScheme.onSurface,
       )
       Text(
@@ -254,161 +257,190 @@ private fun DrawerHeader() {
 @Composable
 private fun SectionLabel(text: String) {
   Text(
-    text,
-    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-    color = MaterialTheme.colorScheme.primary,
-    modifier = Modifier.padding(start = 4.dp, bottom = 10.dp),
+    text.uppercase(),
+    style =
+      MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
+    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+    modifier = Modifier.padding(start = 12.dp, top = 18.dp, bottom = 6.dp),
   )
 }
 
+/** Card with the loaded model and a dot that pulses while a model is loaded. Opens the models. */
 @Composable
-private fun SpaceCard(entry: DrawerEntry, active: Boolean, onClick: () -> Unit) {
-  val interaction = remember { MutableInteractionSource() }
-  val pressed by interaction.collectIsPressedAsState()
-  val scale by
-    animateFloatAsState(
-      targetValue = if (pressed) 0.97f else 1f,
-      animationSpec = tween(durationMillis = 120),
-      label = "cardPress",
-    )
-  val gradient = MaterialTheme.customColors.taskBgGradientColors[entry.gradientIndex]
+private fun LoadedModelCard(modelName: String?, onClick: () -> Unit) {
+  val pulse by
+    rememberInfiniteTransition(label = "modelPulse")
+      .animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1100), repeatMode = RepeatMode.Reverse),
+        label = "pulse",
+      )
+  val loaded = modelName != null
   Row(
     verticalAlignment = Alignment.CenterVertically,
     modifier =
       Modifier.fillMaxWidth()
-        .graphicsLayer {
-          scaleX = scale
-          scaleY = scale
-        }
-        .clip(RoundedCornerShape(20.dp))
-        .background(
-          if (active) MaterialTheme.colorScheme.primaryContainer
-          else MaterialTheme.colorScheme.surfaceContainerLow
-        )
+        .clip(RoundedCornerShape(18.dp))
+        .background(MaterialTheme.colorScheme.surfaceContainerLow)
         .border(
-          width = if (active) 1.5.dp else 1.dp,
-          color =
-            if (active) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.outlineVariant,
-          shape = RoundedCornerShape(20.dp),
+          1.dp,
+          MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+          RoundedCornerShape(18.dp),
         )
-        .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-        .padding(14.dp),
+        .clickable(onClick = onClick)
+        .padding(horizontal = 14.dp, vertical = 12.dp),
   ) {
-    Box(
-      modifier =
-        Modifier.size(46.dp)
-          .clip(RoundedCornerShape(14.dp))
-          .background(Brush.linearGradient(listOf(gradient[0], gradient[1]))),
-      contentAlignment = Alignment.Center,
-    ) {
-      Icon(entry.icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(26.dp))
-    }
-    Column(modifier = Modifier.weight(1f).padding(horizontal = 14.dp)) {
-      Text(
-        entry.title,
-        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-        color = MaterialTheme.colorScheme.onSurface,
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(14.dp)) {
+      if (loaded) {
+        Box(
+          modifier =
+            Modifier.size(14.dp)
+              .graphicsLayer {
+                scaleX = 0.6f + 0.4f * pulse
+                scaleY = 0.6f + 0.4f * pulse
+                alpha = 1f - pulse * 0.7f
+              }
+              .clip(CircleShape)
+              .background(LoadedGreen)
+        )
+      }
+      Box(
+        modifier =
+          Modifier.size(8.dp)
+            .clip(CircleShape)
+            .background(if (loaded) LoadedGreen else MaterialTheme.colorScheme.outline)
       )
+    }
+    Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
       Text(
-        entry.subtitle,
-        style = MaterialTheme.typography.bodySmall,
+        if (loaded) "Modèle chargé" else "Aucun modèle chargé",
+        style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
+      if (modelName != null) {
+        Text(
+          modelName,
+          style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+          color = MaterialTheme.colorScheme.onSurface,
+          maxLines = 1,
+          overflow = TextOverflow.MiddleEllipsis,
+        )
+      }
     }
     Icon(
       Icons.AutoMirrored.Rounded.KeyboardArrowRight,
       contentDescription = null,
       tint = MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier = Modifier.size(20.dp),
     )
   }
 }
 
+private val LoadedGreen = Color(0xFF5FD4A0)
+
+/** One menu entry. The active one sits on a tinted pill, its icon and title in the accent color. */
 @Composable
-private fun ToolRow(
+private fun NavRow(
   title: String,
   subtitle: String,
   icon: ImageVector,
+  active: Boolean,
   onClick: () -> Unit,
-  active: Boolean = false,
 ) {
   val interaction = remember { MutableInteractionSource() }
   val pressed by interaction.collectIsPressedAsState()
   val scale by
     animateFloatAsState(
       targetValue = if (pressed) 0.97f else 1f,
-      animationSpec = tween(durationMillis = 120),
+      animationSpec = spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium),
       label = "rowPress",
+    )
+  val pill by
+    animateColorAsState(
+      targetValue =
+        if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent,
+      animationSpec = tween(250),
+      label = "rowPill",
+    )
+  val accent by
+    animateColorAsState(
+      targetValue =
+        if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+      animationSpec = tween(250),
+      label = "rowAccent",
     )
   Row(
     verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.Start,
     modifier =
       Modifier.fillMaxWidth()
+        .padding(vertical = 2.dp)
         .graphicsLayer {
           scaleX = scale
           scaleY = scale
         }
-        .clip(RoundedCornerShape(14.dp))
-        .background(if (active) MaterialTheme.colorScheme.surfaceContainer else Color.Transparent)
+        .clip(RoundedCornerShape(16.dp))
+        .background(pill)
         .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-        .padding(horizontal = 6.dp, vertical = 10.dp),
+        .padding(horizontal = 12.dp, vertical = 11.dp),
   ) {
-    Box(
-      modifier =
-        Modifier.size(38.dp)
-          .clip(RoundedCornerShape(12.dp))
-          .background(MaterialTheme.colorScheme.primaryContainer),
-      contentAlignment = Alignment.Center,
-    ) {
-      Icon(
-        icon,
-        contentDescription = null,
-        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-        modifier = Modifier.size(22.dp),
-      )
-    }
-    Column(modifier = Modifier.padding(start = 14.dp)) {
+    Icon(
+      icon,
+      contentDescription = null,
+      tint = if (active) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier = Modifier.size(22.dp),
+    )
+    Column(modifier = Modifier.weight(1f).padding(start = 16.dp)) {
       Text(
         title,
-        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-        color = MaterialTheme.colorScheme.onSurface,
+        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+        color = accent,
       )
       Text(
         subtitle,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+    }
+    if (active) {
+      Box(
+        modifier =
+          Modifier.size(6.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)
       )
     }
   }
 }
 
 @Composable
-private fun LoadedModelChip(modelName: String?) {
+private fun BottomButton(
+  label: String,
+  icon: ImageVector,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
   Row(
     verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.Center,
     modifier =
-      Modifier.padding(bottom = 18.dp)
-        .clip(RoundedCornerShape(50))
+      modifier
+        .clip(RoundedCornerShape(14.dp))
         .background(MaterialTheme.colorScheme.surfaceContainerLow)
-        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(50))
-        .padding(horizontal = 12.dp, vertical = 7.dp),
+        .clickable(onClick = onClick)
+        .padding(vertical = 12.dp),
   ) {
-    Box(
-      modifier =
-        Modifier.size(8.dp)
-          .clip(RoundedCornerShape(50))
-          .background(
-            if (modelName != null) MaterialTheme.colorScheme.tertiary
-            else MaterialTheme.colorScheme.outline
-          )
+    Icon(
+      icon,
+      contentDescription = null,
+      tint = MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier = Modifier.size(18.dp),
     )
     Text(
-      if (modelName != null) "Modèle chargé : $modelName" else "Aucun modèle chargé",
-      style = MaterialTheme.typography.labelMedium,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      label,
+      style = MaterialTheme.typography.labelLarge,
+      color = MaterialTheme.colorScheme.onSurface,
       modifier = Modifier.padding(start = 8.dp),
-      maxLines = 1,
     )
   }
 }
