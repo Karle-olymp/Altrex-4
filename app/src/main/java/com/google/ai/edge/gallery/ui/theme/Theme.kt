@@ -32,6 +32,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import com.google.ai.edge.gallery.proto.Theme
@@ -186,10 +187,10 @@ val lightCustomColors =
         Color(0xFF4A62C9),
       ),
     taskIconShapeBgColor = Color.White,
-    homeBottomGradient = listOf(Color(0x00F4FAFE), Color(0xFFCFE9F8)),
-    agentBubbleBgColor = Color(0xFFE3F0F8),
-    userBubbleBgColor = Color(0xFF0E6BA8),
-    linkColor = Color(0xFF0E6BA8),
+    homeBottomGradient = listOf(Color(0x00F5F7F9), Color(0xFFDDE9F2)),
+    agentBubbleBgColor = Color(0xFFEEF3F7),
+    userBubbleBgColor = Color(0xFF0B63A0),
+    linkColor = Color(0xFF0B63A0),
     successColor = Color(0xff3d860b),
     positiveStrokeColor = Color(0xff3d860b),
     negativeStrokeColor = Color(0xffd93025),
@@ -356,3 +357,9 @@ fun GalleryTheme(content: @Composable () -> Unit) {
     }
   }
 }
+
+/** [ALTREX] Surface for dialogs and sheets: plain white by day, raised slate by night. */
+val androidx.compose.material3.ColorScheme.dialogSurface: Color
+  get() =
+    if (background.luminance() > 0.5f) surfaceContainerLowest
+    else surfaceContainerHigh

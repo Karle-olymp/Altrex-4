@@ -90,6 +90,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.google.ai.edge.gallery.ui.theme.dialogSurface
 import androidx.compose.ui.window.Dialog
 import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.data.BooleanSwitchConfig
@@ -152,7 +153,11 @@ fun ConfigDialog(
             focusManager.clearFocus()
           }
           .imePadding(),
-      shape = RoundedCornerShape(16.dp),
+      shape = RoundedCornerShape(28.dp),
+      colors =
+        androidx.compose.material3.CardDefaults.cardColors(
+          containerColor = MaterialTheme.colorScheme.dialogSurface
+        ),
     ) {
       Column(
         modifier = Modifier.padding(20.dp),
@@ -418,7 +423,7 @@ fun NumberSliderRow(config: NumberSliderConfig, values: SnapshotStateMap<String,
             values[config.key.label] = minOf(maxOf(floatValue, config.sliderMin), config.sliderMax)
           }
         },
-        textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface),
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
       ) { innerTextField ->
         Box(

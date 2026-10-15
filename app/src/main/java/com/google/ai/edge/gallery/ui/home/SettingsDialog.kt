@@ -275,7 +275,7 @@ fun SettingsDialog(
                     .focusRequester(focusRequester)
                     .onFocusChanged { isFocused = it.isFocused },
                 onValueChange = { customHfToken = it },
-                textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
               ) { innerTextField ->
                 Box(

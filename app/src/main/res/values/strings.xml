@@ -737,4 +737,5 @@
   <string name="skill_chip_query_wikipedia_label" translatable="true" description="Label for the Query Wikipedia skill chip. [CHAR_LIMIT=25]">Query Wikipedia</string>
   <!-- Label for the Generate QR code skill chip. [CHAR_LIMIT=20] -->
   <string name="skill_chip_generate_qr_code_label" translatable="true" description="Label for the Generate QR code skill chip. [CHAR_LIMIT=30]">Generate QR code</string>
+  <string name="configs_updated">Configs updated</string>
 </resources>

@@ -37,6 +37,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.foundation.border
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
@@ -48,7 +49,7 @@ import com.google.ai.edge.gallery.ui.theme.bodySmallNarrow
 import com.google.ai.edge.gallery.ui.theme.titleSmaller
 
 private data class ConfigRowData(
-  val label: String,
+  @androidx.annotation.StringRes val labelRes: Int,
   val oldValueDisplay: String,
   val newValueDisplay: String,
   val isChanged: Boolean,
@@ -89,30 +90,33 @@ fun MessageBodyConfigUpdate(message: ChatMessageConfigValuesChange) {
         val oldValueDisplay = getConfigValueString(oldValue, config)
         val newValueDisplay = getConfigValueString(newValue, config)
 
-        ConfigRowData(key, oldValueDisplay, newValueDisplay, isChanged)
+        ConfigRowData(config.key.labelRes, oldValueDisplay, newValueDisplay, isChanged)
       }
     }
+  // [ALTREX] Only the values that actually changed; all of them if nothing differs.
+  val shownRows = configRows.filter { it.isChanged }.ifEmpty { configRows }
 
   Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
     Box(
       modifier =
-        Modifier.clip(RoundedCornerShape(4.dp))
-          .background(MaterialTheme.colorScheme.tertiaryContainer)
+        Modifier.clip(RoundedCornerShape(16.dp))
+          .background(MaterialTheme.colorScheme.surfaceContainer)
+          .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
     ) {
-      Column(modifier = Modifier.padding(8.dp)) {
+      Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
         // Title.
         Text(
-          "Configs updated",
-          color = MaterialTheme.colorScheme.onTertiaryContainer,
+          androidx.compose.ui.res.stringResource(com.google.ai.edge.gallery.R.string.configs_updated),
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
           style = titleSmaller,
         )
 
         Row(modifier = Modifier.padding(top = 8.dp)) {
           // Keys
           Column(modifier = Modifier.widthIn(max = screenWidthDp / 2)) {
-            for (rowData in configRows) {
+            for (rowData in shownRows) {
               Text(
-                "${rowData.label}:",
+                "${androidx.compose.ui.res.stringResource(rowData.labelRes)} :",
                 style = bodySmallNarrow,
                 modifier = Modifier.alpha(0.6f),
                 maxLines = 1,
@@ -125,7 +129,7 @@ fun MessageBodyConfigUpdate(message: ChatMessageConfigValuesChange) {
 
           // Values
           Column {
-            for (rowData in configRows) {
+            for (rowData in shownRows) {
               if (!rowData.isChanged) {
                 Text(rowData.newValueDisplay, style = bodySmallNarrow, maxLines = 1)
               } else {
