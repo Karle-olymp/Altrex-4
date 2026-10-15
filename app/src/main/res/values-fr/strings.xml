@@ -471,7 +471,6 @@
   <string name="skill_chip_generate_qr_code_label">Générer un QR code</string>
   <string name="agent_skills_intro">Raisonne avec des skills spécialisées, ou <![CDATA[<a href="%1$s">crée les tiennes</a>]]>. Découvre les skills de la communauté sur <![CDATA[<a href="%2$s">GitHub Discussions</a>]]>.\n\nTouche un exemple ci-dessous pour voir %3$s en action !</string>
   <!-- [ALTREX] Libellés des réglages de modèle. -->
-  <string name="config_label_max_tokens">Tokens max</string>
   <string name="config_label_max_output_tokens">Tokens de sortie max</string>
   <string name="config_label_topk">TopK</string>
   <string name="config_label_topp">TopP</string>
@@ -488,7 +487,6 @@
   <string name="config_label_enable_speculative_decoding">Activer le décodage spéculatif</string>
   <string name="config_label_max_result_count">Nombre de résultats max</string>
   <string name="config_label_use_gpu">Utiliser le GPU</string>
-  <string name="config_label_accelerator">Accélérateur</string>
   <string name="config_label_vision_accelerator">Accélérateur vision</string>
   <string name="config_label_compatible_accelerators">Accélérateurs compatibles</string>
   <string name="config_label_warm_up_iterations">Itérations de préchauffage</string>
