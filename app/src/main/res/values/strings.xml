@@ -563,61 +563,61 @@
 
   <!-- Config Labels -->
   <!-- Label for the 'Max tokens' option in the model configuration dialog. -->
-  <string name="config_label_max_tokens" translatable="false">Max tokens</string>
+  <string name="config_label_max_tokens">Max tokens</string>
   <!-- Label for the 'Max output tokens' option in the model configuration dialog. -->
-  <string name="config_label_max_output_tokens" translatable="false">Max output tokens</string>
+  <string name="config_label_max_output_tokens">Max output tokens</string>
   <!-- Label for the 'TopK' option in the model configuration dialog. -->
-  <string name="config_label_topk" translatable="false">TopK</string>
+  <string name="config_label_topk">TopK</string>
   <!-- Label for the 'TopP' option in the model configuration dialog. -->
-  <string name="config_label_topp" translatable="false">TopP</string>
+  <string name="config_label_topp">TopP</string>
   <!-- Label for the 'Temperature' option in the model configuration dialog. -->
-  <string name="config_label_temperature" translatable="false">Temperature</string>
+  <string name="config_label_temperature">Temperature</string>
   <!-- Label for the 'Default max tokens' option in the model configuration dialog. -->
-  <string name="config_label_default_max_tokens" translatable="false">Default max tokens</string>
+  <string name="config_label_default_max_tokens">Default max tokens</string>
   <!-- Label for the 'Default TopK' option in the model configuration dialog. -->
-  <string name="config_label_default_topk" translatable="false">Default TopK</string>
+  <string name="config_label_default_topk">Default TopK</string>
   <!-- Label for the 'Default TopP' option in the model configuration dialog. -->
-  <string name="config_label_default_topp" translatable="false">Default TopP</string>
+  <string name="config_label_default_topp">Default TopP</string>
   <!-- Label for the 'Default temperature' option in the model configuration dialog. -->
-  <string name="config_label_default_temperature" translatable="false">Default temperature</string>
+  <string name="config_label_default_temperature">Default temperature</string>
   <!-- Label for the 'Support image' option in the model configuration dialog. -->
-  <string name="config_label_support_image" translatable="false">Support image</string>
+  <string name="config_label_support_image">Support image</string>
   <!-- Label for the 'Support audio' option in the model configuration dialog. -->
-  <string name="config_label_support_audio" translatable="false">Support audio</string>
+  <string name="config_label_support_audio">Support audio</string>
   <!-- Label for the 'Support thinking' option in the model configuration dialog. -->
-  <string name="config_label_support_thinking" translatable="false">Support thinking</string>
+  <string name="config_label_support_thinking">Support thinking</string>
   <!-- Label for the 'Support speculative decoding' option in the model configuration dialog. -->
-  <string name="config_label_support_speculative_decoding" translatable="false">Support speculative decoding</string>
+  <string name="config_label_support_speculative_decoding">Support speculative decoding</string>
   <!-- Label for the 'Enable thinking' option in the model configuration dialog. -->
-  <string name="config_label_enable_thinking" translatable="false">Enable thinking</string>
+  <string name="config_label_enable_thinking">Enable thinking</string>
   <!-- Label for the 'Enable speculative decoding' option in the model configuration dialog. -->
-  <string name="config_label_enable_speculative_decoding" translatable="false">Enable speculative decoding</string>
+  <string name="config_label_enable_speculative_decoding">Enable speculative decoding</string>
   <!-- Label for the 'Max result count' option in the model configuration dialog. -->
-  <string name="config_label_max_result_count" translatable="false">Max result count</string>
+  <string name="config_label_max_result_count">Max result count</string>
   <!-- Label for the 'Use GPU' option in the model configuration dialog. -->
-  <string name="config_label_use_gpu" translatable="false">Use GPU</string>
+  <string name="config_label_use_gpu">Use GPU</string>
   <!-- Label for the 'Accelerator' option in the model configuration dialog. -->
-  <string name="config_label_accelerator" translatable="false">Accelerator</string>
+  <string name="config_label_accelerator">Accelerator</string>
   <!-- Label for the 'Vision accelerator' option in the model configuration dialog. -->
-  <string name="config_label_vision_accelerator" translatable="false">Vision accelerator</string>
+  <string name="config_label_vision_accelerator">Vision accelerator</string>
   <!-- Label for the 'Compatible accelerators' option in the model configuration dialog. -->
-  <string name="config_label_compatible_accelerators" translatable="false">Compatible accelerators</string>
+  <string name="config_label_compatible_accelerators">Compatible accelerators</string>
   <!-- Label for the 'Warm up iterations' option in the model configuration dialog. -->
-  <string name="config_label_warm_up_iterations" translatable="false">Warm up iterations</string>
+  <string name="config_label_warm_up_iterations">Warm up iterations</string>
   <!-- Label for the 'Benchmark iterations' option in the model configuration dialog. -->
-  <string name="config_label_benchmark_iterations" translatable="false">Benchmark iterations</string>
+  <string name="config_label_benchmark_iterations">Benchmark iterations</string>
   <!-- Label for the 'Iterations' option in the model configuration dialog. -->
-  <string name="config_label_iterations" translatable="false">Iterations</string>
+  <string name="config_label_iterations">Iterations</string>
   <!-- Label for the 'Model type' option in the model configuration dialog. -->
-  <string name="config_label_model_type" translatable="false">Model type</string>
+  <string name="config_label_model_type">Model type</string>
   <!-- Label for the 'Model' option in the model configuration dialog. -->
-  <string name="config_label_model" translatable="false">Model</string>
+  <string name="config_label_model">Model</string>
   <!-- Label for the 'Prefill tokens' option in the model configuration dialog. -->
-  <string name="config_label_prefill_tokens" translatable="false">Prefill tokens</string>
+  <string name="config_label_prefill_tokens">Prefill tokens</string>
   <!-- Label for the 'Decode tokens' option in the model configuration dialog. -->
-  <string name="config_label_decode_tokens" translatable="false">Decode tokens</string>
+  <string name="config_label_decode_tokens">Decode tokens</string>
   <!-- Label for the 'Number of runs' option in the model configuration dialog. -->
-  <string name="config_label_number_of_runs" translatable="false">Number of runs</string>
+  <string name="config_label_number_of_runs">Number of runs</string>
   <!-- Label indicating statistics on a specific accelerator. %1$s is the accelerator name. -->
   <string name="stats_on_accelerator" translatable="true" description="Label for the section displaying performance statistics on a specific hardware accelerator (e.g., 'Stats on GPU'). [CHAR_LIMIT=22]">Stats on %1$s</string>
   <!-- First part of Gemma 4 introduction text. -->
@@ -628,9 +628,9 @@
   <!-- Label for the 'Show 3D spinner during image gen' option in the model configuration dialog. -->
   <string name="config_label_show_3d_spinner" translatable="false">Show 3D spinner during image gen</string>
   <!-- Label for the 'Font size' option in the model configuration dialog. -->
-  <string name="config_label_font_size" translatable="false">Font size</string>
+  <string name="config_label_font_size">Font size</string>
   <!-- Label for the 'Max character count' option in the model configuration dialog. -->
-  <string name="config_label_max_char_count" translatable="false">Max character count</string>
+  <string name="config_label_max_char_count">Max character count</string>
   <string name="new_badge" translatable="true" description="Badge label indicating a new feature. [CHAR_LIMIT=8]">New</string>
   <!-- Home Screen Promos -->
   <string name="gemma_reskin_try_gemma_4_chat" translatable="true" description="Promo card description to try Gemma 4 chat. [CHAR_LIMIT=65]">Chat with the latest Gemma 4 model today</string>
