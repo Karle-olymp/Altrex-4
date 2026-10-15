@@ -51,6 +51,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.rotate
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -1405,17 +1409,14 @@ private fun DictationBar(
     }
   }
   val smoothLevel by animateFloatAsState(targetValue = level, animationSpec = tween(120), label = "lvl")
-  val wave by
-    androidx.compose.animation.core.rememberInfiniteTransition(label = "dictationWave")
-      .animateFloat(
-        initialValue = 0f,
-        targetValue = (2 * Math.PI).toFloat(),
-        animationSpec =
-          androidx.compose.animation.core.infiniteRepeatable(
-            tween(1200, easing = androidx.compose.animation.core.LinearEasing)
-          ),
-        label = "wave",
-      )
+  val waveTransition = rememberInfiniteTransition(label = "dictationWave")
+  val wave: Float by
+    waveTransition.animateFloat(
+      initialValue = 0f,
+      targetValue = 6.2831855f,
+      animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing)),
+      label = "wave",
+    )
   val primary = MaterialTheme.colorScheme.primary
   val tertiary = MaterialTheme.colorScheme.tertiary
   Row(
@@ -1438,8 +1439,8 @@ private fun DictationBar(
         val bars = 18
         val gap = size.width / bars
         for (i in 0 until bars) {
-          val phase = kotlin.math.sin(wave + i * 0.55f) * 0.5f + 0.5f
-          val h = size.height * (0.15f + 0.85f * smoothLevel * (0.35f + 0.65f * phase))
+          val phase: Float = kotlin.math.sin((wave + i * 0.55f).toDouble()).toFloat() * 0.5f + 0.5f
+          val h: Float = size.height * (0.15f + 0.85f * smoothLevel * (0.35f + 0.65f * phase))
           drawRoundRect(
             color = if (i < bars / 2) primary else tertiary,
             topLeft = androidx.compose.ui.geometry.Offset(i * gap + gap * 0.3f, (size.height - h) / 2f),
