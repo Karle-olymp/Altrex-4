@@ -315,32 +315,42 @@ fun GlobalModelManager(
           )
         }
 
-        // [ALTREX] The catalogue comes after the user's own (imported) models.
-        item(key = "catalogue_label") {
-          Text(
-            "Catalogue",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.padding(horizontal = 4.dp).padding(top = 20.dp, bottom = 4.dp),
-          )
+        // [ALTREX] Catalogue: one expandable card per model family (Gemma, Qwen…), grouped by
+        // category (generative AI, transcription, embeddings…). Opening a family lists its models
+        // with their usual card (download, try, benchmark).
+        val families = groupModelFamilies(builtInModels.toList())
+        var lastCategory = ""
+        for (family in families) {
+          if (family.category != lastCategory) {
+            lastCategory = family.category
+            item(key = "category_${family.category}") {
+              Text(
+                family.category,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(horizontal = 4.dp).padding(top = 20.dp, bottom = 4.dp),
+              )
+            }
+          }
+          item(key = "family_${family.name}") {
+            ModelFamilyCard(family = family) { model ->
+              val expanded = modelItemExpandedStates.getOrDefault(model.name, false)
+              ModelItem(
+                model = model,
+                modelVariants = modelVariants.getOrDefault(model.name, listOf()),
+                task = null,
+                modelManagerViewModel = viewModel,
+                onModelClicked = handleClickModel,
+                onBenchmarkClicked = onBenchmarkClicked,
+                expanded = expanded,
+                isBenchmarkSupported = model.supportModelBenchmark,
+                showBenchmarkActionButton = true,
+                onExpanded = { modelItemExpandedStates[model.name] = it },
+                tosViewModel = tosViewModel,
+              )
+            }
+          }
         }
-        items(builtInModels) { model ->
-          val expanded = modelItemExpandedStates.getOrDefault(model.name, true)
-          ModelItem(
-            model = model,
-            modelVariants = modelVariants.getOrDefault(model.name, listOf()),
-            task = null,
-            modelManagerViewModel = viewModel,
-            onModelClicked = handleClickModel,
-            onBenchmarkClicked = onBenchmarkClicked,
-            expanded = expanded,
-            isBenchmarkSupported = model.supportModelBenchmark,
-            showBenchmarkActionButton = true,
-            onExpanded = { modelItemExpandedStates[model.name] = it },
-            tosViewModel = tosViewModel,
-          )
-        }
-
       }
 
       SnackbarHost(
