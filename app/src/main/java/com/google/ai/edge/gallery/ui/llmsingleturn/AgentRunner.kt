@@ -165,7 +165,7 @@ object AgentRunner {
     displayPrefix: String,
     profile: AgentProfile,
   ) {
-    val prompt = ToolCalling.buildPrompt(system, fit(system, messages, pastCount, promptBudget))
+    val prompt = ToolCalling.buildChatRequest(system, fit(system, messages, pastCount, promptBudget))
     viewModel.generateResponse(
       task = task,
       model = model,

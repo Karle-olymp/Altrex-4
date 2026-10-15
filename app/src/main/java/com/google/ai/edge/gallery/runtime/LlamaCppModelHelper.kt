@@ -21,6 +21,9 @@ import android.graphics.Bitmap
 import android.util.Log
 import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN
+import com.google.ai.edge.gallery.data.DEFAULT_TEMPERATURE
+import com.google.ai.edge.gallery.data.DEFAULT_TOPK
+import com.google.ai.edge.gallery.data.DEFAULT_TOPP
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.markInitializationFailed
 import com.google.ai.edge.gallery.data.markInitializationStarted
@@ -43,6 +46,8 @@ data class LlamaCppModelInstance(
   val llamaHelper: LlamaHelper,
   val sharedFlow: MutableSharedFlow<LlamaHelper.LLMEvent>,
   var inferenceJob: Job? = null,
+  /** Ends the request in flight (reports "done" once). */
+  @Volatile var finishCurrent: (() -> Unit)? = null,
 )
 
 object LlamaCppModelHelper : LlmModelHelper {
@@ -194,8 +199,9 @@ object LlamaCppModelHelper : LlmModelHelper {
   override fun stopResponse(model: Model) {
     val instance = model.instance as? LlamaCppModelInstance ?: return
     try {
-      instance.inferenceJob?.cancel()
       instance.llamaHelper.stopPrediction()
+      // The native call returns once the flag is seen; report the end now so the UI never waits.
+      instance.finishCurrent?.invoke()
     } catch (e: Exception) {
       Log.w(TAG, "Failed to stop llama prediction", e)
     }
@@ -222,47 +228,44 @@ object LlamaCppModelHelper : LlmModelHelper {
       cleanUpListeners[model.name] = cleanUpListener
     }
 
-    val scope = coroutineScope ?: CoroutineScope(Dispatchers.IO)
-    instance.inferenceJob?.cancel()
-
-    instance.inferenceJob = scope.launch {
-      try {
-        instance.sharedFlow.collect { event ->
-          when (event) {
-            is LlamaHelper.LLMEvent.Ongoing -> {
-              resultListener(event.word, false, null)
-            }
-            is LlamaHelper.LLMEvent.Done -> {
-              resultListener("", true, null)
-              instance.inferenceJob?.cancel()
-            }
-            is LlamaHelper.LLMEvent.Error -> {
-              Log.e(TAG, "Error during inference: ${event.message}")
-              onError(event.message)
-              instance.inferenceJob?.cancel()
-            }
-            else -> {}
-          }
-        }
-      } catch (e: CancellationException) {
-        Log.i(TAG, "Inference collection cancelled.")
-        resultListener("", true, null)
-      } catch (e: Exception) {
-        Log.e(TAG, "Exception during inference collection", e)
-        onError(e.message ?: "Inference failed")
+    // [ALTREX] Direct callbacks (no shared flow: events sent before the collector subscribed were
+    // lost, and "done" could arrive twice). "done" is reported exactly once.
+    val finished = java.util.concurrent.atomic.AtomicBoolean(false)
+    val finish: (String?) -> Unit = { error ->
+      if (finished.compareAndSet(false, true)) {
+        if (error == null) resultListener("", true, null) else onError(error)
       }
     }
+    instance.finishCurrent = { finish(null) }
+
+    val maxTokens =
+      model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN)
+    val sampling =
+      LlamaHelper.Sampling(
+        temperature =
+          model.getFloatConfigValue(key = ConfigKeys.TEMPERATURE, defaultValue = DEFAULT_TEMPERATURE),
+        topK = model.getIntConfigValue(key = ConfigKeys.TOPK, defaultValue = DEFAULT_TOPK),
+        topP = model.getFloatConfigValue(key = ConfigKeys.TOPP, defaultValue = DEFAULT_TOPP),
+        // Leave room for the prompt: at most half the context, between 1024 and 8192 tokens.
+        maxOutputTokens = (maxTokens / 2).coerceIn(1024, 8192),
+      )
 
     try {
       instance.llamaHelper.predict(
         prompt = input,
         imagePath = null,
         partialCompletion = true,
+        sampling = sampling,
+        onToken = { token -> if (!finished.get()) resultListener(token, false, null) },
+        onDone = { finish(null) },
+        onError = { message ->
+          Log.e(TAG, "Error during inference: $message")
+          finish(message)
+        },
       )
     } catch (e: Exception) {
       Log.e(TAG, "Failed to start predict: ${e.message}", e)
-      instance.inferenceJob?.cancel()
-      onError(e.message ?: "Failed to start inference")
+      finish(e.message ?: "Failed to start inference")
     }
   }
 }

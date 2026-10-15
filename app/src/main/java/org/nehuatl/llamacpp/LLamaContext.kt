@@ -142,6 +142,13 @@ class LlamaContext(
         return getFormattedChat(context, msgs, chatTemplate.ifEmpty { "" })
     }
 
+    /**
+     * [ALTREX] Formats an OpenAI-style message array with the model's own chat template.
+     * Returns a JSON object {"prompt", "stops", "jinja"}, or "" when the model has no template.
+     */
+    fun formatChat(messagesJson: String, enableThinking: Boolean = false): String =
+        formatChat(context, messagesJson, enableThinking)
+
     private inner class PartialCompletionCallback {
         private val emitNeeded: Boolean
 
@@ -281,6 +288,8 @@ class LlamaContext(
     external fun getModelContextSize(): Int
 
     external fun getFormattedChat(contextPtr: Long, messages: Array<Map<String, Any>>, chatTemplate: String): String
+
+    private external fun formatChat(contextPtr: Long, messagesJson: String, enableThinking: Boolean): String
 
     private external fun loadSession(contextPtr: Long, path: String): Map<String, Any>
 

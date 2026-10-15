@@ -9,7 +9,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import org.json.JSONArray
+import org.json.JSONObject
 
 class LlamaHelper(
     val contentResolver: ContentResolver,
@@ -107,6 +112,7 @@ class LlamaHelper(
                         if (tokenCount == 1) {
                             lastPrefillMs = System.currentTimeMillis() - predictStartMs
                         }
+                        tokenListener?.invoke(it)
                         sharedFlow.tryEmit(LLMEvent.Ongoing(it, tokenCount))
                     }
                 } catch (e: Exception) {
@@ -132,63 +138,165 @@ class LlamaHelper(
         }
     }
 
-    fun predict(prompt: String, imagePath: String? = null, partialCompletion: Boolean = true) {
+    /** Sampling settings for one generation (from the model's config dialog). */
+    data class Sampling(
+        val temperature: Float = 0.7f,
+        val topK: Int = 40,
+        val topP: Float = 0.95f,
+        val minP: Float = 0.05f,
+        val repeatPenalty: Float = 1.05f,
+        val maxOutputTokens: Int = 2048,
+    )
+
+    // [ALTREX] One generation at a time: a new request waits until the previous native call has
+    // really returned, so a late Stop can no longer kill the next answer and "Context is busy"
+    // cannot happen.
+    private val predictMutex = Mutex()
+    @Volatile private var tokenListener: ((String) -> Unit)? = null
+    // Bumped by every Stop: a request still waiting for its turn when Stop is pressed is dropped.
+    @Volatile private var stopEpoch = 0
+
+    fun predict(
+        prompt: String,
+        imagePath: String? = null,
+        partialCompletion: Boolean = true,
+        sampling: Sampling = Sampling(),
+        onToken: ((String) -> Unit)? = null,
+        onDone: ((String) -> Unit)? = null,
+        onError: ((String) -> Unit)? = null,
+    ) {
         val context = currentContext ?: throw Exception("Model was not loaded yet")
-        val startTime = System.currentTimeMillis()
-        tokenCount = 0
-        allText = ""
-        predictStartMs = startTime
-        lastPrefillMs = 0L
 
-        val params = mutableMapOf<String, Any>(
-            "prompt" to prompt,
-            "n_predict" to 2048,
-            "stop" to listOf("<|im_end|>", "<|endoftext|>"),
-            "emit_partial_completion" to partialCompletion,
-        )
-
+        val imageFds = ArrayList<Int>()
         imagePath?.let {
             try {
                 val imgUri = Uri.parse(it)
-                Log.d("LlamaHelper", ">>> Opening image FD for URI: $imgUri")
-                contentResolver.openFileDescriptor(imgUri, "r")?.use { pfd ->
-                    val imgFd = pfd.detachFd()
-                    params["image_fds"] = listOf(imgFd)
-                    Log.d("LlamaHelper", ">>> Image FD added to params: $imgFd")
-                }
+                contentResolver.openFileDescriptor(imgUri, "r")?.use { pfd -> imageFds.add(pfd.detachFd()) }
             } catch (e: Exception) {
                 Log.e("LlamaHelper", "Failed to open image FD", e)
             }
         }
 
+        val epoch = stopEpoch
         completionJob = scope.launch {
-            val thinkOff = "<" + "think>\n\n<" + "/think>\n\n"
-            val formattedPrompt =
-                if (prompt.startsWith("<|im_start|>")) {
-                    // Already a complete ChatML conversation (tool-calling agent): use it as is.
-                    prompt
-                } else {
-                    "<|im_start|>system\n${getDefaultSystemPrompt()}<|im_end|>\n<|im_start|>user\n$prompt<|im_end|>\n<|im_start|>assistant\n" + thinkOff
+            predictMutex.withLock {
+                if (stopEpoch != epoch) {
+                    onDone?.invoke("")
+                    return@withLock
                 }
-            params["prompt"] = formattedPrompt
-            sharedFlow.tryEmit(LLMEvent.Started(prompt))
-            llama.launchCompletion(
-                id = context,
-                params = params
-            )
-            val duration = System.currentTimeMillis() - startTime
-            lastGenMs = (duration - lastPrefillMs).coerceAtLeast(0L)
-            lastTokens = tokenCount
-            sharedFlow.tryEmit(LLMEvent.Done(allText, tokenCount, duration))
+                // The previous native call may still be finishing after a Stop.
+                var waited = 0
+                while (llama.isPredicting(context) && waited < 10_000) {
+                    delay(20)
+                    waited += 20
+                }
+
+                val startTime = System.currentTimeMillis()
+                tokenCount = 0
+                allText = ""
+                predictStartMs = startTime
+                lastPrefillMs = 0L
+
+                val formatted = formatPrompt(context, prompt)
+                val params = mutableMapOf<String, Any>(
+                    "prompt" to formatted.prompt,
+                    "n_predict" to sampling.maxOutputTokens,
+                    "stop" to formatted.stops,
+                    "temperature" to sampling.temperature.toDouble(),
+                    "top_k" to sampling.topK,
+                    "top_p" to sampling.topP.toDouble(),
+                    "min_p" to sampling.minP.toDouble(),
+                    "penalty_repeat" to sampling.repeatPenalty.toDouble(),
+                    "penalty_last_n" to 128,
+                    "emit_partial_completion" to partialCompletion,
+                )
+                if (imageFds.isNotEmpty()) params["image_fds"] = imageFds
+
+                tokenListener = onToken
+                sharedFlow.tryEmit(LLMEvent.Started(prompt))
+                val result = try {
+                    llama.launchCompletion(id = context, params = params)
+                } finally {
+                    tokenListener = null
+                }
+                val duration = System.currentTimeMillis() - startTime
+                lastGenMs = (duration - lastPrefillMs).coerceAtLeast(0L)
+                lastTokens = tokenCount
+                if (result == null && allText.isEmpty()) {
+                    onError?.invoke("La génération a échoué.")
+                } else {
+                    onDone?.invoke(allText)
+                }
+                sharedFlow.tryEmit(LLMEvent.Done(allText, tokenCount, duration))
+            }
         }
     }
 
-    fun stopPrediction() {
-        val id = currentContext ?: return
-        scope.launch {
-            llama.stopCompletion(id)
+    private data class FormattedPrompt(val prompt: String, val stops: List<String>)
+
+    /**
+     * Turns the request into the model's own prompt format. Three inputs are accepted:
+     * - a chat request built by [chatRequest] (system + messages): formatted with the GGUF chat
+     *   template, so Gemma, Llama, Mistral, Phi... get their real format, with thinking off;
+     * - a ready-made ChatML prompt (starts with <|im_start|>): used as is;
+     * - plain text: wrapped as one user message with the default system prompt.
+     */
+    private fun formatPrompt(context: Int, input: String): FormattedPrompt {
+        if (input.startsWith("<|im_start|>")) return FormattedPrompt(input, CHATML_STOPS)
+        val messages: JSONArray =
+            if (input.startsWith(CHAT_REQUEST_PREFIX)) {
+                try {
+                    JSONArray(input.removePrefix(CHAT_REQUEST_PREFIX))
+                } catch (e: Exception) {
+                    Log.e("LlamaHelper", "Invalid chat request", e)
+                    JSONArray()
+                }
+            } else {
+                JSONArray()
+                    .put(JSONObject().put("role", "system").put("content", getDefaultSystemPrompt()))
+                    .put(JSONObject().put("role", "user").put("content", input))
+            }
+
+        val native = llama.formatChat(context, messages.toString(), enableThinking = false)
+        if (native != null) {
+            try {
+                val obj = JSONObject(native)
+                val prompt = obj.optString("prompt")
+                if (prompt.isNotBlank()) {
+                    val stops = LinkedHashSet<String>()
+                    obj.optJSONArray("stops")?.let { arr ->
+                        for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotEmpty() }?.let(stops::add)
+                    }
+                    // End-of-turn markers of the common formats, in case the vocabulary does not flag
+                    // them as end-of-generation.
+                    if (prompt.contains("<|im_start|>")) stops.addAll(CHATML_STOPS)
+                    if (prompt.contains("<start_of_turn>")) stops.add("<end_of_turn>")
+                    if (prompt.contains("<|start_header_id|>")) stops.add("<|eot_id|>")
+                    Log.i("LlamaHelper", "Prompt formatted with the model's chat template (jinja=${obj.optBoolean("jinja")})")
+                    return FormattedPrompt(prompt, stops.toList())
+                }
+            } catch (e: Exception) {
+                Log.e("LlamaHelper", "Bad formatChat result", e)
+            }
         }
-        completionJob?.cancel()
+
+        // No usable template in the GGUF: ChatML, the most common format, with thinking off.
+        Log.w("LlamaHelper", "No chat template in the model, falling back to ChatML")
+        val sb = StringBuilder()
+        for (i in 0 until messages.length()) {
+            val m = messages.optJSONObject(i) ?: continue
+            sb.append("<|im_start|>").append(m.optString("role")).append("\n")
+                .append(m.optString("content")).append("<|im_end|>\n")
+        }
+        sb.append("<|im_start|>assistant\n").append(THINK_OFF)
+        return FormattedPrompt(sb.toString(), CHATML_STOPS)
+    }
+
+    fun stopPrediction() {
+        stopEpoch++
+        val id = currentContext ?: return
+        // Synchronous: the flag is set before any new request can start.
+        llama.stopCompletionNow(id)
     }
 
     fun release() {
@@ -214,8 +322,23 @@ class LlamaHelper(
     companion object {
         const val DEFAULT_CONTEXT_SIZE = 2048
 
+        /** Marks a chat request: the prefix is followed by an OpenAI-style JSON message array. */
+        const val CHAT_REQUEST_PREFIX = "\u0000altrex-chat\u0000"
+
+        private val THINK_OFF = "<" + "think>\n\n<" + "/think>\n\n"
+        private val CHATML_STOPS = listOf("<|im_end|>", "<|endoftext|>")
+
+        /** Builds a chat request for [predict] from (role, content) pairs. */
+        fun chatRequest(messages: List<Pair<String, String>>): String {
+            val arr = JSONArray()
+            for ((role, content) in messages) {
+                arr.put(JSONObject().put("role", role).put("content", content))
+            }
+            return CHAT_REQUEST_PREFIX + arr.toString()
+        }
+
         fun getDefaultSystemPrompt(): String {
-            return "Tu es un assistant de programmation. Réponds toujours en français, de façon concise."
+            return "Tu es Altrex, un assistant IA qui fonctionne entièrement sur le téléphone. Réponds en français (sauf si on te parle dans une autre langue), clairement et de façon concise."
         }
     }
 }

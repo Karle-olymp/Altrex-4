@@ -37,7 +37,44 @@ static inline jobject createHashMap(JNIEnv *env) {
     jclass hashMapClass = env->FindClass("java/util/HashMap");
     jmethodID init = env->GetMethodID(hashMapClass, "<init>", "()V");
     jobject hashMap = env->NewObject(hashMapClass, init);
+    env->DeleteLocalRef(hashMapClass);
     return hashMap;
+}
+
+// [ALTREX] Standard UTF-8 -> Java String. NewStringUTF expects *modified* UTF-8 and rejects
+// 4-byte characters (emoji, some CJK) under CheckJNI, which aborts debug builds; decode the raw
+// bytes on the Java side instead.
+static jstring utf8ToJString(JNIEnv *env, const std::string &text) {
+    jclass stringClass = env->FindClass("java/lang/String");
+    jmethodID ctor = env->GetMethodID(stringClass, "<init>", "([BLjava/lang/String;)V");
+    jbyteArray bytes = env->NewByteArray((jsize) text.size());
+    env->SetByteArrayRegion(bytes, 0, (jsize) text.size(), reinterpret_cast<const jbyte *>(text.data()));
+    jstring charset = env->NewStringUTF("UTF-8");
+    jstring result = (jstring) env->NewObject(stringClass, ctor, bytes, charset);
+    env->DeleteLocalRef(charset);
+    env->DeleteLocalRef(bytes);
+    env->DeleteLocalRef(stringClass);
+    return result;
+}
+
+// [ALTREX] Java String -> standard UTF-8 (GetStringUTFChars returns modified UTF-8, which turns
+// emoji into surrogate pairs the tokenizer cannot read).
+static std::string jstringToUtf8(JNIEnv *env, jstring text) {
+    if (text == nullptr) return "";
+    jclass stringClass = env->FindClass("java/lang/String");
+    jmethodID getBytes = env->GetMethodID(stringClass, "getBytes", "(Ljava/lang/String;)[B");
+    jstring charset = env->NewStringUTF("UTF-8");
+    jbyteArray bytes = (jbyteArray) env->CallObjectMethod(text, getBytes, charset);
+    std::string out;
+    if (bytes != nullptr) {
+        jsize len = env->GetArrayLength(bytes);
+        out.resize((size_t) len);
+        if (len > 0) env->GetByteArrayRegion(bytes, 0, len, reinterpret_cast<jbyte *>(&out[0]));
+        env->DeleteLocalRef(bytes);
+    }
+    env->DeleteLocalRef(charset);
+    env->DeleteLocalRef(stringClass);
+    return out;
 }
 
 // Helper method to put a string into a Java HashMap
@@ -48,12 +85,13 @@ static inline void putStringHashMap(JNIEnv *env, jobject hashMap, const char *ke
     jmethodID putMethod = env->GetMethodID(hashMapClass, "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
 
     jstring jKey = env->NewStringUTF(key);
-    jstring jValue = env->NewStringUTF(value);
+    jstring jValue = utf8ToJString(env, value);
 
     env->CallObjectMethod(hashMap, putMethod, jKey, jValue);
     
     env->DeleteLocalRef(jKey);
     env->DeleteLocalRef(jValue);
+    env->DeleteLocalRef(hashMapClass);
 }
 
 // Helper method to put an integer into a Java HashMap
@@ -412,6 +450,54 @@ Java_org_nehuatl_llamacpp_LlamaContext_getFormattedChat(
     return env->NewStringUTF("");
 }
 
+// [ALTREX] Formats a conversation with the model's own chat template (Jinja, as in llama-server),
+// with thinking turned off. messages_json is an OpenAI-style array of {role, content}.
+// Returns a JSON object {"prompt": "...", "stops": [...], "jinja": bool}, or "" when the model has
+// no usable template (the caller then falls back to ChatML).
+JNIEXPORT jstring JNICALL
+Java_org_nehuatl_llamacpp_LlamaContext_formatChat(
+        JNIEnv *env,
+        jobject thiz,
+        jlong context_ptr,
+        jstring messages_json,
+        jboolean enable_thinking
+) {
+    UNUSED(thiz);
+    rnllama::llama_rn_context* llama = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(context_mutex);
+        auto it = context_map.find((long) context_ptr);
+        if (it != context_map.end()) llama = it->second;
+    }
+    if (!llama) return utf8ToJString(env, "");
+    const std::string messages = jstringToUtf8(env, messages_json);
+    std::string out;
+    try {
+        std::map<std::string, std::string> kwargs;
+        kwargs["enable_thinking"] = enable_thinking ? "true" : "false";
+        common_chat_params formatted = llama->getFormattedChatWithJinja(
+            messages, "", "", "", false, "", enable_thinking, "none", true, "", kwargs, false);
+        json res;
+        res["prompt"] = formatted.prompt;
+        res["stops"] = formatted.additional_stops;
+        res["jinja"] = true;
+        out = res.dump();
+    } catch (const std::exception &e) {
+        LOGW("formatChat: jinja template failed (%s), trying the legacy template", e.what());
+        try {
+            json res;
+            res["prompt"] = llama->getFormattedChat(messages, "");
+            res["stops"] = json::array();
+            res["jinja"] = false;
+            out = res.dump();
+        } catch (const std::exception &e2) {
+            LOGW("formatChat: legacy template failed too (%s)", e2.what());
+            out = "";
+        }
+    }
+    return utf8ToJString(env, out);
+}
+
 JNIEXPORT jobject JNICALL
 Java_org_nehuatl_llamacpp_LlamaContext_loadSession(
         JNIEnv *env,
@@ -516,7 +602,6 @@ Java_org_nehuatl_llamacpp_LlamaContext_doCompletion(
     UNUSED(xtc_p);
     UNUSED(tfs_z);
     UNUSED(typical_p);
-    UNUSED(stop);
     UNUSED(ignore_eos);
     UNUSED(logit_bias);
     
@@ -530,8 +615,19 @@ Java_org_nehuatl_llamacpp_LlamaContext_doCompletion(
 
     llama->completion->rewind();
 
-    const char* prompt_chars = env->GetStringUTFChars(prompt, nullptr);
-    llama->params.prompt = prompt_chars;
+    llama->params.prompt = jstringToUtf8(env, prompt);
+
+    // [ALTREX] Stop strings (end-of-turn markers of the chat template and the caller's own).
+    std::vector<std::string> stop_words;
+    if (stop != nullptr) {
+        jsize n_stop = env->GetArrayLength(stop);
+        for (jsize i = 0; i < n_stop; i++) {
+            jstring word = (jstring) env->GetObjectArrayElement(stop, i);
+            std::string w = jstringToUtf8(env, word);
+            if (!w.empty()) stop_words.push_back(w);
+            if (word != nullptr) env->DeleteLocalRef(word);
+        }
+    }
 
     llama->params.cpuparams.n_threads = n_threads > 0 ? n_threads : std::thread::hardware_concurrency();
     llama->params.sampling.seed = (seed == -1) ? time(NULL) : seed;
@@ -563,7 +659,8 @@ Java_org_nehuatl_llamacpp_LlamaContext_doCompletion(
         env->ReleaseIntArrayElements(image_fds, fds, 0);
     }
     
-    LOGI("doCompletion: prompt='%s', images=%zu, multimodal_enabled=%s", prompt_chars, images.size(), llama->isMultimodalEnabled() ? "yes" : "no");
+    LOGI("doCompletion: prompt=%zu bytes, stops=%zu, images=%zu, multimodal_enabled=%s",
+         llama->params.prompt.size(), stop_words.size(), images.size(), llama->isMultimodalEnabled() ? "yes" : "no");
     
     try {
         llama->completion->loadPrompt(images);
@@ -572,24 +669,80 @@ Java_org_nehuatl_llamacpp_LlamaContext_doCompletion(
         jclass cb_class = env->GetObjectClass(partialCompletionCallback);
         jmethodID onPartialCompletion = env->GetMethodID(cb_class, "onPartialCompletion", "(Ljava/util/Map;)V");
         size_t sent_count = 0;
+        bool stopped_by_word = false;
         while (llama->completion->has_next_token && !llama->completion->is_interrupted) {
             auto token_output = llama->completion->doCompletion();
             if (token_output.tok == -1) break;
 
             if (llama->completion->incomplete) continue;
 
-            size_t pos = std::min(sent_count, llama->completion->generated_text.size());
-            std::string to_send = llama->completion->generated_text.substr(pos);
-            sent_count += to_send.size();
+            std::string &text = llama->completion->generated_text;
 
-            if (!to_send.empty()) {
-                auto tokenResult = createHashMap(env);
-                putStringHashMap(env, tokenResult, "token", to_send.c_str());
-                env->CallVoidMethod(partialCompletionCallback, onPartialCompletion, tokenResult);
-                env->DeleteLocalRef(tokenResult);
+            // [ALTREX] Stop string: cut the text there and end the turn.
+            size_t send_end = text.size();
+            for (const auto &w : stop_words) {
+                size_t from = sent_count > w.size() ? sent_count - w.size() : 0;
+                size_t found = text.find(w, from);
+                if (found != std::string::npos && found < send_end) {
+                    send_end = found;
+                    stopped_by_word = true;
+                }
             }
+            if (stopped_by_word) {
+                text.resize(send_end);
+                llama->completion->stopped_word = true;
+                llama->completion->has_next_token = false;
+            } else {
+                // Hold back a tail that could be the start of a stop string.
+                for (const auto &w : stop_words) {
+                    for (size_t len = std::min(w.size() - 1, text.size()); len > 0; len--) {
+                        if (text.compare(text.size() - len, len, w, 0, len) == 0) {
+                            send_end = std::min(send_end, text.size() - len);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (send_end > sent_count) {
+                std::string to_send = text.substr(sent_count, send_end - sent_count);
+                sent_count = send_end;
+                // One local frame per token: the helpers create several local references and a
+                // long answer would otherwise overflow the local reference table.
+                if (env->PushLocalFrame(16) == 0) {
+                    auto tokenResult = createHashMap(env);
+                    putStringHashMap(env, tokenResult, "token", to_send.c_str());
+                    env->CallVoidMethod(partialCompletionCallback, onPartialCompletion, tokenResult);
+                    env->PopLocalFrame(nullptr);
+                }
+                if (env->ExceptionCheck()) {
+                    env->ExceptionDescribe();
+                    env->ExceptionClear();
+                    break;
+                }
+            }
+            if (stopped_by_word) break;
         }
-        
+
+        // Flush text held back for a stop string that never came.
+        if (!stopped_by_word && llama->completion->generated_text.size() > sent_count) {
+            std::string rest = llama->completion->generated_text.substr(sent_count);
+            if (env->PushLocalFrame(16) == 0) {
+                auto tokenResult = createHashMap(env);
+                putStringHashMap(env, tokenResult, "token", rest.c_str());
+                env->CallVoidMethod(partialCompletionCallback, onPartialCompletion, tokenResult);
+                env->PopLocalFrame(nullptr);
+            }
+            if (env->ExceptionCheck()) env->ExceptionClear();
+        }
+
+        // [ALTREX] The last sampled token is in embd but was never decoded when the turn ends on a
+        // stop string, the length limit or Stop: drop it so the next turn's prefix reuse only
+        // counts positions that really are in the KV cache.
+        if ((int) llama->completion->embd.size() > (int) llama->completion->n_past) {
+            llama->completion->embd.resize(llama->completion->n_past);
+        }
+
         llama->completion->endCompletion();
     } catch (const std::exception& e) {
         LOGW("doCompletion: Caught exception: %s", e.what());
@@ -597,7 +750,6 @@ Java_org_nehuatl_llamacpp_LlamaContext_doCompletion(
         LOGW("doCompletion: Caught unknown exception");
     }
 
-    env->ReleaseStringUTFChars(prompt, prompt_chars);
     return createHashMap(env);
 }
 
