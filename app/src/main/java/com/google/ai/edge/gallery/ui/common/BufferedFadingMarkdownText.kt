@@ -86,10 +86,13 @@ fun BufferedFadingMarkdownText(text: String, inProgress: Boolean, modifier: Modi
       }
   }
 
-  val previousInProgress = rememberUpdatedState(inProgress)
+  // [ALTREX] The overlay sits on top of the base text and catches touches (a code block could
+  // not be scrolled: the invisible copy scrolled instead). It is only needed while the text
+  // streams, so it goes away as soon as generation is over, including for finished messages.
   LaunchedEffect(inProgress) {
-    // Trigger only when inProgress changes from true to false.
-    if (previousInProgress.value && !inProgress) {
+    if (inProgress) {
+      showOverlay = true
+    } else {
       delay(FADE_INTERVAL_MS.toLong() * 2)
       showOverlay = false
     }

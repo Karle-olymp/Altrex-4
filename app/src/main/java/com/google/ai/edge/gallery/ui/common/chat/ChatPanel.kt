@@ -587,8 +587,37 @@ fun ChatPanel(
                             modifier = Modifier.size(17.dp),
                           )
                         }
+                        // [ALTREX] Regenerate: asks the last question again (last answer only).
+                        val previousQuestion =
+                          if (index == messages.lastIndex) {
+                            messages.subList(0, index).lastOrNull {
+                              it is ChatMessageText && it.side == ChatSide.USER
+                            }
+                          } else {
+                            null
+                          }
+                        if (previousQuestion != null) {
+                          IconButton(
+                            onClick = { onRunAgainClicked(selectedModel, previousQuestion) },
+                            modifier = Modifier.size(34.dp),
+                          ) {
+                            Icon(
+                              imageVector = Icons.Rounded.Refresh,
+                              contentDescription = "Régénérer",
+                              tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                              modifier = Modifier.size(18.dp),
+                            )
+                          }
+                        }
                       }
                       LatencyText(message = message)
+                      if (message is ChatMessageText && message.tokensPerSecond > 0f) {
+                        Text(
+                          "· " + "%.1f".format(message.tokensPerSecond) + " tokens/s",
+                          style = MaterialTheme.typography.labelSmall,
+                          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        )
+                      }
                     }
                   } else if (message.side == ChatSide.USER) {
                     Row(

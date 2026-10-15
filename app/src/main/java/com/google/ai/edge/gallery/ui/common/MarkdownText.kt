@@ -16,6 +16,7 @@
 
 package com.google.ai.edge.gallery.ui.common
 
+import com.google.ai.edge.gallery.ui.theme.appFontFamily
 import com.google.ai.edge.gallery.ui.theme.codeFontFamily
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -46,6 +47,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import androidx.compose.material3.MaterialTheme
@@ -108,6 +111,7 @@ private fun MarkdownSegment(
     ProvideTextStyle(
       value =
         TextStyle(
+          fontFamily = appFontFamily,
           fontSize = fontSize,
           lineHeight = fontSize * if (smallFontSize) 1.4f else 1.55f,
           color = textColor,
@@ -224,8 +228,15 @@ private fun CodeBlockCard(language: String, code: String) {
         )
       }
     }
+    val keywordColor = MaterialTheme.colorScheme.tertiary
+    val stringColor = CodeStringColor
+    val commentColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val highlighted =
+      remember(code, keywordColor, commentColor) {
+        highlightCode(code, keywordColor, stringColor, commentColor)
+      }
     Text(
-      code,
+      highlighted,
       fontFamily = codeFontFamily,
       fontSize = 12.5.sp,
       lineHeight = 20.sp,
@@ -244,3 +255,82 @@ private fun CodeBlockCard(language: String, code: String) {
 //     MarkdownText(text = "*Hello World*\n**Good morning!!**")
 //   }
 // }
+
+private val CodeStringColor = Color(0xFFF2C38B)
+
+private val CODE_KEYWORDS =
+  setOf(
+    // Kotlin / Java / C-like
+    "fun", "val", "var", "class", "object", "interface", "data", "enum", "sealed", "open",
+    "private", "public", "protected", "internal", "override", "suspend", "return", "if", "else",
+    "when", "for", "while", "do", "break", "continue", "try", "catch", "finally", "throw", "new",
+    "import", "package", "this", "super", "null", "true", "false", "is", "in", "as", "static",
+    "final", "void", "int", "long", "float", "double", "boolean", "char", "const", "switch",
+    "case", "default", "struct", "typedef", "include", "extends", "implements", "lateinit",
+    // Python
+    "def", "lambda", "None", "True", "False", "and", "or", "not", "elif", "from", "with",
+    "yield", "pass", "raise", "except", "global", "nonlocal", "async", "await", "self", "print",
+    // JavaScript / TypeScript
+    "function", "let", "const", "export", "async", "typeof", "undefined", "type",
+    // Shell
+    "echo", "fi", "then", "done", "esac", "sudo",
+  )
+
+/**
+ * Light syntax coloring for code cards: comments, strings, numbers and common keywords. A simple
+ * scan, no real parser: good enough to read code, never blocks on unknown languages.
+ */
+private fun highlightCode(
+  code: String,
+  keywordColor: Color,
+  stringColor: Color,
+  commentColor: Color,
+): AnnotatedString {
+  val builder = AnnotatedString.Builder(code)
+  var i = 0
+  val n = code.length
+  while (i < n) {
+    val c = code[i]
+    when {
+      // Line comments: //, # (shell/Python), -- is left alone.
+      (c == '/' && i + 1 < n && code[i + 1] == '/') || c == '#' -> {
+        val end = code.indexOf('\n', i).let { if (it < 0) n else it }
+        builder.addStyle(SpanStyle(color = commentColor, fontStyle = FontStyle.Italic), i, end)
+        i = end
+      }
+      // Block comments.
+      c == '/' && i + 1 < n && code[i + 1] == '*' -> {
+        val end = code.indexOf("*/", i + 2).let { if (it < 0) n else it + 2 }
+        builder.addStyle(SpanStyle(color = commentColor, fontStyle = FontStyle.Italic), i, end)
+        i = end
+      }
+      // Strings, with backslash escapes; stop at the end of the line if unclosed.
+      c == '"' || c == '\'' || c == '`' -> {
+        var j = i + 1
+        while (j < n && code[j] != c && code[j] != '\n') {
+          if (code[j] == '\\') j++
+          j++
+        }
+        val end = (j + 1).coerceAtMost(n)
+        builder.addStyle(SpanStyle(color = stringColor), i, end)
+        i = end
+      }
+      c.isDigit() && (i == 0 || !code[i - 1].isLetterOrDigit()) -> {
+        var j = i
+        while (j < n && (code[j].isLetterOrDigit() || code[j] == '.' || code[j] == '_')) j++
+        builder.addStyle(SpanStyle(color = stringColor), i, j)
+        i = j
+      }
+      c.isLetter() || c == '_' -> {
+        var j = i
+        while (j < n && (code[j].isLetterOrDigit() || code[j] == '_')) j++
+        if (code.substring(i, j) in CODE_KEYWORDS) {
+          builder.addStyle(SpanStyle(color = keywordColor, fontWeight = FontWeight.Medium), i, j)
+        }
+        i = j
+      }
+      else -> i++
+    }
+  }
+  return builder.toAnnotatedString()
+}
