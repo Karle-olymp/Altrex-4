@@ -282,29 +282,48 @@ fun GlobalModelManager(
     Box() {
       LazyColumn(
         modifier =
-          Modifier.background(MaterialTheme.colorScheme.surfaceContainer)
+          Modifier.background(MaterialTheme.colorScheme.background)
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .padding(top = innerPadding.calculateTopPadding()),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding =
-          PaddingValues(top = 16.dp, bottom = innerPadding.calculateBottomPadding() + 80.dp),
+          PaddingValues(top = 12.dp, bottom = innerPadding.calculateBottomPadding() + 80.dp),
       ) {
-        item(key = "promo") {
-          AnimatedVisibility(
-            visible = showPromo,
-            enter = fadeIn() + slideInVertically(initialOffsetY = { -it / 2 }) + expandVertically(),
-            exit = fadeOut() + shrinkVertically(),
-          ) {
-            PromoBannerGm4(
-              onDismiss = {
-                showPromo = false
-                viewModel.dataStoreRepository.addViewedPromoId(promoId = promoId)
-              }
+        // Imported models.
+        if (importedModels.isNotEmpty()) {
+          item(key = "imported_models_label") {
+            Text(
+              "Mes modèles",
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              style = MaterialTheme.typography.labelLarge,
+              modifier = Modifier.padding(horizontal = 4.dp).padding(bottom = 4.dp),
             )
           }
         }
+        items(importedModels, key = { it.name }) { model ->
+          ModelItem(
+            model = model,
+            task = null,
+            modelManagerViewModel = viewModel,
+            onModelClicked = handleClickModel,
+            onBenchmarkClicked = onBenchmarkClicked,
+            expanded = true,
+            isBenchmarkSupported = model.supportModelBenchmark,
+            showBenchmarkActionButton = true,
+            tosViewModel = tosViewModel,
+          )
+        }
 
+        // [ALTREX] The catalogue comes after the user's own (imported) models.
+        item(key = "catalogue_label") {
+          Text(
+            "Catalogue",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(horizontal = 4.dp).padding(top = 20.dp, bottom = 4.dp),
+          )
+        }
         items(builtInModels) { model ->
           val expanded = modelItemExpandedStates.getOrDefault(model.name, true)
           ModelItem(
@@ -322,30 +341,6 @@ fun GlobalModelManager(
           )
         }
 
-        // Imported models.
-        if (importedModels.isNotEmpty()) {
-          item(key = "imported_models_label") {
-            Text(
-              stringResource(R.string.model_list_imported_models_title),
-              color = MaterialTheme.colorScheme.onSurface,
-              style = MaterialTheme.typography.labelLarge,
-              modifier = Modifier.padding(horizontal = 16.dp).padding(top = 32.dp, bottom = 8.dp),
-            )
-          }
-        }
-        items(importedModels, key = { it.name }) { model ->
-          ModelItem(
-            model = model,
-            task = null,
-            modelManagerViewModel = viewModel,
-            onModelClicked = handleClickModel,
-            onBenchmarkClicked = onBenchmarkClicked,
-            expanded = true,
-            isBenchmarkSupported = model.supportModelBenchmark,
-            showBenchmarkActionButton = true,
-            tosViewModel = tosViewModel,
-          )
-        }
       }
 
       SnackbarHost(
@@ -458,7 +453,7 @@ fun GlobalModelManager(
           modifier = Modifier.fillMaxWidth().padding(16.dp),
         ) {
           Icon(Icons.AutoMirrored.Outlined.NoteAdd, contentDescription = null)
-          Text("From local model file", modifier = Modifier.clearAndSetSemantics {})
+          Text("Depuis un fichier local", modifier = Modifier.clearAndSetSemantics {})
         }
       }
       val cdImportFromHuggingFace = stringResource(R.string.cd_import_model_from_hugging_face)
