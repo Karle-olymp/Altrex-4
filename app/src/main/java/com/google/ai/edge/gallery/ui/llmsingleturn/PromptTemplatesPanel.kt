@@ -40,6 +40,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.ExpandLess
@@ -238,7 +240,20 @@ fun PromptTemplatesPanel(
       }
 
       // Text input box.
-      Box(contentAlignment = Alignment.BottomCenter, modifier = Modifier.weight(1f)) {
+      // [ALTREX] Same rounded input as the chat: thin outline, send button in a blue circle.
+      Box(
+        contentAlignment = Alignment.BottomCenter,
+        modifier =
+          Modifier.weight(1f)
+            .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 10.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .border(
+              1.dp,
+              MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+              RoundedCornerShape(24.dp),
+            ),
+      ) {
         Column(
           modifier =
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).clickable(
@@ -345,19 +360,20 @@ fun PromptTemplatesPanel(
               onClick = { onStopButtonClicked(model) },
               colors =
                 IconButtonDefaults.iconButtonColors(
-                  containerColor = MaterialTheme.colorScheme.secondaryContainer
+                  containerColor = MaterialTheme.colorScheme.onSurface
                 ),
-              modifier = Modifier.size(ICON_BUTTON_SIZE),
+              modifier = Modifier.size(40.dp),
             ) {
               Icon(
                 Icons.Rounded.Stop,
                 contentDescription = stringResource(R.string.cd_stop_icon),
-                tint = MaterialTheme.colorScheme.primary,
+                tint = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.size(20.dp),
               )
             }
           } else {
             // Send button
-            OutlinedIconButton(
+            IconButton(
               enabled = !inProgress && curTextInputContent.isNotEmpty(),
               onClick = {
                 focusManager.clearFocus()
@@ -372,19 +388,17 @@ fun PromptTemplatesPanel(
               },
               colors =
                 IconButtonDefaults.iconButtonColors(
-                  containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                  disabledContainerColor =
-                    MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
-                  contentColor = MaterialTheme.colorScheme.onSurface,
-                  disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
+                  containerColor = MaterialTheme.colorScheme.primary,
+                  contentColor = MaterialTheme.colorScheme.onPrimary,
+                  disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                  disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                 ),
-              border = BorderStroke(width = 1.dp, color = MaterialTheme.colorScheme.surface),
-              modifier = Modifier.size(ICON_BUTTON_SIZE),
+              modifier = Modifier.size(40.dp),
             ) {
               Icon(
-                Icons.AutoMirrored.Rounded.Send,
+                Icons.Rounded.ArrowUpward,
                 contentDescription = stringResource(R.string.cd_send_prompt_icon),
-                modifier = Modifier.size(20.dp).offset(x = 2.dp),
+                modifier = Modifier.size(20.dp),
               )
             }
           }
