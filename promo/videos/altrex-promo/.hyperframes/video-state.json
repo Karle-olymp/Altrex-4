@@ -1345,5 +1345,16 @@
         "attribution": "unversioned"
       }
     ]
-  }
+  },
+  "renders": {
+    "latest": {
+      "id": "2ffaa505-78df-45cf-b26d-5a18b231234d",
+      "completedAt": 1792080379143,
+      "output": "/home/user/Altrex-4/promo/videos/altrex-promo/renders/altrex-9x16.mp4",
+      "status": "completed",
+      "revision": null
+    },
+    "retainedRevisions": []
+  },
+  "pendingArtifactCleanup": []
 }

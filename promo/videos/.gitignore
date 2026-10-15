@@ -6,3 +6,4 @@ renders/
 .hyperframes/frame-packets/
 package-lock.json
 audio_request.json
+.hyperframes/render-outputs.json
