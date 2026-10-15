@@ -77,6 +77,7 @@ import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AudioFile
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FlipCameraAndroid
 import androidx.compose.material.icons.rounded.History
@@ -107,6 +108,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -317,21 +319,92 @@ fun MessageInputText(
       }
     }
 
-  // [ALTREX] Dictation through Android's speech recognizer (works offline with the French pack).
-  // The recognized text is added to what is already typed.
-  val dictationLauncher =
-    rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-      if (result.resultCode == android.app.Activity.RESULT_OK) {
-        val spoken =
-          result.data
-            ?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)
-            ?.firstOrNull()
-        if (!spoken.isNullOrBlank()) {
-          onValueChanged(if (curMessage.isBlank()) spoken else "${curMessage.trimEnd()} $spoken")
-        }
-      }
+  // [ALTREX] Dictation inside the input (no Google dialog): Android's SpeechRecognizer in French,
+  // with live partial text and a level meter. The result is added to what is already typed.
+  var dictating by remember { mutableStateOf(false) }
+  var dictationLevel by remember { mutableStateOf(0f) }
+  var dictationPartial by remember { mutableStateOf("") }
+  val currentMessage by rememberUpdatedState(curMessage)
+  val speechRecognizer = remember {
+    if (android.speech.SpeechRecognizer.isRecognitionAvailable(context)) {
+      android.speech.SpeechRecognizer.createSpeechRecognizer(context)
+    } else {
+      null
     }
-  val startDictation: () -> Unit = {
+  }
+  DisposableEffect(speechRecognizer) { onDispose { speechRecognizer?.destroy() } }
+  val stopDictation: (Boolean) -> Unit = { keep ->
+    if (keep) speechRecognizer?.stopListening() else speechRecognizer?.cancel()
+    if (!keep) {
+      dictating = false
+      dictationPartial = ""
+    }
+  }
+  val startListening: () -> Unit = start@{
+    val recognizer = speechRecognizer
+    if (recognizer == null) {
+      android.widget.Toast.makeText(
+          context,
+          "Aucune reconnaissance vocale disponible sur ce téléphone.",
+          android.widget.Toast.LENGTH_LONG,
+        )
+        .show()
+      return@start
+    }
+    recognizer.setRecognitionListener(
+      object : android.speech.RecognitionListener {
+        override fun onReadyForSpeech(params: android.os.Bundle?) {}
+
+        override fun onBeginningOfSpeech() {}
+
+        override fun onRmsChanged(rmsdB: Float) {
+          dictationLevel = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
+        }
+
+        override fun onBufferReceived(buffer: ByteArray?) {}
+
+        override fun onEndOfSpeech() {}
+
+        override fun onError(error: Int) {
+          dictating = false
+          dictationPartial = ""
+          if (
+            error != android.speech.SpeechRecognizer.ERROR_NO_MATCH &&
+              error != android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT &&
+              error != android.speech.SpeechRecognizer.ERROR_CLIENT
+          ) {
+            android.widget.Toast.makeText(
+                context,
+                "Dictée interrompue (erreur $error).",
+                android.widget.Toast.LENGTH_SHORT,
+              )
+              .show()
+          }
+        }
+
+        override fun onResults(results: android.os.Bundle?) {
+          val spoken =
+            results
+              ?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)
+              ?.firstOrNull()
+          if (!spoken.isNullOrBlank()) {
+            val typed = currentMessage
+            onValueChanged(if (typed.isBlank()) spoken else "${typed.trimEnd()} $spoken")
+          }
+          dictating = false
+          dictationPartial = ""
+        }
+
+        override fun onPartialResults(partialResults: android.os.Bundle?) {
+          partialResults
+            ?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)
+            ?.firstOrNull()
+            ?.let { dictationPartial = it }
+        }
+
+        override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
+      }
+    )
     val intent =
       Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
         putExtra(
@@ -339,17 +412,26 @@ fun MessageInputText(
           android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
         )
         putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, "fr-FR")
-        putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Parle, je t'écoute…")
+        putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+        putExtra(android.speech.RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
       }
-    try {
-      dictationLauncher.launch(intent)
-    } catch (e: android.content.ActivityNotFoundException) {
-      android.widget.Toast.makeText(
-          context,
-          "Aucune reconnaissance vocale disponible sur ce téléphone.",
-          android.widget.Toast.LENGTH_LONG,
-        )
-        .show()
+    dictationPartial = ""
+    dictationLevel = 0f
+    dictating = true
+    recognizer.startListening(intent)
+  }
+  val dictationPermissionLauncher =
+    rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+      if (granted) startListening()
+    }
+  val startDictation: () -> Unit = {
+    if (
+      ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+        PackageManager.PERMISSION_GRANTED
+    ) {
+      startListening()
+    } else {
+      dictationPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
     }
   }
 
@@ -427,6 +509,14 @@ fun MessageInputText(
                     RoundedCornerShape(26.dp),
                   )
             ) {
+              if (dictating) {
+                DictationBar(
+                  level = dictationLevel,
+                  partialText = dictationPartial,
+                  onCancel = { stopDictation(false) },
+                  onDone = { stopDictation(true) },
+                )
+              } else {
               // First row: text field for input.
               Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -652,6 +742,7 @@ fun MessageInputText(
                   }
                 }
                 }
+              }
               }
             }
 
@@ -1295,5 +1386,86 @@ private fun AddContentRow(
       modifier = Modifier.size(20.dp),
     )
     Text(label, style = MaterialTheme.typography.bodyLarge)
+  }
+}
+
+/** [ALTREX] Live dictation bar: cancel, level meter, partial text, elapsed time, validate. */
+@Composable
+private fun DictationBar(
+  level: Float,
+  partialText: String,
+  onCancel: () -> Unit,
+  onDone: () -> Unit,
+) {
+  var seconds by remember { mutableIntStateOf(0) }
+  LaunchedEffect(Unit) {
+    while (true) {
+      kotlinx.coroutines.delay(1000)
+      seconds++
+    }
+  }
+  val smoothLevel by animateFloatAsState(targetValue = level, animationSpec = tween(120), label = "lvl")
+  val wave by
+    androidx.compose.animation.core.rememberInfiniteTransition(label = "dictationWave")
+      .animateFloat(
+        initialValue = 0f,
+        targetValue = (2 * Math.PI).toFloat(),
+        animationSpec =
+          androidx.compose.animation.core.infiniteRepeatable(
+            tween(1200, easing = androidx.compose.animation.core.LinearEasing)
+          ),
+        label = "wave",
+      )
+  val primary = MaterialTheme.colorScheme.primary
+  val tertiary = MaterialTheme.colorScheme.tertiary
+  Row(
+    modifier = Modifier.fillMaxWidth().padding(8.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(10.dp),
+  ) {
+    IconButton(
+      onClick = onCancel,
+      modifier = Modifier.size(40.dp),
+      colors =
+        IconButtonDefaults.iconButtonColors(
+          containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+    ) {
+      Icon(Icons.Rounded.Close, contentDescription = "Annuler la dictée", modifier = Modifier.size(18.dp))
+    }
+    Column(modifier = Modifier.weight(1f)) {
+      androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxWidth().height(26.dp)) {
+        val bars = 18
+        val gap = size.width / bars
+        for (i in 0 until bars) {
+          val phase = kotlin.math.sin(wave + i * 0.55f) * 0.5f + 0.5f
+          val h = size.height * (0.15f + 0.85f * smoothLevel * (0.35f + 0.65f * phase))
+          drawRoundRect(
+            color = if (i < bars / 2) primary else tertiary,
+            topLeft = androidx.compose.ui.geometry.Offset(i * gap + gap * 0.3f, (size.height - h) / 2f),
+            size = androidx.compose.ui.geometry.Size(gap * 0.4f, h),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(gap * 0.2f, gap * 0.2f),
+          )
+        }
+      }
+      Text(
+        if (partialText.isNotEmpty()) partialText else "Je t'écoute… · ${seconds / 60}:${"%02d".format(seconds % 60)}",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 2,
+        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+      )
+    }
+    IconButton(
+      onClick = onDone,
+      modifier = Modifier.size(40.dp),
+      colors =
+        IconButtonDefaults.iconButtonColors(
+          containerColor = MaterialTheme.colorScheme.primary,
+          contentColor = MaterialTheme.colorScheme.onPrimary,
+        ),
+    ) {
+      Icon(Icons.Rounded.Check, contentDescription = "Valider la dictée", modifier = Modifier.size(20.dp))
+    }
   }
 }

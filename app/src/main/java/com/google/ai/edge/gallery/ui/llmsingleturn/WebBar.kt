@@ -1,5 +1,8 @@
 package com.google.ai.edge.gallery.ui.llmsingleturn
 
+import androidx.compose.material.icons.Icons
+import com.google.ai.edge.gallery.ui.common.ToolStatusBar
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -47,25 +50,18 @@ fun WebBar(modifier: Modifier = Modifier) {
     }
   }
 
-  Row(
-    modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp),
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.SpaceBetween,
-  ) {
-    Text(
-      text = "🌐 Recherche web",
-      style = MaterialTheme.typography.labelMedium,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    TextButton(
-      onClick = {
-        keyInput = ""
-        showKeyDialog = true
-      }
-    ) {
-      Text(if (hasKey) "🔑 Clé Brave : enregistrée" else "🔑 Clé Brave : absente")
-    }
-  }
+  // [ALTREX] Shared status bar (icon + label, key pill) instead of emoji text.
+  ToolStatusBar(
+    icon = Icons.Outlined.Language,
+    label = "Recherche web",
+    keyName = "Clé Brave",
+    hasKey = hasKey,
+    onKeyClicked = {
+      keyInput = ""
+      showKeyDialog = true
+    },
+    modifier = modifier,
+  )
 
   if (showKeyDialog) {
     SecretEditorDialog(
