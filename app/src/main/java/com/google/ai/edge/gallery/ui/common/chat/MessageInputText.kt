@@ -317,6 +317,42 @@ fun MessageInputText(
       }
     }
 
+  // [ALTREX] Dictation through Android's speech recognizer (works offline with the French pack).
+  // The recognized text is added to what is already typed.
+  val dictationLauncher =
+    rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+      if (result.resultCode == android.app.Activity.RESULT_OK) {
+        val spoken =
+          result.data
+            ?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+        if (!spoken.isNullOrBlank()) {
+          onValueChanged(if (curMessage.isBlank()) spoken else "${curMessage.trimEnd()} $spoken")
+        }
+      }
+    }
+  val startDictation: () -> Unit = {
+    val intent =
+      Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(
+          android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+          android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+        )
+        putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, "fr-FR")
+        putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Parle, je t'écoute…")
+      }
+    try {
+      dictationLauncher.launch(intent)
+    } catch (e: android.content.ActivityNotFoundException) {
+      android.widget.Toast.makeText(
+          context,
+          "Aucune reconnaissance vocale disponible sur ce téléphone.",
+          android.widget.Toast.LENGTH_LONG,
+        )
+        .show()
+    }
+  }
+
   DisposableEffect(lifecycleOwner) {
     lifecycleOwner.lifecycle.addObserver(sensorObserver)
     onDispose { lifecycleOwner.lifecycle.removeObserver(sensorObserver) }
@@ -528,6 +564,25 @@ fun MessageInputText(
                   }
                 }
 
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                // [ALTREX] Dictation button, next to send.
+                if (!inProgress) {
+                  IconButton(
+                    onClick = startDictation,
+                    enabled = !isResettingSession && !modelInitializing,
+                    modifier = Modifier.size(40.dp),
+                  ) {
+                    Icon(
+                      Icons.Rounded.Mic,
+                      contentDescription = "Dicter",
+                      tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                      modifier = Modifier.size(20.dp),
+                    )
+                  }
+                }
                 // Stop button.
                 if (inProgress && showStopButtonWhenInProgress) {
                   if (!modelInitializing && !modelPreparing) {
@@ -595,6 +650,7 @@ fun MessageInputText(
                       modifier = Modifier.size(20.dp),
                     )
                   }
+                }
                 }
               }
             }

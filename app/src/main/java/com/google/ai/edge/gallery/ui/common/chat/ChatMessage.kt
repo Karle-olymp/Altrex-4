@@ -121,6 +121,8 @@ open class ChatMessageText(
   override val accelerator: String = "",
   override val hideSenderLabel: Boolean = false,
   var data: Any? = null,
+  // [ALTREX] Generation speed of an agent answer, shown under it; negative hides it.
+  val tokensPerSecond: Float = -1f,
 ) :
   ChatMessage(
     type = ChatMessageType.TEXT,
@@ -140,6 +142,7 @@ open class ChatMessageText(
         llmBenchmarkResult = llmBenchmarkResult,
         hideSenderLabel = hideSenderLabel,
         data = data,
+        tokensPerSecond = tokensPerSecond,
       )
     return cloned
   }

@@ -204,6 +204,9 @@ open class LlmChatViewModelBase(
 
       var firstRun = true
       val start = System.currentTimeMillis()
+      // [ALTREX] Streamed chunks and time of the first one, for the tokens/s shown under the answer.
+      var streamedChunks = 0
+      var firstChunkMs = 0L
 
       if (sessionStoppedByModel[model.name] == true) {
         sessionStoppedByModel[model.name] = false
@@ -301,11 +304,23 @@ open class LlmChatViewModelBase(
 
               // Incrementally update the streamed partial results.
               val latencyMs: Long = if (event.done) System.currentTimeMillis() - start else -1
+              if (event.token.isNotEmpty()) {
+                if (streamedChunks == 0) firstChunkMs = System.currentTimeMillis()
+                streamedChunks++
+              }
+              val genMs = System.currentTimeMillis() - firstChunkMs
+              val tokensPerSecond =
+                if (event.done && streamedChunks > 1 && genMs > 0) {
+                  (streamedChunks - 1) * 1000f / genMs
+                } else {
+                  -1f
+                }
               if (event.token.isNotEmpty() || wasLoading || event.done) {
                 updateLastTextMessageContentIncrementally(
                   model = model,
                   partialContent = event.token,
                   latencyMs = latencyMs.toFloat(),
+                  tokensPerSecond = tokensPerSecond,
                 )
               }
             }
