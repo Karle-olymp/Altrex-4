@@ -200,7 +200,7 @@ constructor(
     model: Model,
     onDone: () -> Unit,
   ) {
-    executor.cleanUp(onDone = onDone)
+    executor.cleanUpModel(model = model, onDone = onDone)
   }
 
   @Composable

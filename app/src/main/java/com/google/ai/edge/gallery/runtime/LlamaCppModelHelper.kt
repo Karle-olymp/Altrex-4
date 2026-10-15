@@ -46,6 +46,8 @@ data class LlamaCppModelInstance(
   val llamaHelper: LlamaHelper,
   val sharedFlow: MutableSharedFlow<LlamaHelper.LLMEvent>,
   var inferenceJob: Job? = null,
+  /** Context size really used by the engine (may be smaller than the configured one). */
+  val contextLength: Int = 4096,
   /** Ends the request in flight (reports "done" once). */
   @Volatile var finishCurrent: (() -> Unit)? = null,
 )
@@ -86,23 +88,29 @@ object LlamaCppModelHelper : LlmModelHelper {
       model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN)
     val modelPath = model.getPath(context = context)
 
-    // Memory guard. A big model (for example an 8B, about 5 GB) next to Android and the other apps
-    // can get the process killed without any error message, so check first and shrink the context.
+    // Memory guard. A big model next to Android and the other apps can get the process killed
+    // without any error message. [ALTREX] Count the KV cache too (it grows with the context) and
+    // shrink the context before giving up.
     val fileBytes = java.io.File(modelPath).length()
     val memInfo = android.app.ActivityManager.MemoryInfo()
     (context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager)
       .getMemoryInfo(memInfo)
     val megabyte = 1024L * 1024L
-    // The KV cache grows with the context: cap it for big models.
-    val contextLength = if (fileBytes > 4_000L * megabyte) minOf(maxTokens, 4096) else maxTokens
+    // Rough KV cache cost per context token (f16): ~32 KB for 1B models up to ~160 KB for 8B.
+    val kvBytesPerToken = (fileBytes / 30_000L).coerceIn(32L * 1024L, 160L * 1024L)
+    fun needed(ctx: Int) = fileBytes + 400L * megabyte + ctx * kvBytesPerToken
+    var contextLength = if (fileBytes > 4_000L * megabyte) minOf(maxTokens, 4096) else maxTokens
+    while (contextLength > 2048 && fileBytes > 0 && memInfo.availMem < needed(contextLength)) {
+      contextLength /= 2
+    }
     Log.i(
       TAG,
       "Loading '${model.name}': file=${fileBytes / megabyte} MB, available RAM=${memInfo.availMem / megabyte} MB, " +
         "context=$contextLength (asked $maxTokens)",
     )
-    if (fileBytes > 0 && memInfo.availMem < fileBytes + 400L * megabyte) {
+    if (fileBytes > 0 && memInfo.availMem < needed(contextLength)) {
       val msg =
-        "Mémoire insuffisante pour charger ce modèle : environ ${(fileBytes + 400L * megabyte) / megabyte} Mo " +
+        "Mémoire insuffisante pour charger ce modèle : environ ${needed(contextLength) / megabyte} Mo " +
           "nécessaires, ${memInfo.availMem / megabyte} Mo disponibles. Ferme d'autres applications " +
           "ou choisis un modèle plus petit."
       model.markInitializationFailed(msg)
@@ -110,55 +118,42 @@ object LlamaCppModelHelper : LlmModelHelper {
       return
     }
 
-    var hasCompletedInit = false
-
-    scope.launch {
-      sharedFlow.collect { event ->
-        when (event) {
-          is LlamaHelper.LLMEvent.Loaded -> {
-            if (!hasCompletedInit) {
-              hasCompletedInit = true
-              model.instance =
-                LlamaCppModelInstance(llamaHelper = llamaHelper, sharedFlow = sharedFlow)
-              model.markInitialized()
-              onDone("")
-            }
-          }
-          is LlamaHelper.LLMEvent.Error -> {
-            if (!hasCompletedInit) {
-              hasCompletedInit = true
-              val errorMsg = event.message
-              model.markInitializationFailed(errorMsg)
-              onDone(errorMsg)
-            }
-          }
-          else -> {}
-        }
-      }
-    }
-
+    // [ALTREX] One completion path, reported exactly once (the shared-flow collector could miss
+    // the events and both paths could fire).
+    val initDone = java.util.concurrent.atomic.AtomicBoolean(false)
+    val effectiveContext = contextLength
     try {
       llamaHelper.load(
         path = modelPath,
         contextLength = contextLength,
         mmprojPath = null,
+        onError = { errorMsg ->
+          if (initDone.compareAndSet(false, true)) {
+            Log.e(TAG, "Failed to load '${model.name}': $errorMsg")
+            model.markInitializationFailed(errorMsg)
+            onDone(errorMsg)
+          }
+        },
       ) { contextId ->
-        Log.d(TAG, "LlamaHelper loaded callback with contextId=$contextId")
-        Log.i(TAG, "Modèle chargé avec contexte: $contextLength tokens")
-
-        if (!hasCompletedInit) {
-          hasCompletedInit = true
+        Log.i(TAG, "Model loaded, context id=$contextId, $effectiveContext tokens")
+        if (initDone.compareAndSet(false, true)) {
           model.instance =
-            LlamaCppModelInstance(llamaHelper = llamaHelper, sharedFlow = sharedFlow)
+            LlamaCppModelInstance(
+              llamaHelper = llamaHelper,
+              sharedFlow = sharedFlow,
+              contextLength = effectiveContext,
+            )
           model.markInitialized()
           onDone("")
         }
       }
     } catch (e: Exception) {
       Log.e(TAG, "Failed to load llama model: ${e.message}", e)
-      val errorMsg = e.message ?: "Unknown initialization error"
-      model.markInitializationFailed(errorMsg)
-      onDone(errorMsg)
+      if (initDone.compareAndSet(false, true)) {
+        val errorMsg = e.message ?: "Unknown initialization error"
+        model.markInitializationFailed(errorMsg)
+        onDone(errorMsg)
+      }
     }
   }
 
@@ -177,23 +172,25 @@ object LlamaCppModelHelper : LlmModelHelper {
 
   override fun cleanUp(model: Model, onDone: () -> Unit) {
     val instance = model.instance as? LlamaCppModelInstance
-    if (instance != null) {
-      try {
-        instance.inferenceJob?.cancel()
-        instance.llamaHelper.stopPrediction()
-        instance.llamaHelper.release()
-      } catch (e: Exception) {
-        Log.e(TAG, "Failed to release llama instance: ${e.message}", e)
-      }
-    }
-
     val onCleanUp = cleanUpListeners.remove(model.name)
-    if (onCleanUp != null) {
-      onCleanUp()
+    val finishCleanUp = {
+      onCleanUp?.invoke()
+      model.resetInitialization()
+      onDone()
+      Log.d(TAG, "Llama clean up done for model '${model.name}'")
     }
-    model.resetInitialization()
-    onDone()
-    Log.d(TAG, "Llama clean up done for model '${model.name}'")
+    if (instance == null) {
+      finishCleanUp()
+      return
+    }
+    try {
+      instance.finishCurrent?.invoke()
+      // [ALTREX] Frees the native context only once the running generation has returned.
+      instance.llamaHelper.release { finishCleanUp() }
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to release llama instance: ${e.message}", e)
+      finishCleanUp()
+    }
   }
 
   override fun stopResponse(model: Model) {
@@ -224,9 +221,7 @@ object LlamaCppModelHelper : LlmModelHelper {
       return
     }
 
-    if (!cleanUpListeners.containsKey(model.name)) {
-      cleanUpListeners[model.name] = cleanUpListener
-    }
+    cleanUpListeners[model.name] = cleanUpListener
 
     // [ALTREX] Direct callbacks (no shared flow: events sent before the collector subscribed were
     // lost, and "done" could arrive twice). "done" is reported exactly once.
@@ -238,8 +233,7 @@ object LlamaCppModelHelper : LlmModelHelper {
     }
     instance.finishCurrent = { finish(null) }
 
-    val maxTokens =
-      model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN)
+    val maxTokens = instance.contextLength
     val sampling =
       LlamaHelper.Sampling(
         temperature =

@@ -25,7 +25,7 @@ class LlamaHelper(
     private val llama by lazy { LlamaAndroid(contentResolver) }
     private var loadJob: Job? = null
     private var completionJob: Job? = null
-    var currentContext: Int? = null
+    @Volatile var currentContext: Int? = null
     private var tokenCount = 0
     private var allText = ""
 
@@ -60,6 +60,7 @@ class LlamaHelper(
         path: String,
         contextLength: Int,
         mmprojPath: String? = null,
+        onError: ((String) -> Unit)? = null,
         loaded: (Long) -> Unit
     ) {
         currentContext?.let { id -> llama.releaseContext(id) }
@@ -120,13 +121,15 @@ class LlamaHelper(
                     null
                 }
 
-                if (result == null) {
+                val id = result?.get("contextId") as? Number
+                if (id == null) {
+                    // [ALTREX] Reported directly: the shared flow has no replay, so an event sent
+                    // before anyone listens was lost and the model stayed "loading" forever.
                     sharedFlow.tryEmit(LLMEvent.Error("Model initialization failed"))
+                    onError?.invoke("Impossible de charger ce modèle (fichier GGUF illisible ou non pris en charge).")
                     return@launch
                 }
-
-                val id = result["contextId"] ?: throw Exception("contextId not found in result map")
-                currentContext = (id as Number).toInt()
+                currentContext = id.toInt()
 
                 Log.d("LlamaHelper", ">>> Context loaded successfully with ID: $currentContext")
                 sharedFlow.tryEmit(LLMEvent.Loaded(path))
@@ -135,6 +138,7 @@ class LlamaHelper(
         } catch (e: Exception) {
             Log.e("LlamaHelper", "Failed to prepare model loading", e)
             sharedFlow.tryEmit(LLMEvent.Error("Failed to open files: ${e.message}"))
+            onError?.invoke("Impossible d'ouvrir le fichier du modèle : ${e.message}")
         }
     }
 
@@ -190,6 +194,10 @@ class LlamaHelper(
                     delay(20)
                     waited += 20
                 }
+                if (llama.isPredicting(context)) {
+                    onError?.invoke("Le moteur est bloqué sur la génération précédente. Recharge le modèle.")
+                    return@withLock
+                }
 
                 val startTime = System.currentTimeMillis()
                 tokenCount = 0
@@ -214,16 +222,33 @@ class LlamaHelper(
 
                 tokenListener = onToken
                 sharedFlow.tryEmit(LLMEvent.Started(prompt))
+                // [ALTREX] The native side clears its stop flag when a generation starts: a Stop
+                // pressed just before that would be lost, so keep re-applying it while it runs.
+                val stopWatcher = scope.launch {
+                    while (true) {
+                        if (stopEpoch != epoch) {
+                            llama.stopCompletionNow(context)
+                            break
+                        }
+                        delay(50)
+                    }
+                }
                 val result = try {
                     llama.launchCompletion(id = context, params = params)
                 } finally {
                     tokenListener = null
+                    stopWatcher.cancel()
                 }
                 val duration = System.currentTimeMillis() - startTime
                 lastGenMs = (duration - lastPrefillMs).coerceAtLeast(0L)
                 lastTokens = tokenCount
                 if (result == null && allText.isEmpty()) {
                     onError?.invoke("La génération a échoué.")
+                } else if (allText.isEmpty() && result?.get("context_full") == true) {
+                    onError?.invoke(
+                        "La conversation est trop longue pour le contexte du modèle. " +
+                            "Commence une nouvelle conversation ou augmente « Tokens max »."
+                    )
                 } else {
                     onDone?.invoke(allText)
                 }
@@ -299,11 +324,34 @@ class LlamaHelper(
         llama.stopCompletionNow(id)
     }
 
-    fun release() {
-        currentContext?.let { id ->
-            llama.releaseContext(id)
-        }
+    /**
+     * Frees the native context. [ALTREX] Waits for a running generation to end first: freeing it
+     * while llama_decode is still running on another thread is a use-after-free (native crash).
+     */
+    fun release(onReleased: () -> Unit = {}) {
+        val id = currentContext
         currentContext = null
+        if (id == null) {
+            onReleased()
+            return
+        }
+        stopEpoch++
+        llama.stopCompletionNow(id)
+        scope.launch {
+            predictMutex.withLock {
+                var waited = 0
+                while (llama.isPredicting(id) && waited < 15_000) {
+                    delay(20)
+                    waited += 20
+                }
+                try {
+                    llama.releaseContext(id)
+                } catch (e: Exception) {
+                    Log.e("LlamaHelper", "Failed to release context", e)
+                }
+            }
+            onReleased()
+        }
     }
 
     fun abort() {

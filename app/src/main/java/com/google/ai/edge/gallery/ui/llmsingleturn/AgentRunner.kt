@@ -215,8 +215,10 @@ object AgentRunner {
     response: String,
     profile: AgentProfile,
   ) {
-    val calls = ToolCalling.parseToolCalls(response)
-    val visible = ToolCalling.stripToolCalls(response)
+    // Reasoning is neither shown, executed nor sent back to the model.
+    val answer = ToolCalling.stripThinking(response)
+    val calls = ToolCalling.parseToolCalls(answer)
+    val visible = ToolCalling.stripToolCalls(answer)
 
     if (calls.isEmpty()) {
       // Final answer. If the user asked for an action and the model used no tool at all, say so.
@@ -244,7 +246,7 @@ object AgentRunner {
       results.add(outcome.result)
       if (outcome.endTurn) endTurn = true
     }
-    messages.add(AgentMsg("assistant", response.trim()))
+    messages.add(AgentMsg("assistant", answer.trim()))
     messages.add(ToolCalling.toolResponseMessage(results))
 
     val newDisplay =
@@ -273,6 +275,11 @@ object AgentRunner {
     }
 
     delay(500)
+    // [ALTREX] Stop pressed during the pause: end here instead of starting another generation.
+    if (!viewModel.uiState.value.inProgress) {
+      saveSession(model, profile, instruction, newDisplay, "")
+      return
+    }
     step(
       scope = scope,
       context = context,

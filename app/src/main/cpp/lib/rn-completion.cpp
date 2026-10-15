@@ -29,6 +29,9 @@ llama_rn_context_completion::~llama_rn_context_completion() {
 
 void llama_rn_context_completion::rewind() {
     is_interrupted = false;
+    // [ALTREX] A stale "true" from a stopped turn made a prompt that does not fit replay the old
+    // tokens instead of ending.
+    has_next_token = false;
     parent_ctx->params.antiprompt.clear();
     parent_ctx->params.sampling.grammar = {};
     parent_ctx->params.sampling.grammar_lazy = false;
@@ -118,6 +121,7 @@ void llama_rn_context_completion::loadPrompt(const std::vector<std::string> &med
         if (num_prompt_tokens >= (size_t)parent_ctx->n_ctx) {
             if (!parent_ctx->params.ctx_shift) {
                 context_full = true;
+                has_next_token = false;
                 return;
             }
             truncatePrompt(text_tokens);
@@ -144,6 +148,20 @@ void llama_rn_context_completion::loadPrompt(const std::vector<std::string> &med
         // Manage KV cache
         auto * kv = llama_get_memory(parent_ctx->ctx);
         bool cache_remove_success = llama_memory_seq_rm(kv, 0, n_past, -1);
+
+        // [ALTREX] Sliding-window models (Gemma 3...): the SWA cache only keeps the last n_swa
+        // positions. If the cells needed before n_past were already overwritten, reusing the
+        // prefix gives garbage: reprocess the whole prompt instead (same guard as llama-server).
+        if (cache_remove_success && n_past > 0) {
+            const int32_t n_swa = llama_model_n_swa(parent_ctx->model);
+            if (n_swa > 0) {
+                const llama_pos pos_min = llama_memory_seq_pos_min(kv, 0);
+                if (pos_min > std::max(0, (int) n_past - n_swa)) {
+                    LOG_WARNING("SWA cache does not cover the reused prefix, full reprocess");
+                    cache_remove_success = false;
+                }
+            }
+        }
 
         // For hybrid models (LFM-2, Granite, Mamba, etc.), partial cache removal may fail
         // In that case, do a full cache clear to prevent contamination
@@ -413,6 +431,9 @@ completion_token_output llama_rn_context_completion::doCompletion()
     }
 
     // check if there is incomplete UTF-8 character at the end
+    // [ALTREX] Reset first: a stale "true" froze streaming and disabled n_predict for the rest of
+    // the answer (upstream uses a fresh local here).
+    incomplete = false;
     for (unsigned i = 1; i < 5 && i <= generated_text.size(); ++i) {
         unsigned char c = generated_text[generated_text.size() - i];
         if ((c & 0xC0) == 0x80) {

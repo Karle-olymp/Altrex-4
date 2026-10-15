@@ -1266,7 +1266,7 @@ constructor(
     val isGguf = info.fileName.endsWith(".gguf")
     val configs: MutableList<Config> =
       createLlmChatConfigs(
-          defaultMaxToken = if (isGguf) maxOf(llmMaxToken, 8192) else llmMaxToken,
+          defaultMaxToken = llmMaxToken,
           defaultMaxContextLength = if (isGguf) 16384 else null,
           defaultTopK = info.llmConfig.defaultTopk,
           defaultTopP = info.llmConfig.defaultTopp,

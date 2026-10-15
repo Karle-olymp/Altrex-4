@@ -1,3 +1,4 @@
+#include <atomic>
 #ifndef RN_COMPLETION_H
 #define RN_COMPLETION_H
 
@@ -54,8 +55,9 @@ struct llama_rn_context_completion {
     llama_rn_context* parent_ctx;
 
     // Completion state fields
-    bool is_predicting = false;
-    bool is_interrupted = false;
+    // [ALTREX] Written by the Stop / UI thread, read by the decoding thread.
+    std::atomic<bool> is_predicting{false};
+    std::atomic<bool> is_interrupted{false};
     bool has_next_token = false;
     std::string prefill_text;
     std::string generated_text;

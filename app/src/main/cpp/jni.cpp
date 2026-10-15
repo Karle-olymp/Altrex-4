@@ -217,7 +217,7 @@ static inline void addStringArrayList(JNIEnv *env, jobject arrayList, const char
     jclass arrayListClass = env->FindClass("java/util/ArrayList");
     jmethodID addMethod = env->GetMethodID(arrayListClass, "add", "(Ljava/lang/Object;)Z");
 
-    jstring jValue = env->NewStringUTF(value);
+    jstring jValue = utf8ToJString(env, value);
     if (env->ExceptionCheck()) {
         env->ExceptionClear();
         jValue = env->NewStringUTF("");
@@ -226,6 +226,7 @@ static inline void addStringArrayList(JNIEnv *env, jobject arrayList, const char
     env->CallBooleanMethod(arrayList, addMethod, jValue);
     
     if (jValue) env->DeleteLocalRef(jValue);
+    env->DeleteLocalRef(arrayListClass);
 }
 
 // Helper method to add a HashMap to a Java ArrayList
@@ -345,8 +346,9 @@ Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
         defaultParams.lora_adapters.push_back({lora_chars, lora_scaled, "", "", nullptr});
     }
 
+    int dup_mmproj_fd = -1;
     if (mmproj_fd >= 0) {
-        int dup_mmproj_fd = dup(mmproj_fd);
+        dup_mmproj_fd = dup(mmproj_fd);
         if (dup_mmproj_fd != -1) {
             char mmproj_path[32];
             snprintf(mmproj_path, 32, "%d", dup_mmproj_fd);
@@ -360,7 +362,20 @@ Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
     defaultParams.rope_freq_scale = rope_freq_scale;
 
     auto llama = new rnllama::llama_rn_context();
-    bool ok = llama->loadModel(defaultParams);
+    bool ok = false;
+    // [ALTREX] A C++ exception escaping JNI aborts the app: report a failed load instead.
+    try {
+        ok = llama->loadModel(defaultParams);
+    } catch (const std::exception &e) {
+        LOGW("loadModel failed: %s", e.what());
+        ok = false;
+    } catch (...) {
+        LOGW("loadModel failed with an unknown exception");
+        ok = false;
+    }
+    // The loader opened its own copy of the fd and the weights are mapped: ours can go (otherwise
+    // every load leaks a descriptor that keeps the multi-GB file alive after it is deleted).
+    close(dupfd);
 
     if (ok) {
         // [ALTREX] Verrouillage propre lors de l'enregistrement du pointeur
@@ -378,13 +393,19 @@ Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
         
         if (!defaultParams.mmproj.path.empty()) {
             LOGI("Initializing multimodal with mmproj: %s", defaultParams.mmproj.path.c_str());
-            bool mm_ok = llama->initMultimodal(defaultParams.mmproj.path, n_gpu_layers > 0);
+            bool mm_ok = false;
+            try {
+                mm_ok = llama->initMultimodal(defaultParams.mmproj.path, n_gpu_layers > 0);
+            } catch (const std::exception &e) {
+                LOGW("initMultimodal failed: %s", e.what());
+            }
             LOGI("Multimodal initialization result: %s", mm_ok ? "success" : "failed");
             LOGI("Context multimodal enabled check: %s", llama->isMultimodalEnabled() ? "yes" : "no");
         }
     } else {
         delete llama;
     }
+    if (dup_mmproj_fd != -1) close(dup_mmproj_fd);
 
     env->ReleaseStringUTFChars(lora_str, lora_chars);
     return ok ? reinterpret_cast<jlong>(llama->ctx) : 0;
@@ -746,11 +767,23 @@ Java_org_nehuatl_llamacpp_LlamaContext_doCompletion(
         llama->completion->endCompletion();
     } catch (const std::exception& e) {
         LOGW("doCompletion: Caught exception: %s", e.what());
+        // [ALTREX] Otherwise the context stays "busy" and every later request fails.
+        llama->completion->embd.resize(std::min(llama->completion->embd.size(), (size_t) std::max(0, (int) llama->completion->n_past)));
+        llama->completion->endCompletion();
     } catch (...) {
         LOGW("doCompletion: Caught unknown exception");
+        llama->completion->embd.resize(std::min(llama->completion->embd.size(), (size_t) std::max(0, (int) llama->completion->n_past)));
+        llama->completion->endCompletion();
     }
 
-    return createHashMap(env);
+    // [ALTREX] Tell Kotlin why the turn ended (an empty answer because the prompt did not fit the
+    // context used to look like a normal, empty reply).
+    auto result = createHashMap(env);
+    putBooleanHashMap(env, result, "context_full", llama->completion->context_full);
+    putBooleanHashMap(env, result, "stopped_eos", llama->completion->stopped_eos);
+    putBooleanHashMap(env, result, "stopped_limit", llama->completion->stopped_limit);
+    putBooleanHashMap(env, result, "interrupted", llama->completion->is_interrupted.load());
+    return result;
 }
 
 JNIEXPORT void JNICALL
@@ -794,9 +827,7 @@ Java_org_nehuatl_llamacpp_LlamaContext_tokenize(
     }
     if (!llama) return nullptr;
 
-    const char *text_chars = env->GetStringUTFChars(text, nullptr);
-    auto result = llama->tokenize(text_chars, {});
-    env->ReleaseStringUTFChars(text, text_chars);
+    auto result = llama->tokenize(jstringToUtf8(env, text), {});
 
     jobject list = createArrayList(env);
     for (const auto &tok : result.tokens) {
@@ -827,7 +858,7 @@ Java_org_nehuatl_llamacpp_LlamaContext_detokenize(
 
     auto text = rnllama::tokens_to_str(llama->ctx, toks.cbegin(), toks.cend());
     
-    jstring jText = env->NewStringUTF(text.c_str());
+    jstring jText = utf8ToJString(env, text);
     if (env->ExceptionCheck()) {
         env->ExceptionClear();
         jText = env->NewStringUTF("");
@@ -862,19 +893,16 @@ Java_org_nehuatl_llamacpp_LlamaContext_embedding(
     }
     if (!llama) return nullptr;
 
-    const char *text_chars = env->GetStringUTFChars(text, nullptr);
-    llama->params.prompt = text_chars;
+    llama->params.prompt = jstringToUtf8(env, text);
 
     if (llama->completion) {
         auto result = llama->completion->embedding(llama->params);
-        env->ReleaseStringUTFChars(text, text_chars);
         jobject list = createArrayList(env);
         for (const auto &val : result) {
             addDoubleArrayList(env, list, (double)val);
         }
         return list;
     }
-    env->ReleaseStringUTFChars(text, text_chars);
     return createArrayList(env);
 }
 
@@ -919,7 +947,18 @@ Java_org_nehuatl_llamacpp_LlamaContext_freeContext(
     }
     // La suppression réelle (delete) se fait hors du verrou pour ne pas bloquer les autres threads
     if (llama) {
-        delete llama; 
+        // [ALTREX] Never delete under a running generation (use-after-free): stop it and wait.
+        if (llama->completion) {
+            llama->completion->is_interrupted = true;
+            for (int i = 0; i < 1500 && llama->completion->is_predicting; i++) {
+                usleep(10 * 1000);
+            }
+            if (llama->completion->is_predicting) {
+                LOGW("freeContext: generation still running after 15 s, leaking the context");
+                return;
+            }
+        }
+        delete llama;
     }
 }
 

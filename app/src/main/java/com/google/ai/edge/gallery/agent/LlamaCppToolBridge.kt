@@ -124,6 +124,25 @@ object LlamaCppToolBridge {
     gson.toJson(mapOf("error" to message, "status" to "failed"))
 
   /**
+   * [ALTREX] Only the tools that really exist in this screen. Advertising tools that are not
+   * registered (plain chat has none) made small models call them in a loop and filled every prompt
+   * with ~600 tokens of tool boilerplate.
+   */
+  fun availableSpecs(toolsProvider: ToolsProvider): List<AgentToolSpec> {
+    val tools = toolsProvider.getAvailableTools()
+    fun has(name: String): Boolean =
+      when (name) {
+        "load_skill" -> tools.any { it is LoadSkillTool }
+        "run_js" -> tools.any { it is RunJsTool }
+        "run_intent" -> tools.any { it is RunIntentTool }
+        "runMcpTool" -> tools.any { it is RunMcpTool }
+        "webSearch" -> tools.any { it is WebSearchTool }
+        else -> false
+      }
+    return specs.filter { has(it.name) }
+  }
+
+  /**
    * Executes a parsed tool call against the active [ToolDefinition]s and returns the JSON string
    * sent back to the model inside a `<tool_response>` block.
    */

@@ -215,12 +215,21 @@ bool llama_rn_context::loadModel(common_params &params_)
     llama_init = common_init_from_params(params);
     model = llama_init->model();
     ctx = llama_init->context();
-    if (model == nullptr)
+    // [ALTREX] A failed context (not enough memory for the KV cache, bad parameters) comes back
+    // as a model with a null context: llama_n_ctx(nullptr) would crash.
+    if (model == nullptr || ctx == nullptr)
     {
         LOG_ERROR("unable to load model: %s", params_.model.path.c_str());
         return false;
     }
-    templates = common_chat_templates_init(model, params.chat_template);
+    // [ALTREX] A GGUF whose Jinja template does not parse made this throw through JNI
+    // (std::terminate, app killed while loading). Fall back to ChatML.
+    try {
+        templates = common_chat_templates_init(model, params.chat_template);
+    } catch (const std::exception &e) {
+        LOG_WARNING("chat template of the model is unusable (%s), using chatml", e.what());
+        templates = common_chat_templates_init(model, "chatml");
+    }
     n_ctx = llama_n_ctx(ctx);
 
     // Log the actual n_seq_max that was set

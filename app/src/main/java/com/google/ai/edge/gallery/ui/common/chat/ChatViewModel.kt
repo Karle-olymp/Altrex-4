@@ -162,7 +162,11 @@ abstract class ChatViewModel(val userDataDataStore: DataStore<UserData>? = null)
     if (newMessages.isNotEmpty()) {
       val lastMessage = newMessages.last()
       if (lastMessage is ChatMessageThinking) {
-        val newContent = processLlmResponse(response = "${lastMessage.content}${partialContent}")
+        // [ALTREX] llama.cpp already sends real newlines: rewriting "\\n" would corrupt code.
+        val merged = "${lastMessage.content}${partialContent}"
+        val newContent =
+          if (model.runtimeType == com.google.ai.edge.gallery.data.RuntimeType.LLAMA_CPP) merged
+          else processLlmResponse(response = merged)
         val newLastMessage =
           ChatMessageThinking(
             content = newContent,
@@ -190,7 +194,11 @@ abstract class ChatViewModel(val userDataDataStore: DataStore<UserData>? = null)
     if (newMessages.isNotEmpty()) {
       val lastMessage = newMessages.last()
       if (lastMessage is ChatMessageText) {
-        val newContent = processLlmResponse(response = "${lastMessage.content}${partialContent}")
+        // [ALTREX] llama.cpp already sends real newlines: rewriting "\\n" would corrupt code.
+        val merged = "${lastMessage.content}${partialContent}"
+        val newContent =
+          if (model.runtimeType == com.google.ai.edge.gallery.data.RuntimeType.LLAMA_CPP) merged
+          else processLlmResponse(response = merged)
         val newLastMessage =
           ChatMessageText(
             content = newContent,

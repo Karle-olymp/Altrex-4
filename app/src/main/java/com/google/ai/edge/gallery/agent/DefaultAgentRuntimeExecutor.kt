@@ -88,6 +88,12 @@ open class DefaultAgentRuntimeExecutor(
    */
   private val llamaHistory = ArrayList<AgentMsg>()
 
+  // [ALTREX] Bumped by Stop / reset: a running llama.cpp loop compares it with the value it started
+  // with, so a later request can no longer "un-stop" it (a shared boolean was reset by the next
+  // call). sessionGen only changes on reset, so an old loop never writes into a new chat's memory.
+  private val stopGen = java.util.concurrent.atomic.AtomicInteger(0)
+  private val sessionGen = java.util.concurrent.atomic.AtomicInteger(0)
+
   override suspend fun initialize(
     context: Context,
     config: AgentRuntimeConfig,
@@ -98,7 +104,20 @@ open class DefaultAgentRuntimeExecutor(
       ToolExecutionContext(taskId = config.taskId, actionChannel = config.actionChannel)
 
     interrupted.set(false)
-    synchronized(llamaHistory) { llamaHistory.clear() }
+    stopGen.incrementAndGet()
+    sessionGen.incrementAndGet()
+    synchronized(llamaHistory) {
+      llamaHistory.clear()
+      // A reloaded past chat (or the chat so far after a Stop): the model remembers it too.
+      for (msg in config.initialMessages) {
+        val text = msg.contents.toString().trim()
+        if (text.isEmpty()) continue
+        llamaHistory.add(
+          AgentMsg(if (msg.role == com.google.ai.edge.litertlm.Role.USER) "user" else "assistant", text)
+        )
+      }
+      while (llamaHistory.size > MAX_LLAMA_HISTORY) llamaHistory.removeAt(0)
+    }
     activeSession.set(
       ActiveSession(
         model = config.model,
@@ -174,8 +193,6 @@ open class DefaultAgentRuntimeExecutor(
     // same tool definitions through the ChatML / Hermes protocol. LiteRT-LM models keep using the
     // engine's built-in automatic tool calling (single runInference call below).
     if (curModel.runtimeType == RuntimeType.LLAMA_CPP) {
-      // A Stop pressed for the previous request must not cancel this one.
-      interrupted.set(false)
       val producer = this
       val loopJob =
         launch(Dispatchers.IO) {
@@ -270,6 +287,7 @@ open class DefaultAgentRuntimeExecutor(
     val curModel = activeSession.get()?.model ?: return
     Log.d(TAG, "Interrupting session for model: ${curModel.name}")
     interrupted.set(true)
+    stopGen.incrementAndGet()
     // TODO: we need to reset the conversation in executeStream if user sends a new request.
     curModel.runtimeHelper.stopResponse(curModel)
   }
@@ -280,7 +298,20 @@ open class DefaultAgentRuntimeExecutor(
       ToolExecutionContext(taskId = config.taskId, actionChannel = config.actionChannel)
 
     interrupted.set(false)
-    synchronized(llamaHistory) { llamaHistory.clear() }
+    stopGen.incrementAndGet()
+    sessionGen.incrementAndGet()
+    synchronized(llamaHistory) {
+      llamaHistory.clear()
+      // A reloaded past chat (or the chat so far after a Stop): the model remembers it too.
+      for (msg in config.initialMessages) {
+        val text = msg.contents.toString().trim()
+        if (text.isEmpty()) continue
+        llamaHistory.add(
+          AgentMsg(if (msg.role == com.google.ai.edge.litertlm.Role.USER) "user" else "assistant", text)
+        )
+      }
+      while (llamaHistory.size > MAX_LLAMA_HISTORY) llamaHistory.removeAt(0)
+    }
     activeSession.set(
       ActiveSession(
         model = config.model,
@@ -328,6 +359,15 @@ open class DefaultAgentRuntimeExecutor(
     }
   }
 
+  override fun cleanUpModel(model: Model, onDone: () -> Unit) {
+    val session = activeSession.get()
+    if (session != null && session.model.name == model.name) {
+      cleanUp(onDone)
+    } else {
+      model.runtimeHelper.cleanUp(model = model, onDone = onDone)
+    }
+  }
+
   override fun cleanUp(onDone: () -> Unit) {
     val session = activeSession.getAndSet(null)
     if (session == null) {
@@ -351,16 +391,23 @@ open class DefaultAgentRuntimeExecutor(
   ): String? {
     // Triggers the ViewModel's "first token" handling so the loading state clears even when the
     // model's first turn is a silent tool call.
-    emit(AgentEvent.StreamToken(token = "", done = false))
+    val myStop = stopGen.get()
+    val mySession = sessionGen.get()
+    val stopped = { stopGen.get() != myStop }
 
-    val system = ToolCalling.systemPrompt(LlamaCppToolBridge.specs, systemInstruction.orEmpty())
+    val specs = LlamaCppToolBridge.availableSpecs(toolsProvider)
+    val instructions =
+      systemInstruction?.takeIf { it.isNotBlank() }
+        ?: org.nehuatl.llamacpp.LlamaHelper.getDefaultSystemPrompt()
+    // No tools in this screen: a plain system prompt and a single turn.
+    val system = if (specs.isEmpty()) instructions else ToolCalling.systemPrompt(specs, instructions)
     val messages = ArrayList<AgentMsg>()
     messages.addAll(fitHistory(model, system, request.query))
     messages.add(AgentMsg("user", request.query))
     val shown = StringBuilder()
 
     for (step in 0 until MAX_LLAMA_AGENT_STEPS) {
-      if (interrupted.get()) {
+      if (stopped()) {
         return null
       }
       val prompt = ToolCalling.buildChatRequest(system, messages)
@@ -372,16 +419,19 @@ open class DefaultAgentRuntimeExecutor(
       }
       val response =
         runLlamaCppTurn(model = model, prompt = prompt) { chunk ->
-          emitSplit(splitter.feed(chunk), shown, emit)
+          // The native callback thread and this one (after a Stop) can both get here.
+          synchronized(splitter) { emitSplit(splitter.feed(chunk), shown, emit) }
         }
-      emitSplit(splitter.finish(), shown, emit)
+      synchronized(splitter) { emitSplit(splitter.finish(), shown, emit) }
 
-      val calls = ToolCalling.parseToolCalls(response)
+      // Tool calls written inside the reasoning are not real calls.
+      val calls = if (specs.isEmpty()) emptyList() else ToolCalling.parseToolCalls(stripThinking(response))
 
-      if (calls.isEmpty() || interrupted.get()) {
+      if (calls.isEmpty() || stopped()) {
         emit(AgentEvent.StreamToken(token = "", done = true))
-        rememberTurn(request.query, shown.toString().trim())
-        return shown.toString().trim()
+        if (sessionGen.get() == mySession) rememberTurn(request.query, shown.toString().trim())
+        // Stopped by the user: the loop ends here, callers must not treat it as a finished answer.
+        return if (stopped()) null else shown.toString().trim()
       }
 
       val results = ArrayList<String>()
@@ -410,17 +460,14 @@ open class DefaultAgentRuntimeExecutor(
   }
 
   /** Drops reasoning blocks from a raw answer (they must not be fed back to the model). */
-  private fun stripThinking(text: String): String =
-    text
-      .replace(
-        Regex(Regex.escape(ToolCalling.THINK_OPEN) + ".*?(?:" + Regex.escape(ToolCalling.THINK_CLOSE) + "|\\z)", RegexOption.DOT_MATCHES_ALL),
-        "",
-      )
-      .replace(ToolCalling.THINK_CLOSE, "")
+  private fun stripThinking(text: String): String = ToolCalling.stripThinking(text)
 
   /** Keeps the most recent turns that fit in about half of the context window. */
   private fun fitHistory(model: Model, system: String, query: String): List<AgentMsg> {
-    val maxTokens = model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN)
+    // The context really used by the engine (it can be smaller than the configured one).
+    val maxTokens =
+      (model.instance as? com.google.ai.edge.gallery.runtime.LlamaCppModelInstance)?.contextLength
+        ?: model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN)
     // About 3 characters per token; half of the context stays free for the answer.
     var budget = maxTokens * 3 / 2 - system.length - query.length
     val kept = ArrayList<AgentMsg>()
