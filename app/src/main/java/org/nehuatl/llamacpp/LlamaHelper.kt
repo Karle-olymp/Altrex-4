@@ -60,27 +60,26 @@ class LlamaHelper(
         path: String,
         contextLength: Int,
         mmprojPath: String? = null,
+        useMtp: Boolean = false,
         onError: ((String) -> Unit)? = null,
         loaded: (Long) -> Unit
     ) {
         currentContext?.let { id -> llama.releaseContext(id) }
 
-        try {
-            val modelUri = if (path.startsWith("content://") || path.startsWith("file://")) {
-                Uri.parse(path)
-            } else {
-                Uri.fromFile(File(path))
-            }
-            Log.d("LlamaHelper", ">>> Opening model FD for URI: $modelUri (original path: $path)")
+        val modelUri = if (path.startsWith("content://") || path.startsWith("file://")) {
+            Uri.parse(path)
+        } else {
+            Uri.fromFile(File(path))
+        }
+        Log.d("LlamaHelper", ">>> Loading model $modelUri (original path: $path), MTP=$useMtp")
 
+        // A fresh descriptor per attempt: the native side takes ownership of it.
+        fun makeConfig(withMtp: Boolean): MutableMap<String, Any> {
             val modelPfd = getParcelFileDescriptor(path)
                 ?: throw IllegalArgumentException("Cannot open model file: $path")
-            val modelFd = modelPfd.detachFd()
-            Log.d("LlamaHelper", ">>> Model FD: $modelFd")
-
             val config = mutableMapOf<String, Any>(
                 "model" to modelUri.toString(),
-                "model_fd" to modelFd,
+                "model_fd" to modelPfd.detachFd(),
                 "use_mmap" to true,
                 "use_mlock" to false,
                 "n_ctx" to contextLength,
@@ -92,53 +91,64 @@ class LlamaHelper(
                 "lora" to "",
                 "lora_scaled" to 1.0,
                 "rope_freq_base" to 0.0,
-                "rope_freq_scale" to 0.0
+                "rope_freq_scale" to 0.0,
+                "use_mtp" to withMtp,
+                "mtp_n_max" to 3,
             )
-
             mmprojPath?.let {
-                val mmPfd = getParcelFileDescriptor(it)
-                if (mmPfd != null) {
-                    val mmFd = mmPfd.detachFd()
-                    config["mmproj_fd"] = mmFd
-                    Log.d("LlamaHelper", ">>> Mmproj FD: $mmFd")
+                getParcelFileDescriptor(it)?.let { mmPfd -> config["mmproj_fd"] = mmPfd.detachFd() }
+            }
+            return config
+        }
+
+        val tokenSink: (String) -> Unit = {
+            allText += it
+            tokenCount++
+            if (tokenCount == 1) {
+                lastPrefillMs = System.currentTimeMillis() - predictStartMs
+            }
+            tokenListener?.invoke(it)
+            sharedFlow.tryEmit(LLMEvent.Ongoing(it, tokenCount))
+        }
+
+        loadJob = scope.launch {
+            var result: Map<String, Any>? = null
+            var failure: String? = null
+            try {
+                result = llama.startEngine(makeConfig(useMtp), tokenSink)
+                if (result == null && useMtp) {
+                    // [ALTREX] The model has no usable MTP layer: load it normally.
+                    Log.w("LlamaHelper", "MTP load failed, retrying without MTP")
+                    result = llama.startEngine(makeConfig(false), tokenSink)
                 }
+            } catch (e: Exception) {
+                Log.e("LlamaHelper", "Engine start failed", e)
+                failure = e.message
             }
 
-            loadJob = scope.launch {
-                Log.d("LlamaHelper", ">>> will start llama context with config: $config")
-                val result = try {
-                    llama.startEngine(config) {
-                        allText += it
-                        tokenCount++
-                        if (tokenCount == 1) {
-                            lastPrefillMs = System.currentTimeMillis() - predictStartMs
+            val id = result?.get("contextId") as? Number
+            if (id == null) {
+                // [ALTREX] Reported directly (the shared flow has no replay), with llama.cpp's own
+                // reason when it gave one (unknown architecture, missing tensor, out of memory...).
+                val native = try { LlamaContext.getLastNativeError() } catch (t: Throwable) { "" }
+                val detail = native.lines().lastOrNull { it.isNotBlank() }?.trim().orEmpty()
+                sharedFlow.tryEmit(LLMEvent.Error("Model initialization failed"))
+                onError?.invoke(
+                    buildString {
+                        append("Impossible de charger ce modèle.")
+                        when {
+                            detail.isNotEmpty() -> append("\nDétail llama.cpp : ").append(detail)
+                            failure != null -> append("\n").append(failure)
                         }
-                        tokenListener?.invoke(it)
-                        sharedFlow.tryEmit(LLMEvent.Ongoing(it, tokenCount))
                     }
-                } catch (e: Exception) {
-                    Log.e("LlamaHelper", "Engine start failed", e)
-                    null
-                }
-
-                val id = result?.get("contextId") as? Number
-                if (id == null) {
-                    // [ALTREX] Reported directly: the shared flow has no replay, so an event sent
-                    // before anyone listens was lost and the model stayed "loading" forever.
-                    sharedFlow.tryEmit(LLMEvent.Error("Model initialization failed"))
-                    onError?.invoke("Impossible de charger ce modèle (fichier GGUF illisible ou non pris en charge).")
-                    return@launch
-                }
-                currentContext = id.toInt()
-
-                Log.d("LlamaHelper", ">>> Context loaded successfully with ID: $currentContext")
-                sharedFlow.tryEmit(LLMEvent.Loaded(path))
-                loaded(currentContext!!.toLong())
+                )
+                return@launch
             }
-        } catch (e: Exception) {
-            Log.e("LlamaHelper", "Failed to prepare model loading", e)
-            sharedFlow.tryEmit(LLMEvent.Error("Failed to open files: ${e.message}"))
-            onError?.invoke("Impossible d'ouvrir le fichier du modèle : ${e.message}")
+            currentContext = id.toInt()
+
+            Log.d("LlamaHelper", ">>> Context loaded successfully with ID: $currentContext")
+            sharedFlow.tryEmit(LLMEvent.Loaded(path))
+            loaded(currentContext!!.toLong())
         }
     }
 
@@ -165,6 +175,7 @@ class LlamaHelper(
         imagePath: String? = null,
         partialCompletion: Boolean = true,
         sampling: Sampling = Sampling(),
+        enableThinking: Boolean = false,
         onToken: ((String) -> Unit)? = null,
         onDone: ((String) -> Unit)? = null,
         onError: ((String) -> Unit)? = null,
@@ -205,7 +216,7 @@ class LlamaHelper(
                 predictStartMs = startTime
                 lastPrefillMs = 0L
 
-                val formatted = formatPrompt(context, prompt)
+                val formatted = formatPrompt(context, prompt, enableThinking)
                 val params = mutableMapOf<String, Any>(
                     "prompt" to formatted.prompt,
                     "n_predict" to sampling.maxOutputTokens,
@@ -221,6 +232,9 @@ class LlamaHelper(
                 if (imageFds.isNotEmpty()) params["image_fds"] = imageFds
 
                 tokenListener = onToken
+                // [ALTREX] The template opened the reasoning block in the prompt (Qwen thinking
+                // mode): replay the opening tag so the stream splitter files the reasoning apart.
+                if (formatted.prompt.trimEnd().endsWith(THINK_OPEN)) onToken?.invoke(THINK_OPEN)
                 sharedFlow.tryEmit(LLMEvent.Started(prompt))
                 // [ALTREX] The native side clears its stop flag when a generation starts: a Stop
                 // pressed just before that would be lost, so keep re-applying it while it runs.
@@ -266,7 +280,7 @@ class LlamaHelper(
      * - a ready-made ChatML prompt (starts with <|im_start|>): used as is;
      * - plain text: wrapped as one user message with the default system prompt.
      */
-    private fun formatPrompt(context: Int, input: String): FormattedPrompt {
+    private fun formatPrompt(context: Int, input: String, enableThinking: Boolean = false): FormattedPrompt {
         if (input.startsWith("<|im_start|>")) return FormattedPrompt(input, CHATML_STOPS)
         val messages: JSONArray =
             if (input.startsWith(CHAT_REQUEST_PREFIX)) {
@@ -282,7 +296,7 @@ class LlamaHelper(
                     .put(JSONObject().put("role", "user").put("content", input))
             }
 
-        val native = llama.formatChat(context, messages.toString(), enableThinking = false)
+        val native = llama.formatChat(context, messages.toString(), enableThinking = enableThinking)
         if (native != null) {
             try {
                 val obj = JSONObject(native)
@@ -313,7 +327,7 @@ class LlamaHelper(
             sb.append("<|im_start|>").append(m.optString("role")).append("\n")
                 .append(m.optString("content")).append("<|im_end|>\n")
         }
-        sb.append("<|im_start|>assistant\n").append(THINK_OFF)
+        sb.append("<|im_start|>assistant\n").append(if (enableThinking) THINK_OPEN + "\n" else THINK_OFF)
         return FormattedPrompt(sb.toString(), CHATML_STOPS)
     }
 
@@ -374,6 +388,7 @@ class LlamaHelper(
         const val CHAT_REQUEST_PREFIX = "\u0000altrex-chat\u0000"
 
         private val THINK_OFF = "<" + "think>\n\n<" + "/think>\n\n"
+        private val THINK_OPEN = "<" + "think>"
         private val CHATML_STOPS = listOf("<|im_end|>", "<|endoftext|>")
 
         /** Builds a chat request for [predict] from (role, content) pairs. */

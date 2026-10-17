@@ -202,6 +202,7 @@ open class DefaultAgentRuntimeExecutor(
                 model = curModel,
                 request = request,
                 systemInstruction = session.systemInstruction,
+                enableThinking = extraContext?.get("enable_thinking") == "true",
                 emit = { producer.emitEvent(it) },
               )
             if (finalResponse == null) {
@@ -387,6 +388,7 @@ open class DefaultAgentRuntimeExecutor(
     model: Model,
     request: AgentRequest,
     systemInstruction: String?,
+    enableThinking: Boolean,
     emit: (AgentEvent) -> Unit,
   ): String? {
     // Triggers the ViewModel's "first token" handling so the loading state clears even when the
@@ -418,7 +420,7 @@ open class DefaultAgentRuntimeExecutor(
         emit(AgentEvent.StreamToken(token = "\n\n", done = false))
       }
       val response =
-        runLlamaCppTurn(model = model, prompt = prompt) { chunk ->
+        runLlamaCppTurn(model = model, prompt = prompt, enableThinking = enableThinking) { chunk ->
           // The native callback thread and this one (after a Stop) can both get here.
           synchronized(splitter) { emitSplit(splitter.feed(chunk), shown, emit) }
         }
@@ -496,6 +498,7 @@ open class DefaultAgentRuntimeExecutor(
   private suspend fun runLlamaCppTurn(
     model: Model,
     prompt: String,
+    enableThinking: Boolean = false,
     onChunk: (String) -> Unit = {},
   ): String {
     val buffer = StringBuilder()
@@ -503,6 +506,7 @@ open class DefaultAgentRuntimeExecutor(
     model.runtimeHelper.runInference(
       model = model,
       input = prompt,
+      extraContext = if (enableThinking) mapOf("enable_thinking" to "true") else null,
       resultListener = { partialResult, done, _ ->
         if (partialResult.isNotEmpty() && !completion.isCompleted) {
           buffer.append(partialResult)

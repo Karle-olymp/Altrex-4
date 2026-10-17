@@ -127,6 +127,9 @@ object LlamaCppModelHelper : LlmModelHelper {
         path = modelPath,
         contextLength = contextLength,
         mmprojPath = null,
+        // [ALTREX] MTP speculative decoding when the user turned on speculative decoding.
+        useMtp =
+          model.getBooleanConfigValue(key = ConfigKeys.ENABLE_SPECULATIVE_DECODING, defaultValue = false),
         onError = { errorMsg ->
           if (initDone.compareAndSet(false, true)) {
             Log.e(TAG, "Failed to load '${model.name}': $errorMsg")
@@ -249,6 +252,9 @@ object LlamaCppModelHelper : LlmModelHelper {
         prompt = input,
         imagePath = null,
         partialCompletion = true,
+        // [ALTREX] Qwen3/3.5 enable_thinking: the reasoning streams between think tags and is
+        // shown in the thinking area.
+        enableThinking = extraContext?.get("enable_thinking") == "true",
         sampling = sampling,
         onToken = { token -> if (!finished.get()) resultListener(token, false, null) },
         onDone = { finish(null) },
