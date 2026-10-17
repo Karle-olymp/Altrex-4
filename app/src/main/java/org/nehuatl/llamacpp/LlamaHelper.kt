@@ -62,6 +62,8 @@ class LlamaHelper(
         mmprojPath: String? = null,
         useMtp: Boolean = false,
         nThreads: Int = 0,
+        kvCacheType: String = "f16",
+        flashAttn: Int = -1,
         onError: ((String) -> Unit)? = null,
         loaded: (Long) -> Unit
     ) {
@@ -113,6 +115,11 @@ class LlamaHelper(
         }
 
         loadJob = scope.launch {
+            try {
+                LlamaContext.setLoadOptions(kvCacheType, flashAttn)
+            } catch (t: Throwable) {
+                Log.w("LlamaHelper", "Cannot set the load options", t)
+            }
             var result: Map<String, Any>? = null
             var failure: String? = null
             try {

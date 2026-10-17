@@ -476,6 +476,8 @@
   <string name="config_label_topp">TopP</string>
   <string name="config_label_num_threads">Threads processeur (0 = automatique)</string>
   <string name="config_label_basic_cpu">Mode compatibilité processeur (plus lent, effet au prochain lancement de l’appli)</string>
+  <string name="config_label_kv_cache_type">Type du cache KV (diagnostic)</string>
+  <string name="config_label_flash_attention">Flash attention (diagnostic)</string>
   <string name="config_label_repeat_penalty">Pénalité de répétition</string>
   <string name="config_label_thinking_budget">Budget de réflexion (tokens, 0 = sans limite)</string>
   <string name="config_label_temperature">Température</string>

@@ -572,6 +572,8 @@
   <string name="config_label_topp">TopP</string>
   <string name="config_label_num_threads">CPU threads (0 = automatic)</string>
   <string name="config_label_basic_cpu">CPU compatibility mode (slower, applies at next app start)</string>
+  <string name="config_label_kv_cache_type">KV cache type (diagnostic)</string>
+  <string name="config_label_flash_attention">Flash attention (diagnostic)</string>
   <string name="config_label_repeat_penalty">Repetition penalty</string>
   <string name="config_label_thinking_budget">Thinking budget (tokens, 0 = no limit)</string>
   <!-- Label for the 'Temperature' option in the model configuration dialog. -->
