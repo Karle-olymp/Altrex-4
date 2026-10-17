@@ -44,12 +44,22 @@ fun MessageBodyText(
 ) {
   if (message.side == ChatSide.USER) {
     LongPressCopyContainer(copyText = message.content, onCopyClicked = onCopyClicked) {
-      MarkdownText(
-        text = message.content,
-        modifier = Modifier.padding(vertical = 12.dp).padding(horizontal = horizontalPadding),
-        textColor = Color.White,
-        linkColor = Color.White,
-      )
+      androidx.compose.foundation.layout.Column {
+        // [ALTREX] Attached document chip above the question.
+        (message.data as? AttachedDocument)?.let { doc ->
+          androidx.compose.foundation.layout.Box(
+            modifier = Modifier.padding(top = 10.dp).padding(horizontal = horizontalPadding)
+          ) {
+            AttachedDocumentChip(doc = doc, onBubble = true)
+          }
+        }
+        MarkdownText(
+          text = message.content,
+          modifier = Modifier.padding(vertical = 12.dp).padding(horizontal = horizontalPadding),
+          textColor = Color.White,
+          linkColor = Color.White,
+        )
+      }
     }
   } else if (message.side == ChatSide.AGENT) {
     val cdResponse = stringResource(R.string.cd_model_response_text)

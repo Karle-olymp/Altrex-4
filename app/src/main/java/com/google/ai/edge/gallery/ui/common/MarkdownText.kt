@@ -18,6 +18,9 @@ package com.google.ai.edge.gallery.ui.common
 
 import com.google.ai.edge.gallery.ui.theme.appFontFamily
 import com.google.ai.edge.gallery.ui.theme.codeFontFamily
+import com.google.ai.edge.gallery.ui.common.coderunner.CodeRunnerSheet
+import com.google.ai.edge.gallery.ui.common.coderunner.RunCodeButton
+import com.google.ai.edge.gallery.ui.common.coderunner.runnableLanguage
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -179,6 +182,12 @@ private fun splitFencedCode(text: String): List<TextSegment> {
 private fun CodeBlockCard(language: String, code: String) {
   val clipboard = LocalClipboardManager.current
   var copied by remember { mutableStateOf(false) }
+  // [ALTREX] Run the code on the phone (JavaScript, HTML, Python).
+  val runLanguage = remember(language) { runnableLanguage(language) }
+  var showRunner by remember { mutableStateOf(false) }
+  if (showRunner && runLanguage != null) {
+    CodeRunnerSheet(language = runLanguage, code = code, onDismiss = { showRunner = false })
+  }
   LaunchedEffect(copied) {
     if (copied) {
       delay(1500)
@@ -207,6 +216,9 @@ private fun CodeBlockCard(language: String, code: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.weight(1f),
       )
+      if (runLanguage != null) {
+        RunCodeButton(onClick = { showRunner = true })
+      }
       TextButton(
         onClick = {
           clipboard.setText(AnnotatedString(code))

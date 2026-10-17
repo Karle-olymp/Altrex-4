@@ -24,6 +24,7 @@ protobufJavaLite = "4.26.1"
 litertlm = "0.11.0"
 commonmark = "1.0.0-alpha02"
 richtext = "1.0.0-alpha02"
+pdfbox-android = "2.0.27.0"
 playServicesTfliteJava = "16.4.0"
 playServicesTfliteGpu= "16.4.0"
 cameraX = "1.4.2"
@@ -74,6 +75,7 @@ androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "w
 litertlm = { group = "com.google.ai.edge.litertlm", name = "litertlm-android", version.ref = "litertlm" }
 commonmark = { group = "com.halilibo.compose-richtext", name = "richtext-commonmark", version.ref = "commonmark" }
 richtext = { group = "com.halilibo.compose-richtext", name = "richtext-ui-material3", version.ref = "richtext" }
+pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref = "pdfbox-android" }
 tflite = { group = "com.google.android.gms", name = "play-services-tflite-java", version.ref = "playServicesTfliteJava" }
 tflite-gpu = { group = "com.google.android.gms", name = "play-services-tflite-gpu", version.ref = "playServicesTfliteGpu" }
 tflite-support = { group = "com.google.android.gms", name = "play-services-tflite-support", version.ref = "playServicesTfliteJava" }
