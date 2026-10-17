@@ -19,6 +19,7 @@
 #include "rn-completion.h"
 #include "rn-mtmd.hpp"
 #include "ggml.h"
+#include "gguf.h"
 #include "speculative.h"
 #include <deque>
 
@@ -36,6 +37,20 @@ static inline int min(int a, int b) {
 // can tell the user why a model failed to load ("Model initialization failed" said nothing).
 static std::mutex g_log_mutex;
 static std::deque<std::string> g_last_errors;
+// [ALTREX] Full llama.cpp log (INFO and above) of the recent loads, exported from the app to
+// diagnose a model that gives incoherent text on a device.
+static std::string g_full_log;
+static const size_t ALTREX_FULL_LOG_MAX = 160 * 1024;
+
+static void altrex_full_log_append(const char *text) {
+    std::lock_guard<std::mutex> lock(g_log_mutex);
+    g_full_log += text;
+    if (g_full_log.size() > ALTREX_FULL_LOG_MAX) {
+        size_t cut = g_full_log.size() - ALTREX_FULL_LOG_MAX;
+        size_t nl = g_full_log.find('\n', cut);
+        g_full_log.erase(0, nl == std::string::npos ? cut : nl + 1);
+    }
+}
 
 static void altrex_log_callback(enum ggml_log_level level, const char *text, void *user_data) {
     (void) user_data;
@@ -45,6 +60,10 @@ static void altrex_log_callback(enum ggml_log_level level, const char *text, voi
     else if (level == GGML_LOG_LEVEL_WARN) prio = ANDROID_LOG_WARN;
     else if (level == GGML_LOG_LEVEL_INFO) prio = ANDROID_LOG_INFO;
     __android_log_print(prio, "LLAMA_CPP", "%s", text);
+    // A CONT chunk continues the previous message: keep it only if that one was kept.
+    static enum ggml_log_level last_level = GGML_LOG_LEVEL_INFO;
+    if (level != GGML_LOG_LEVEL_CONT) last_level = level;
+    if (last_level != GGML_LOG_LEVEL_DEBUG) altrex_full_log_append(text);
     if (level == GGML_LOG_LEVEL_ERROR || level == GGML_LOG_LEVEL_WARN) {
         std::string line(text);
         while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) line.pop_back();
@@ -306,6 +325,25 @@ static int altrex_pick_fast_cores(bool *mask, int n_cpus) {
     return count;
 }
 
+// [ALTREX] True when the GGUF declares MTP / NextN layers (<arch>.nextn_predict_layers > 0).
+static bool altrex_has_mtp_layers(const std::string &path) {
+    gguf_init_params gp = { /*no_alloc =*/ true, /*ctx =*/ nullptr };
+    gguf_context *g = gguf_init_from_file(path.c_str(), gp);
+    if (g == nullptr) return false;
+    static const std::string suffix = ".nextn_predict_layers";
+    bool found = false;
+    const int64_t n_kv = gguf_get_n_kv(g);
+    for (int64_t i = 0; i < n_kv; i++) {
+        const std::string key = gguf_get_key(g, i);
+        if (key.size() > suffix.size() && key.compare(key.size() - suffix.size(), suffix.size(), suffix) == 0) {
+            found = gguf_get_kv_type(g, i) != GGUF_TYPE_UINT32 || gguf_get_val_u32(g, i) > 0;
+            break;
+        }
+    }
+    gguf_free(g);
+    return found;
+}
+
 JNIEXPORT jlong JNICALL
 Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
         JNIEnv *env,
@@ -354,6 +392,10 @@ Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
     snprintf(fdString, sizeof(fdString), "/proc/self/fd/%d", dupfd);
     defaultParams.model.path = fdString;
     altrex_install_log();
+    // CPU features of the native build in use (NEON, FP16, DOTPROD, MATMUL_INT8...).
+    altrex_full_log_append("\n=== Altrex: loading model ===\nsystem_info: ");
+    altrex_full_log_append(llama_print_system_info());
+    altrex_full_log_append("\n");
     {
         std::lock_guard<std::mutex> lock(g_log_mutex);
         g_last_errors.clear();
@@ -410,6 +452,12 @@ Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
     // [ALTREX] MTP (multi-token prediction) speculative decoding, e.g. Qwen3.5 GGUFs exported with
     // their NextN layer. Off unless asked: it loads the extra layer and needs recurrent-state
     // snapshots for hybrid models.
+    // A GGUF without MTP layer loads fine with MTP requested, then fails at the first generation:
+    // check the file first and load it normally.
+    if (use_mtp && !altrex_has_mtp_layers(defaultParams.model.path)) {
+        LOGW("MTP requested but the model has no MTP (nextn) layer: loading without MTP");
+        use_mtp = false;
+    }
     if (use_mtp) {
         defaultParams.speculative.types = { COMMON_SPECULATIVE_TYPE_DRAFT_MTP };
         defaultParams.speculative.draft.n_max = mtp_n_max > 0 ? mtp_n_max : 3;
@@ -1049,6 +1097,18 @@ Java_org_nehuatl_llamacpp_LlamaContext_getLastNativeError(JNIEnv *env, jclass cl
             if (!out.empty()) out += "\n";
             out += line;
         }
+    }
+    return utf8ToJString(env, out);
+}
+
+// [ALTREX] Full llama.cpp log of the recent loads and generations (INFO and above).
+JNIEXPORT jstring JNICALL
+Java_org_nehuatl_llamacpp_LlamaContext_getNativeLog(JNIEnv *env, jclass clazz) {
+    UNUSED(clazz);
+    std::string out;
+    {
+        std::lock_guard<std::mutex> lock(g_log_mutex);
+        out = g_full_log;
     }
     return utf8ToJString(env, out);
 }

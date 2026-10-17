@@ -474,8 +474,12 @@ constructor(
         }
       }
 
-      // Clean up.
-      cleanupModel(context = context, task = task, model = model)
+      // Clean up. [ALTREX] Wait until it is done: a llama.cpp release finishes asynchronously, and its
+      // resetInitialization() used to wipe the new initialization started meanwhile ("Model not
+      // initialized." on the first message after a settings change).
+      val cleaned = CompletableDeferred<Unit>()
+      cleanupModel(context = context, task = task, model = model, onDone = { cleaned.complete(Unit) })
+      withTimeoutOrNull(15_000L) { cleaned.await() }
 
       // Start initialization.
       Log.d(TAG, "Initializing model '${model.name}'...")

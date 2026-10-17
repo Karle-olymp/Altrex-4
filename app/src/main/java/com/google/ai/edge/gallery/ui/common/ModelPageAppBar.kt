@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.MoreVert
@@ -150,6 +151,8 @@ fun ModelPageAppBar(
       val showConfigButton = model.configs.isNotEmpty() && downloadSucceeded
       val showHistory = downloadSucceeded && shouldShowHistoryButton
       val showExport = downloadSucceeded && onExportClicked != null
+      // [ALTREX] llama.cpp log export, to diagnose a GGUF model on the device.
+      val showNativeLog = downloadSucceeded && model.runtimeType == RuntimeType.LLAMA_CPP
       // [ALTREX] Model settings stay visible; history and PDF export go in a "more" menu, so the
       // actions never overlap the centered model chip.
       Row(verticalAlignment = Alignment.CenterVertically) {
@@ -168,7 +171,7 @@ fun ModelPageAppBar(
             )
           }
         }
-        if (showHistory || showExport) {
+        if (showHistory || showExport || showNativeLog) {
           var showMoreMenu by remember { mutableStateOf(false) }
           val enableMore = !isModelInitializing && !modelPreparing && !inProgress
           Box {
@@ -203,6 +206,16 @@ fun ModelPageAppBar(
                   onClick = {
                     showMoreMenu = false
                     onExportClicked?.invoke()
+                  },
+                )
+              }
+              if (showNativeLog) {
+                DropdownMenuItem(
+                  text = { Text("Exporter le journal llama.cpp") },
+                  leadingIcon = { Icon(Icons.Outlined.BugReport, contentDescription = null) },
+                  onClick = {
+                    showMoreMenu = false
+                    com.google.ai.edge.gallery.runtime.LlamaDiagnostics.share(context, model)
                   },
                 )
               }
