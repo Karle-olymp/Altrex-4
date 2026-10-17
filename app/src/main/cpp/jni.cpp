@@ -19,6 +19,7 @@
 #include "rn-completion.h"
 #include "rn-mtmd.hpp"
 #include "ggml.h"
+#include "gguf.h"
 #include "speculative.h"
 #include <deque>
 
@@ -306,6 +307,25 @@ static int altrex_pick_fast_cores(bool *mask, int n_cpus) {
     return count;
 }
 
+// [ALTREX] True when the GGUF declares MTP / NextN layers (<arch>.nextn_predict_layers > 0).
+static bool altrex_has_mtp_layers(const std::string &path) {
+    gguf_init_params gp = { /*no_alloc =*/ true, /*ctx =*/ nullptr };
+    gguf_context *g = gguf_init_from_file(path.c_str(), gp);
+    if (g == nullptr) return false;
+    static const std::string suffix = ".nextn_predict_layers";
+    bool found = false;
+    const int64_t n_kv = gguf_get_n_kv(g);
+    for (int64_t i = 0; i < n_kv; i++) {
+        const std::string key = gguf_get_key(g, i);
+        if (key.size() > suffix.size() && key.compare(key.size() - suffix.size(), suffix.size(), suffix) == 0) {
+            found = gguf_get_kv_type(g, i) != GGUF_TYPE_UINT32 || gguf_get_val_u32(g, i) > 0;
+            break;
+        }
+    }
+    gguf_free(g);
+    return found;
+}
+
 JNIEXPORT jlong JNICALL
 Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
         JNIEnv *env,
@@ -410,6 +430,12 @@ Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
     // [ALTREX] MTP (multi-token prediction) speculative decoding, e.g. Qwen3.5 GGUFs exported with
     // their NextN layer. Off unless asked: it loads the extra layer and needs recurrent-state
     // snapshots for hybrid models.
+    // A GGUF without MTP layer loads fine with MTP requested, then fails at the first generation:
+    // check the file first and load it normally.
+    if (use_mtp && !altrex_has_mtp_layers(defaultParams.model.path)) {
+        LOGW("MTP requested but the model has no MTP (nextn) layer: loading without MTP");
+        use_mtp = false;
+    }
     if (use_mtp) {
         defaultParams.speculative.types = { COMMON_SPECULATIVE_TYPE_DRAFT_MTP };
         defaultParams.speculative.draft.n_max = mtp_n_max > 0 ? mtp_n_max : 3;
