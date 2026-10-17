@@ -70,6 +70,9 @@ class LlamaContext(
         /** [ALTREX] Last llama.cpp warnings/errors (explains a failed load). */
         @JvmStatic external fun getLastNativeError(): String
 
+        /** [ALTREX] Full llama.cpp log of the recent loads (INFO and above), for diagnostics. */
+        @JvmStatic external fun getNativeLog(): String
+
         private fun isArm64V8a(): Boolean = Build.SUPPORTED_ABIS[0] == "arm64-v8a"
         private fun isX86_64(): Boolean = Build.SUPPORTED_ABIS[0] == "x86_64"
         private fun getCpuFeatures(): String {
