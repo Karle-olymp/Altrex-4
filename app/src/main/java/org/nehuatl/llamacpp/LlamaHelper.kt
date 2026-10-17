@@ -160,6 +160,8 @@ class LlamaHelper(
         val minP: Float = 0.05f,
         val repeatPenalty: Float = 1.05f,
         val maxOutputTokens: Int = 2048,
+        /** Max reasoning tokens before the think block is closed for the model (0: no limit). */
+        val thinkingBudget: Int = 0,
     )
 
     // [ALTREX] One generation at a time: a new request waits until the previous native call has
@@ -231,28 +233,43 @@ class LlamaHelper(
                 )
                 if (imageFds.isNotEmpty()) params["image_fds"] = imageFds
 
-                tokenListener = onToken
+                val opensThink = formatted.prompt.trimEnd().endsWith(THINK_OPEN)
+                // [ALTREX] Thinking budget: past N reasoning tokens the generation is stopped, the
+                // think block is closed in the prompt and the model writes its answer. Small models
+                // otherwise tend to reason in circles until the output limit.
+                val budget = if (opensThink) sampling.thinkingBudget else 0
+                var thinkClosed = false
+                var thinkTokens = 0
+                var budgetHit = false
+                tokenListener =
+                    if (budget <= 0) onToken
+                    else { piece ->
+                        onToken?.invoke(piece)
+                        if (!thinkClosed) {
+                            if (piece.contains(THINK_CLOSE)) {
+                                thinkClosed = true
+                            } else if (++thinkTokens >= budget && !budgetHit) {
+                                budgetHit = true
+                                llama.stopCompletionNow(context)
+                            }
+                        }
+                    }
                 // [ALTREX] The template opened the reasoning block in the prompt (Qwen thinking
                 // mode): replay the opening tag so the stream splitter files the reasoning apart.
-                if (formatted.prompt.trimEnd().endsWith(THINK_OPEN)) onToken?.invoke(THINK_OPEN)
+                if (opensThink) onToken?.invoke(THINK_OPEN)
                 sharedFlow.tryEmit(LLMEvent.Started(prompt))
-                // [ALTREX] The native side clears its stop flag when a generation starts: a Stop
-                // pressed just before that would be lost, so keep re-applying it while it runs.
-                val stopWatcher = scope.launch {
-                    while (true) {
-                        if (stopEpoch != epoch) {
-                            llama.stopCompletionNow(context)
-                            break
-                        }
-                        delay(50)
-                    }
+                var result = runCompletion(context, params, epoch)
+                if (budgetHit && !thinkClosed && stopEpoch == epoch) {
+                    Log.i("LlamaHelper", "Thinking budget of $budget tokens reached, closing the think block")
+                    val closing = "\n" + THINK_CLOSE + "\n\n"
+                    onToken?.invoke(closing)
+                    params["prompt"] = formatted.prompt + allText + closing
+                    allText += closing
+                    params["n_predict"] = (sampling.maxOutputTokens - tokenCount).coerceAtLeast(256)
+                    tokenListener = onToken
+                    result = runCompletion(context, params, epoch) ?: result
                 }
-                val result = try {
-                    llama.launchCompletion(id = context, params = params)
-                } finally {
-                    tokenListener = null
-                    stopWatcher.cancel()
-                }
+                tokenListener = null
                 val duration = System.currentTimeMillis() - startTime
                 lastGenMs = (duration - lastPrefillMs).coerceAtLeast(0L)
                 lastTokens = tokenCount
@@ -268,6 +285,27 @@ class LlamaHelper(
                 }
                 sharedFlow.tryEmit(LLMEvent.Done(allText, tokenCount, duration))
             }
+        }
+    }
+
+    /**
+     * Runs one native completion. [ALTREX] The native side clears its stop flag when a generation
+     * starts: a Stop pressed just before that would be lost, so keep re-applying it while it runs.
+     */
+    private suspend fun runCompletion(context: Int, params: Map<String, Any>, epoch: Int): Map<String, Any>? {
+        val stopWatcher = scope.launch {
+            while (true) {
+                if (stopEpoch != epoch) {
+                    llama.stopCompletionNow(context)
+                    break
+                }
+                delay(50)
+            }
+        }
+        return try {
+            llama.launchCompletion(id = context, params = params)
+        } finally {
+            stopWatcher.cancel()
         }
     }
 
@@ -389,6 +427,7 @@ class LlamaHelper(
 
         private val THINK_OFF = "<" + "think>\n\n<" + "/think>\n\n"
         private val THINK_OPEN = "<" + "think>"
+        private val THINK_CLOSE = "<" + "/think>"
         private val CHATML_STOPS = listOf("<|im_end|>", "<|endoftext|>")
 
         /** Builds a chat request for [predict] from (role, content) pairs. */

@@ -21,6 +21,7 @@ import android.graphics.Bitmap
 import android.util.Log
 import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN
+import com.google.ai.edge.gallery.data.DEFAULT_REPEAT_PENALTY
 import com.google.ai.edge.gallery.data.DEFAULT_TEMPERATURE
 import com.google.ai.edge.gallery.data.DEFAULT_TOPK
 import com.google.ai.edge.gallery.data.DEFAULT_TOPP
@@ -243,8 +244,14 @@ object LlamaCppModelHelper : LlmModelHelper {
           model.getFloatConfigValue(key = ConfigKeys.TEMPERATURE, defaultValue = DEFAULT_TEMPERATURE),
         topK = model.getIntConfigValue(key = ConfigKeys.TOPK, defaultValue = DEFAULT_TOPK),
         topP = model.getFloatConfigValue(key = ConfigKeys.TOPP, defaultValue = DEFAULT_TOPP),
+        repeatPenalty =
+          model.getFloatConfigValue(
+            key = ConfigKeys.REPEAT_PENALTY,
+            defaultValue = DEFAULT_REPEAT_PENALTY,
+          ),
         // Leave room for the prompt: at most half the context, between 1024 and 8192 tokens.
         maxOutputTokens = (maxTokens / 2).coerceIn(1024, 8192),
+        thinkingBudget = model.getIntConfigValue(key = ConfigKeys.THINKING_BUDGET, defaultValue = 0),
       )
 
     try {
