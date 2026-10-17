@@ -401,8 +401,9 @@ open class DefaultAgentRuntimeExecutor(
     val stopped = { stopGen.get() != myStop }
 
     val specs = LlamaCppToolBridge.availableSpecs(toolsProvider)
-    // [ALTREX] An Argora model gets the exact system prompt it was trained with (plus the suffix of
-    // the mode in use): the identity and the answer format depend on it.
+    // [ALTREX] Without tools, an Argora model gets the exact system prompt it was trained with (plus
+    // the suffix of the mode in use). With tools it keeps the agent prompt and its skill list: Argora
+    // is trained on that exact format (argora docs/FORMAT_OUTILS.md § 4.5).
     val manifest = model.argoraManifest
     val argoraMode =
       manifest?.let { m ->
@@ -410,7 +411,7 @@ open class DefaultAgentRuntimeExecutor(
       }
     val thinking = argoraMode?.thinking ?: enableThinking
     val instructions =
-      manifest?.systemPromptFor(argoraMode)
+      manifest?.takeIf { specs.isEmpty() }?.systemPromptFor(argoraMode)
         ?: systemInstruction?.takeIf { it.isNotBlank() }
         ?: org.nehuatl.llamacpp.LlamaHelper.getDefaultSystemPrompt()
     // No tools in this screen: a plain system prompt and a single turn.
