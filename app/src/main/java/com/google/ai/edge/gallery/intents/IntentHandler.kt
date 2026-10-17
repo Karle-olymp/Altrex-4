@@ -2,15 +2,22 @@ package com.google.ai.edge.gallery.intents
 
 import android.Manifest
 import android.app.SearchManager
+import android.content.ActivityNotFoundException
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import android.media.AudioManager
 import android.net.Uri
+import android.provider.AlarmClock
 import android.provider.CalendarContract
 import android.provider.CalendarContract.Events
 import android.provider.CalendarContract.Instances
+import android.provider.ContactsContract
 import android.util.Log
+import android.view.KeyEvent
 import androidx.core.content.ContextCompat.checkSelfPermission
 import androidx.core.net.toUri
 import com.google.ai.edge.gallery.notifications.NotificationScheduleManagerEntryPoint
@@ -44,11 +51,12 @@ data class SendEmailParams(
 data class SendSmsParams(
   @Json(name = "phone_number") val phone_number: String? = null,
   @Json(name = "to") val to: String? = null,
+  @Json(name = "phone") val phone: String? = null,
   @Json(name = "sms_body") val sms_body: String? = null,
   @Json(name = "message") val message: String? = null,
   @Json(name = "body") val body: String? = null,
 ) {
-  val resolvedPhone: String get() = phone_number ?: to ?: ""
+  val resolvedPhone: String get() = phone_number ?: to ?: phone ?: ""
   val resolvedBody: String get() = sms_body ?: message ?: body ?: ""
 }
 
@@ -59,6 +67,19 @@ data class CreateCalendarEventParams(
   val begin_time: String,
   val end_time: String,
 )
+
+@JsonClass(generateAdapter = true)
+data class CreateContactParams(
+  val name: String? = null,
+  val phone: String? = null,
+  val email: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class SetAlarmParams(val hour: Int, val minute: Int, val message: String? = null)
+
+@JsonClass(generateAdapter = true)
+data class DeviceControlParams(val action: String? = null)
 
 @JsonClass(generateAdapter = true)
 data class ReadCalendarEventsParams(val date: String)
@@ -88,7 +109,10 @@ enum class IntentAction(val action: String) {
   READ_CALENDAR_EVENTS("read_calendar_events"),
   GET_CURRENT_DATE_AND_TIME("get_current_date_and_time"),
   SCHEDULE_NOTIFICATION("schedule_notification"),
-  SEARCH_WEB("search_web");
+  SEARCH_WEB("search_web"),
+  CREATE_CONTACT("create_contact"),
+  SET_ALARM("set_alarm"),
+  DEVICE_CONTROL("device_control");
 
   companion object {
     fun from(action: String): IntentAction? = entries.find { it.action == action }
@@ -237,7 +261,100 @@ object IntentHandler {
           "failed"
         }
       }
+      IntentAction.CREATE_CONTACT -> createContact(context, parameters)
+      IntentAction.SET_ALARM -> setAlarm(context, parameters)
+      IntentAction.DEVICE_CONTROL -> deviceControl(context, parameters)
       null -> "failed"
+    }
+  }
+
+  /** Opens the system "new contact" screen, pre-filled. The user saves it. */
+  fun createContact(context: Context, parameters: String): String {
+    try {
+      val params = Moshi.Builder().build().adapter(CreateContactParams::class.java).fromJson(parameters)
+      if (params == null || (params.name.isNullOrBlank() && params.phone.isNullOrBlank())) {
+        Log.e(TAG, "Failed to parse create_contact parameters or missing name: $parameters")
+        return "failed: name or phone required"
+      }
+      val intent =
+        Intent(ContactsContract.Intents.Insert.ACTION).apply {
+          type = ContactsContract.RawContacts.CONTENT_TYPE
+          params.name?.let { putExtra(ContactsContract.Intents.Insert.NAME, it) }
+          params.phone?.let { putExtra(ContactsContract.Intents.Insert.PHONE, it) }
+          params.email?.let { putExtra(ContactsContract.Intents.Insert.EMAIL, it) }
+          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+      context.startActivity(intent)
+      return "succeeded"
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to run create_contact: $parameters", e)
+      return "failed: ${e.message}"
+    }
+  }
+
+  /** Opens the clock app with the alarm pre-filled. The user confirms it. */
+  fun setAlarm(context: Context, parameters: String): String {
+    try {
+      val params = Moshi.Builder().build().adapter(SetAlarmParams::class.java).fromJson(parameters)
+      if (params == null || params.hour !in 0..23 || params.minute !in 0..59) {
+        Log.e(TAG, "Invalid set_alarm parameters: $parameters")
+        return "failed: hour must be 0-23 and minute 0-59"
+      }
+      val intent =
+        Intent(AlarmClock.ACTION_SET_ALARM).apply {
+          putExtra(AlarmClock.EXTRA_HOUR, params.hour)
+          putExtra(AlarmClock.EXTRA_MINUTES, params.minute)
+          params.message?.let { putExtra(AlarmClock.EXTRA_MESSAGE, it) }
+          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+      context.startActivity(intent)
+      return "succeeded"
+    } catch (e: ActivityNotFoundException) {
+      Log.e(TAG, "No clock app for set_alarm", e)
+      return "failed: no clock app"
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to run set_alarm: $parameters", e)
+      return "failed: ${e.message}"
+    }
+  }
+
+  private var torchOn = false
+
+  /** Toggles media playback or the flashlight. Neither needs a runtime permission. */
+  fun deviceControl(context: Context, parameters: String): String {
+    try {
+      val params = Moshi.Builder().build().adapter(DeviceControlParams::class.java).fromJson(parameters)
+      return when (params?.action) {
+        "toggle_music" -> {
+          val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+          audioManager.dispatchMediaKeyEvent(
+            KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+          )
+          audioManager.dispatchMediaKeyEvent(
+            KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+          )
+          "succeeded"
+        }
+        "toggle_flashlight" -> {
+          val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+          val cameraId =
+            cameraManager.cameraIdList.firstOrNull {
+              cameraManager
+                .getCameraCharacteristics(it)
+                .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            } ?: return "failed: no flashlight"
+          torchOn = !torchOn
+          cameraManager.setTorchMode(cameraId, torchOn)
+          if (torchOn) "succeeded: flashlight on" else "succeeded: flashlight off"
+        }
+        else -> {
+          Log.e(TAG, "Unknown device_control action: $parameters")
+          "failed: action must be toggle_music or toggle_flashlight"
+        }
+      }
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to run device_control: $parameters", e)
+      return "failed: ${e.message}"
     }
   }
 

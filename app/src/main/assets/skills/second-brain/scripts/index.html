@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="fr">
+<body>
+  <script>
+    // Second cerveau d'Argora : notes PARA stockées hors ligne dans le localStorage de la WebView.
+    const NOTES_KEY = 'second_brain_notes_v1';
+    const EVOL_KEY = 'second_brain_evolutions_v1';
+    const MAX_RESULTS = 5;
+    const EXCERPT_LEN = 400;
+
+    const CATEGORIES = {
+      projets: 'projets', projet: 'projets', projects: 'projets', project: 'projets',
+      domaines: 'domaines', domaine: 'domaines', areas: 'domaines', area: 'domaines',
+      ressources: 'ressources', ressource: 'ressources', resources: 'ressources', resource: 'ressources',
+      archives: 'archives', archive: 'archives', archived: 'archives',
+    };
+
+    const STOP_WORDS = new Set(('le la les un une des de du d l et ou a au aux en dans sur pour par avec ' +
+      'ce cet cette ces mon ma mes ton ta tes son sa ses que qui quoi est sont je tu il elle on nous vous ' +
+      'ils elles ne pas plus the of to and in is it what que-ce quel quelle quels quelles').split(' '));
+
+    // Mots interdits dans le code appris : pas de réseau, pas d'accès direct au stockage ni d'eval.
+    const FORBIDDEN_CODE = /fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|import\s*\(|eval\s*\(|Function\s*\(|localStorage|sessionStorage|indexedDB|document\.cookie|https?:/i;
+
+    function read(key, fallback) {
+      try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+      } catch (e) {
+        return fallback;
+      }
+    }
+
+    function write(key, value) {
+      localStorage.setItem(key, JSON.stringify(value));
+    }
+
+    const getNotes = () => read(NOTES_KEY, []);
+    const saveNotes = (notes) => write(NOTES_KEY, notes);
+    const getEvolutions = () => read(EVOL_KEY, { rules: {}, actions: {}, history: [] });
+    const saveEvolutions = (evol) => write(EVOL_KEY, evol);
+
+    function normalizeCategory(value, fallback) {
+      if (!value) return fallback;
+      const key = String(value).toLowerCase().trim();
+      if (key === 'all' || key === 'toutes' || key === 'tout') return null;
+      const category = CATEGORIES[key];
+      if (!category) {
+        throw new Error(`Catégorie inconnue : "${value}". Utilise projets, domaines, ressources ou archives.`);
+      }
+      return category;
+    }
+
+    function normalizeTags(tags) {
+      if (!tags) return [];
+      const list = Array.isArray(tags) ? tags : String(tags).split(',');
+      return list.map((t) => String(t).trim().toLowerCase()).filter((t) => t.length > 0);
+    }
+
+    function fold(text) {
+      return String(text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    }
+
+    function tokens(text) {
+      return fold(text).split(/[^a-z0-9_.\-]+/).filter((t) => t.length > 1 && !STOP_WORDS.has(t));
+    }
+
+    function newId(notes) {
+      const max = notes.reduce((m, n) => Math.max(m, n.id), 0);
+      return max + 1;
+    }
+
+    function findNote(notes, id) {
+      const note = notes.find((n) => n.id === parseInt(id));
+      if (!note) throw new Error(`Aucune note avec l'id ${id}.`);
+      return note;
+    }
+
+    function describe(note, withContent) {
+      let line = `#${note.id} [${note.category}] ${note.title || '(sans titre)'}`;
+      if (note.deadline) line += ` — échéance ${note.deadline}`;
+      if (note.tags.length) line += ` — tags : ${note.tags.join(', ')}`;
+      if (withContent) {
+        const content = note.content.length > EXCERPT_LEN
+          ? note.content.slice(0, EXCERPT_LEN) + '…'
+          : note.content;
+        line += `\n  ${content}`;
+      }
+      return line;
+    }
+
+    function rulesText(evol) {
+      const names = Object.keys(evol.rules);
+      if (!names.length) return '';
+      return '\n\nRègles apprises :\n' + names.map((n) => `- ${n} : ${evol.rules[n].text}`).join('\n');
+    }
+
+    // Score lexical : mots de la requête trouvés dans le titre, les tags et le contenu.
+    function score(note, queryTokens) {
+      const title = fold(note.title);
+      const content = fold(note.content);
+      const tags = note.tags.map(fold);
+      let total = 0;
+      for (const t of queryTokens) {
+        if (tags.some((tag) => tag === t)) total += 5;
+        else if (tags.some((tag) => tag.includes(t))) total += 3;
+        if (title.includes(t)) total += 3;
+        const hits = content.split(t).length - 1;
+        total += Math.min(hits, 3);
+      }
+      return total;
+    }
+
+    const memoire = {
+      notes: () => getNotes(),
+      sauver: (notes) => saveNotes(notes),
+    };
+
+    const handlers = {
+      save_to_para(input) {
+        const content = String(input.content || '').trim();
+        if (!content) throw new Error('Le champ "content" est vide.');
+        const notes = getNotes();
+        const now = new Date().toISOString();
+        const note = {
+          id: newId(notes),
+          category: normalizeCategory(input.category, 'ressources'),
+          title: String(input.title || '').trim() || content.slice(0, 60),
+          content,
+          tags: normalizeTags(input.tags),
+          deadline: input.deadline || null,
+          created: now,
+          updated: now,
+        };
+        notes.push(note);
+        saveNotes(notes);
+        return `Note enregistrée.\n${describe(note, false)}`;
+      },
+
+      retrieve_memory(input) {
+        const category = normalizeCategory(input.category_filter, null);
+        const queryTokens = tokens(input.query);
+        const notes = getNotes().filter((n) => !category || n.category === category);
+        const evol = getEvolutions();
+        if (!queryTokens.length) throw new Error('Le champ "query" est vide.');
+        const found = notes
+          .map((n) => ({ note: n, score: score(n, queryTokens) }))
+          .filter((r) => r.score > 0)
+          .sort((a, b) => b.score - a.score || b.note.updated.localeCompare(a.note.updated))
+          .slice(0, MAX_RESULTS);
+        if (!found.length) {
+          return `Aucune note trouvée pour "${input.query}" (${notes.length} notes cherchées).` + rulesText(evol);
+        }
+        return `${found.length} note(s) trouvée(s) pour "${input.query}" :\n` +
+          found.map((r) => describe(r.note, true)).join('\n') + rulesText(evol);
+      },
+
+      list_notes(input) {
+        const category = normalizeCategory(input.category, null);
+        const notes = getNotes().filter((n) => !category || n.category === category);
+        if (!notes.length) return 'Aucune note.';
+        return `${notes.length} note(s) :\n` + notes.map((n) => describe(n, false)).join('\n');
+      },
+
+      update_note(input) {
+        const notes = getNotes();
+        const note = findNote(notes, input.id);
+        if (input.content !== undefined) note.content = String(input.content).trim();
+        if (input.title !== undefined) note.title = String(input.title).trim();
+        if (input.tags !== undefined) note.tags = normalizeTags(input.tags);
+        if (input.category !== undefined) note.category = normalizeCategory(input.category, note.category);
+        if (input.deadline !== undefined) note.deadline = input.deadline || null;
+        note.updated = new Date().toISOString();
+        saveNotes(notes);
+        return `Note mise à jour.\n${describe(note, false)}`;
+      },
+
+      archive_note(input) {
+        return handlers.update_note({ id: input.id, category: 'archives' });
+      },
+
+      delete_note(input) {
+        const notes = getNotes();
+        const note = findNote(notes, input.id);
+        saveNotes(notes.filter((n) => n.id !== note.id));
+        return `Note #${note.id} supprimée.`;
+      },
+
+      export_memory() {
+        return 'Sauvegarde du second cerveau (copie ce JSON) :\n\n' +
+          JSON.stringify({ notes: getNotes(), evolutions: getEvolutions() }, null, 2);
+      },
+
+      evolve_code(input) {
+        const target = String(input.target || '').toLowerCase();
+        const name = String(input.name || '').trim();
+        const code = String(input.new_code || '').trim();
+        const reason = String(input.reason || '').trim();
+        if (!name || !/^[a-z0-9_\-]+$/i.test(name)) {
+          throw new Error('Le champ "name" est requis (lettres, chiffres, _ ou -).');
+        }
+        if (!code) throw new Error('Le champ "new_code" est vide.');
+        if (!reason) throw new Error('Le champ "reason" est requis : explique pourquoi.');
+        const evol = getEvolutions();
+        const entry = { text: code, reason, date: new Date().toISOString() };
+
+        if (target === 'rule' || target === 'regle' || target === 'règle') {
+          evol.rules[name] = entry;
+        } else if (target === 'action') {
+          if (handlers[name]) throw new Error(`"${name}" est une action intégrée : choisis un autre nom.`);
+          if (FORBIDDEN_CODE.test(code)) {
+            throw new Error('Code refusé : pas de réseau, pas d\'eval, et passe par "memoire" pour les notes.');
+          }
+          try {
+            new Function('data', 'memoire', code);
+          } catch (e) {
+            throw new Error(`Code invalide : ${e.message}`);
+          }
+          evol.actions[name] = entry;
+        } else {
+          throw new Error('Le champ "target" doit valoir "rule" ou "action".');
+        }
+        evol.history.push({ target, name, reason, date: entry.date });
+        saveEvolutions(evol);
+        return `Évolution enregistrée (${target} "${name}"). Raison : ${reason}`;
+      },
+
+      list_rules() {
+        const evol = getEvolutions();
+        const rules = Object.keys(evol.rules).map((n) => `- règle ${n} : ${evol.rules[n].text}`);
+        const actions = Object.keys(evol.actions).map((n) => `- action ${n} (${evol.actions[n].reason})`);
+        const lines = rules.concat(actions);
+        return lines.length ? 'Évolutions apprises :\n' + lines.join('\n') : 'Aucune évolution apprise.';
+      },
+
+      undo_evolution(input) {
+        const name = String(input.name || '').trim();
+        const evol = getEvolutions();
+        const removed = [];
+        if (evol.rules[name]) { delete evol.rules[name]; removed.push('règle'); }
+        if (evol.actions[name]) { delete evol.actions[name]; removed.push('action'); }
+        if (!removed.length) throw new Error(`Aucune évolution nommée "${name}".`);
+        saveEvolutions(evol);
+        return `Évolution "${name}" annulée (${removed.join(' et ')}).`;
+      },
+    };
+
+    async function runLearnedAction(name, input) {
+      const learned = getEvolutions().actions[name];
+      if (!learned) return null;
+      const fn = new Function('data', 'memoire', learned.text);
+      const out = await fn(input, memoire);
+      return out === undefined ? `Action "${name}" exécutée.` : String(out);
+    }
+
+    window['ai_edge_gallery_get_result'] = async (dataStr) => {
+      try {
+        const input = JSON.parse(dataStr || '{}');
+        const action = String(input.action || '').trim();
+        let result;
+        if (handlers[action]) {
+          result = handlers[action](input);
+        } else {
+          result = await runLearnedAction(action, input);
+          if (result === null) {
+            throw new Error(`Action inconnue : "${action}". Actions possibles : ${Object.keys(handlers).join(', ')}.`);
+          }
+        }
+        return JSON.stringify({ result });
+      } catch (e) {
+        console.error(e);
+        return JSON.stringify({ error: e.message });
+      }
+    };
+  </script>
+</body>
+</html>
