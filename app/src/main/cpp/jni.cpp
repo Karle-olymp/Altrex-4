@@ -19,6 +19,8 @@
 #include "rn-completion.h"
 #include "rn-mtmd.hpp"
 #include "ggml.h"
+#include "speculative.h"
+#include <deque>
 
 #define UNUSED(x) (void)(x)
 #define TAG "RNLLAMA_ANDROID_JNI"
@@ -28,6 +30,37 @@
 
 static inline int min(int a, int b) {
     return (a < b) ? a : b;
+}
+
+// [ALTREX] llama.cpp / ggml logs go to logcat, and the last warnings/errors are kept so the app
+// can tell the user why a model failed to load ("Model initialization failed" said nothing).
+static std::mutex g_log_mutex;
+static std::deque<std::string> g_last_errors;
+
+static void altrex_log_callback(enum ggml_log_level level, const char *text, void *user_data) {
+    (void) user_data;
+    if (text == nullptr) return;
+    int prio = ANDROID_LOG_DEBUG;
+    if (level == GGML_LOG_LEVEL_ERROR) prio = ANDROID_LOG_ERROR;
+    else if (level == GGML_LOG_LEVEL_WARN) prio = ANDROID_LOG_WARN;
+    else if (level == GGML_LOG_LEVEL_INFO) prio = ANDROID_LOG_INFO;
+    __android_log_print(prio, "LLAMA_CPP", "%s", text);
+    if (level == GGML_LOG_LEVEL_ERROR || level == GGML_LOG_LEVEL_WARN) {
+        std::string line(text);
+        while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) line.pop_back();
+        if (line.empty()) return;
+        std::lock_guard<std::mutex> lock(g_log_mutex);
+        g_last_errors.push_back(line);
+        while (g_last_errors.size() > 12) g_last_errors.pop_front();
+    }
+}
+
+static void altrex_install_log() {
+    static std::once_flag once;
+    std::call_once(once, []() {
+        llama_log_set(altrex_log_callback, nullptr);
+        ggml_log_set(altrex_log_callback, nullptr);
+    });
 }
 
 extern "C" {
@@ -217,7 +250,7 @@ static inline void addStringArrayList(JNIEnv *env, jobject arrayList, const char
     jclass arrayListClass = env->FindClass("java/util/ArrayList");
     jmethodID addMethod = env->GetMethodID(arrayListClass, "add", "(Ljava/lang/Object;)Z");
 
-    jstring jValue = env->NewStringUTF(value);
+    jstring jValue = utf8ToJString(env, value);
     if (env->ExceptionCheck()) {
         env->ExceptionClear();
         jValue = env->NewStringUTF("");
@@ -226,6 +259,7 @@ static inline void addStringArrayList(JNIEnv *env, jobject arrayList, const char
     env->CallBooleanMethod(arrayList, addMethod, jValue);
     
     if (jValue) env->DeleteLocalRef(jValue);
+    env->DeleteLocalRef(arrayListClass);
 }
 
 // Helper method to add a HashMap to a Java ArrayList
@@ -244,7 +278,7 @@ std::mutex context_mutex;
 // Sur un Snapdragon 8 Gen 1 : le X2 et les trois A710, sans les quatre A510 lents.
 // Renvoie leur nombre, 0 si la puce est homogène ou si la fréquence est illisible.
 static int altrex_pick_fast_cores(bool *mask, int n_cpus) {
-    n_cpus = std::min(n_cpus, LM_GGML_MAX_N_THREADS);
+    n_cpus = std::min(n_cpus, GGML_MAX_N_THREADS);
     std::vector<long> freqs(n_cpus > 0 ? n_cpus : 0, 0);
     long f_min = LONG_MAX;
     long f_max = 0;
@@ -290,9 +324,12 @@ Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
         jfloat rope_freq_base,
         jfloat rope_freq_scale,
         jint mmproj_fd,
-        jintArray image_fds
+        jintArray image_fds,
+        jboolean use_mtp,
+        jint mtp_n_max
 ) {
     UNUSED(thiz);
+    UNUSED(image_fds);
 
     common_params defaultParams;
 
@@ -312,9 +349,15 @@ Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
     }
     close(model_fd);
 
-    char fdString[32];
-    snprintf(fdString, 32, "%d", dupfd);
+    // [ALTREX] Upstream llama.cpp opens files by path: /proc/self/fd/N points to our descriptor.
+    char fdString[48];
+    snprintf(fdString, sizeof(fdString), "/proc/self/fd/%d", dupfd);
     defaultParams.model.path = fdString;
+    altrex_install_log();
+    {
+        std::lock_guard<std::mutex> lock(g_log_mutex);
+        g_last_errors.clear();
+    }
 
     defaultParams.embedding = embedding;
     defaultParams.n_ctx = n_ctx;
@@ -337,19 +380,24 @@ Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
     defaultParams.cpuparams.n_threads =
             n_threads > 0 ? n_threads : auto_threads;
     defaultParams.n_gpu_layers = n_gpu_layers;
-    defaultParams.use_mlock = use_mlock;
-    defaultParams.use_mmap = use_mmap;
+    // b11385 merged use_mmap/use_mlock into a single load mode.
+    if (use_mmap) {
+        defaultParams.load_mode = use_mlock ? LLAMA_LOAD_MODE_MMAP_MLOCK : LLAMA_LOAD_MODE_MMAP;
+    } else {
+        defaultParams.load_mode = use_mlock ? LLAMA_LOAD_MODE_MLOCK : LLAMA_LOAD_MODE_NONE;
+    }
 
     const char *lora_chars = env->GetStringUTFChars(lora_str, nullptr);
     if (lora_chars && lora_chars[0] != '\0') {
         defaultParams.lora_adapters.push_back({lora_chars, lora_scaled, "", "", nullptr});
     }
 
+    int dup_mmproj_fd = -1;
     if (mmproj_fd >= 0) {
-        int dup_mmproj_fd = dup(mmproj_fd);
+        dup_mmproj_fd = dup(mmproj_fd);
         if (dup_mmproj_fd != -1) {
-            char mmproj_path[32];
-            snprintf(mmproj_path, 32, "%d", dup_mmproj_fd);
+            char mmproj_path[48];
+            snprintf(mmproj_path, sizeof(mmproj_path), "/proc/self/fd/%d", dup_mmproj_fd);
             defaultParams.mmproj.path = mmproj_path;
             LOGI("mmproj set to FD: %s", defaultParams.mmproj.path.c_str());
         }
@@ -359,8 +407,30 @@ Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
     defaultParams.rope_freq_base = rope_freq_base;
     defaultParams.rope_freq_scale = rope_freq_scale;
 
+    // [ALTREX] MTP (multi-token prediction) speculative decoding, e.g. Qwen3.5 GGUFs exported with
+    // their NextN layer. Off unless asked: it loads the extra layer and needs recurrent-state
+    // snapshots for hybrid models.
+    if (use_mtp) {
+        defaultParams.speculative.types = { COMMON_SPECULATIVE_TYPE_DRAFT_MTP };
+        defaultParams.speculative.draft.n_max = mtp_n_max > 0 ? mtp_n_max : 3;
+        LOGI("MTP speculative decoding requested (n_max=%d)", defaultParams.speculative.draft.n_max);
+    }
+
     auto llama = new rnllama::llama_rn_context();
-    bool ok = llama->loadModel(defaultParams);
+    bool ok = false;
+    // [ALTREX] A C++ exception escaping JNI aborts the app: report a failed load instead.
+    try {
+        ok = llama->loadModel(defaultParams);
+    } catch (const std::exception &e) {
+        LOGW("loadModel failed: %s", e.what());
+        ok = false;
+    } catch (...) {
+        LOGW("loadModel failed with an unknown exception");
+        ok = false;
+    }
+    // The loader opened its own copy of the fd and the weights are mapped: ours can go (otherwise
+    // every load leaks a descriptor that keeps the multi-GB file alive after it is deleted).
+    close(dupfd);
 
     if (ok) {
         // [ALTREX] Verrouillage propre lors de l'enregistrement du pointeur
@@ -369,22 +439,25 @@ Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
             context_map[(long) llama->ctx] = llama;
         }
 
-        // [ALTREX] Pool de threads persistant, limité aux cœurs rapides. En cas d'échec, llama.cpp
-        // garde son fonctionnement par défaut.
-        if (use_fast_cores) {
-            bool attached = llama->attachThreadpoolsIfAvailable();
-            LOGI("Fast-core threadpool attached: %s", attached ? "yes" : "no");
-        }
+        // [ALTREX] Depuis b11385, common_init_from_params() crée lui-même le pool de threads à
+        // partir de cpuparams (masque des cœurs rapides inclus) : rien à rattacher ici.
+        if (use_fast_cores) LOGI("Fast-core threadpool pinned via cpumask");
         
         if (!defaultParams.mmproj.path.empty()) {
             LOGI("Initializing multimodal with mmproj: %s", defaultParams.mmproj.path.c_str());
-            bool mm_ok = llama->initMultimodal(defaultParams.mmproj.path, n_gpu_layers > 0);
+            bool mm_ok = false;
+            try {
+                mm_ok = llama->initMultimodal(defaultParams.mmproj.path, n_gpu_layers > 0);
+            } catch (const std::exception &e) {
+                LOGW("initMultimodal failed: %s", e.what());
+            }
             LOGI("Multimodal initialization result: %s", mm_ok ? "success" : "failed");
             LOGI("Context multimodal enabled check: %s", llama->isMultimodalEnabled() ? "yes" : "no");
         }
     } else {
         delete llama;
     }
+    if (dup_mmproj_fd != -1) close(dup_mmproj_fd);
 
     env->ReleaseStringUTFChars(lora_str, lora_chars);
     return ok ? reinterpret_cast<jlong>(llama->ctx) : 0;
@@ -610,6 +683,9 @@ Java_org_nehuatl_llamacpp_LlamaContext_doCompletion(
         std::lock_guard<std::mutex> lock(context_mutex);
         auto it = context_map.find((long) context_ptr);
         if (it != context_map.end()) llama = it->second;
+        // [ALTREX] Busy from here (not only from beginCompletion): freeContext waits on this flag,
+        // and setting it under the map lock closes the lookup/free race.
+        if (llama != nullptr && llama->completion != nullptr) llama->completion->is_predicting = true;
     }
     if (!llama || llama->completion == nullptr) return nullptr;
 
@@ -629,7 +705,8 @@ Java_org_nehuatl_llamacpp_LlamaContext_doCompletion(
         }
     }
 
-    llama->params.cpuparams.n_threads = n_threads > 0 ? n_threads : std::thread::hardware_concurrency();
+    // [ALTREX] 0 = garder le réglage du chargement (cœurs rapides) au lieu de tous les cœurs.
+    if (n_threads > 0) llama->params.cpuparams.n_threads = n_threads;
     llama->params.sampling.seed = (seed == -1) ? time(NULL) : seed;
     llama->params.sampling.temp = temperature;
     llama->params.sampling.top_k = top_k;
@@ -650,8 +727,8 @@ Java_org_nehuatl_llamacpp_LlamaContext_doCompletion(
         for (jsize i = 0; i < len; i++) {
             int dup_img_fd = dup(fds[i]);
             if (dup_img_fd != -1) {
-                char img_path[32];
-                snprintf(img_path, 32, "%d", dup_img_fd);
+                char img_path[48];
+                snprintf(img_path, sizeof(img_path), "/proc/self/fd/%d", dup_img_fd);
                 images.push_back(img_path);
             }
             close(fds[i]);
@@ -662,6 +739,20 @@ Java_org_nehuatl_llamacpp_LlamaContext_doCompletion(
     LOGI("doCompletion: prompt=%zu bytes, stops=%zu, images=%zu, multimodal_enabled=%s",
          llama->params.prompt.size(), stop_words.size(), images.size(), llama->isMultimodalEnabled() ? "yes" : "no");
     
+    // [ALTREX] Why the turn ended, copied before endCompletion() releases the context to freeContext.
+    struct {
+        bool context_full = false, stopped_eos = false, stopped_limit = false, interrupted = false;
+        int draft_tokens = 0, draft_accepted = 0;
+        void take(rnllama::llama_rn_context_completion *c) {
+            context_full = c->context_full;
+            stopped_eos = c->stopped_eos;
+            stopped_limit = c->stopped_limit;
+            interrupted = c->is_interrupted;
+            draft_tokens = (int) c->num_draft_tokens;
+            draft_accepted = (int) c->num_draft_tokens_accepted;
+        }
+    } snap;
+
     try {
         llama->completion->loadPrompt(images);
         llama->completion->beginCompletion();
@@ -743,14 +834,32 @@ Java_org_nehuatl_llamacpp_LlamaContext_doCompletion(
             llama->completion->embd.resize(llama->completion->n_past);
         }
 
+        snap.take(llama->completion);
         llama->completion->endCompletion();
     } catch (const std::exception& e) {
         LOGW("doCompletion: Caught exception: %s", e.what());
+        // [ALTREX] Otherwise the context stays "busy" and every later request fails.
+        llama->completion->embd.resize(std::min(llama->completion->embd.size(), (size_t) std::max(0, (int) llama->completion->n_past)));
+        snap.take(llama->completion);
+        llama->completion->endCompletion();
     } catch (...) {
         LOGW("doCompletion: Caught unknown exception");
+        llama->completion->embd.resize(std::min(llama->completion->embd.size(), (size_t) std::max(0, (int) llama->completion->n_past)));
+        snap.take(llama->completion);
+        llama->completion->endCompletion();
     }
 
-    return createHashMap(env);
+    // [ALTREX] Tell Kotlin why the turn ended (an empty answer because the prompt did not fit the
+    // context used to look like a normal, empty reply).
+    // Only the snapshot is read here: once endCompletion() ran, freeContext may delete the context.
+    auto result = createHashMap(env);
+    putBooleanHashMap(env, result, "context_full", snap.context_full);
+    putBooleanHashMap(env, result, "stopped_eos", snap.stopped_eos);
+    putBooleanHashMap(env, result, "stopped_limit", snap.stopped_limit);
+    putBooleanHashMap(env, result, "interrupted", snap.interrupted);
+    putIntHashMap(env, result, "draft_tokens", snap.draft_tokens);
+    putIntHashMap(env, result, "draft_accepted", snap.draft_accepted);
+    return result;
 }
 
 JNIEXPORT void JNICALL
@@ -794,9 +903,7 @@ Java_org_nehuatl_llamacpp_LlamaContext_tokenize(
     }
     if (!llama) return nullptr;
 
-    const char *text_chars = env->GetStringUTFChars(text, nullptr);
-    auto result = llama->tokenize(text_chars, {});
-    env->ReleaseStringUTFChars(text, text_chars);
+    auto result = llama->tokenize(jstringToUtf8(env, text), {});
 
     jobject list = createArrayList(env);
     for (const auto &tok : result.tokens) {
@@ -827,7 +934,7 @@ Java_org_nehuatl_llamacpp_LlamaContext_detokenize(
 
     auto text = rnllama::tokens_to_str(llama->ctx, toks.cbegin(), toks.cend());
     
-    jstring jText = env->NewStringUTF(text.c_str());
+    jstring jText = utf8ToJString(env, text);
     if (env->ExceptionCheck()) {
         env->ExceptionClear();
         jText = env->NewStringUTF("");
@@ -862,19 +969,16 @@ Java_org_nehuatl_llamacpp_LlamaContext_embedding(
     }
     if (!llama) return nullptr;
 
-    const char *text_chars = env->GetStringUTFChars(text, nullptr);
-    llama->params.prompt = text_chars;
+    llama->params.prompt = jstringToUtf8(env, text);
 
     if (llama->completion) {
         auto result = llama->completion->embedding(llama->params);
-        env->ReleaseStringUTFChars(text, text_chars);
         jobject list = createArrayList(env);
         for (const auto &val : result) {
             addDoubleArrayList(env, list, (double)val);
         }
         return list;
     }
-    env->ReleaseStringUTFChars(text, text_chars);
     return createArrayList(env);
 }
 
@@ -897,7 +1001,7 @@ Java_org_nehuatl_llamacpp_LlamaContext_bench(
     }
     if (!llama) return nullptr;
     if (llama->completion) {
-        std::string result = llama->completion->bench(pp, tg, pl, nr);
+        std::string result = llama->completion->bench(pp, tg, pl, nr).dump();
         return env->NewStringUTF(result.c_str());
     }
     return env->NewStringUTF("[]");
@@ -919,8 +1023,34 @@ Java_org_nehuatl_llamacpp_LlamaContext_freeContext(
     }
     // La suppression réelle (delete) se fait hors du verrou pour ne pas bloquer les autres threads
     if (llama) {
-        delete llama; 
+        // [ALTREX] Never delete under a running generation (use-after-free): stop it and wait.
+        if (llama->completion) {
+            llama->completion->is_interrupted = true;
+            for (int i = 0; i < 1500 && llama->completion->is_predicting; i++) {
+                usleep(10 * 1000);
+            }
+            if (llama->completion->is_predicting) {
+                LOGW("freeContext: generation still running after 15 s, leaking the context");
+                return;
+            }
+        }
+        delete llama;
     }
+}
+
+// [ALTREX] Last llama.cpp warnings / errors (most recent last), for the load error message.
+JNIEXPORT jstring JNICALL
+Java_org_nehuatl_llamacpp_LlamaContext_getLastNativeError(JNIEnv *env, jclass clazz) {
+    UNUSED(clazz);
+    std::string out;
+    {
+        std::lock_guard<std::mutex> lock(g_log_mutex);
+        for (const auto &line : g_last_errors) {
+            if (!out.empty()) out += "\n";
+            out += line;
+        }
+    }
+    return utf8ToJString(env, out);
 }
 
 // ============ GET MODEL CONTEXT SIZE ============

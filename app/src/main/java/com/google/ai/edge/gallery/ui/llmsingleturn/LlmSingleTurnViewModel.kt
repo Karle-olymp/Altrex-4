@@ -154,6 +154,11 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
         supportAudio = supportAudio,
       )
       delay(500)
+      // [ALTREX] Stop pressed while the conversation was being reset: do not start anyway.
+      if (!uiState.value.inProgress) {
+        setPreparing(false)
+        return@launch
+      }
 
       val promptToRun =
         if (useHistory) {
@@ -184,11 +189,14 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
               processLlmResponse(response = merged)
             }
 
-          // Update response.
+          // Update response. [ALTREX] llama.cpp: hide reasoning and tool-call JSON while streaming.
           updateResponse(
             model = model,
             promptTemplateType = uiState.value.selectedPromptTemplateType,
-            response = responsePrefix + response,
+            response =
+              responsePrefix +
+                if (model.runtimeType == RuntimeType.LLAMA_CPP) ToolCalling.displayText(response)
+                else response,
           )
 
           // The runtime can report "done" twice (end of generation, then job cancellation).

@@ -309,8 +309,18 @@ open class LlmChatViewModelBase(
                 streamedChunks++
               }
               val genMs = System.currentTimeMillis() - firstChunkMs
+              // [ALTREX] llama.cpp: the engine's own token count and generation time (stream events
+              // are merged chunks, not tokens).
+              val llamaHelper =
+                (model.instance as? com.google.ai.edge.gallery.runtime.LlamaCppModelInstance)?.llamaHelper
               val tokensPerSecond =
-                if (event.done && streamedChunks > 1 && genMs > 0) {
+                if (event.done && llamaHelper != null) {
+                  if (llamaHelper.lastGenMs > 0 && llamaHelper.lastTokens > 1) {
+                    (llamaHelper.lastTokens - 1) * 1000f / llamaHelper.lastGenMs
+                  } else {
+                    -1f
+                  }
+                } else if (event.done && streamedChunks > 1 && genMs > 0) {
                   (streamedChunks - 1) * 1000f / genMs
                 } else {
                   -1f
@@ -356,16 +366,37 @@ open class LlmChatViewModelBase(
           }
           is AgentEvent.Error -> {
             Log.e(TAG, "Error occurred while running inference: ${event.errorMessage}")
+            finishThinkingMessage(model)
             setInProgress(false)
             setPreparing(false)
             onError(event.errorMessage)
           }
           is AgentEvent.LoopCancelled -> {
+            finishThinkingMessage(model)
             setInProgress(false)
             setPreparing(false)
           }
         }
       }
+    }
+  }
+
+  /** [ALTREX] Ends a reasoning panel still marked in progress (Stop, error or cancelled loop). */
+  private fun finishThinkingMessage(model: Model) {
+    val last = getLastMessage(model = model)
+    if (last is ChatMessageThinking && last.inProgress) {
+      replaceLastMessage(
+        model = model,
+        message =
+          ChatMessageThinking(
+            content = last.content,
+            inProgress = false,
+            side = last.side,
+            accelerator = last.accelerator,
+            hideSenderLabel = last.hideSenderLabel,
+          ),
+        type = ChatMessageType.THINKING,
+      )
     }
   }
 

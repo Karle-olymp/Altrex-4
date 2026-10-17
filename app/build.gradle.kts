@@ -121,6 +121,7 @@ dependencies {
   implementation(libs.litertlm)
   implementation(libs.commonmark)
   implementation(libs.richtext)
+  implementation(libs.pdfbox.android)
   implementation(libs.tflite)
   implementation(libs.tflite.gpu)
   implementation(libs.tflite.support)

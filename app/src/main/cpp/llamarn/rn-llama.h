@@ -1,0 +1,297 @@
+#ifndef RNLLAMA_H
+#define RNLLAMA_H
+
+#include <atomic>
+#include <sstream>
+#include <iostream>
+#include <thread>
+#include <codecvt>
+#include "chat.h"
+#include "common.h"
+#include "ggml.h"
+#include "ggml-cpu.h"
+#include "gguf.h"
+#include "llama.h"
+#include "llama-model.h"
+#include "llama-impl.h"
+#include "sampling.h"
+#include "nlohmann/json.hpp"
+#include "rn-tts.h"
+#include "rn-decision.h"
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
+
+using json = nlohmann::ordered_json;
+
+namespace rnllama {
+
+// rn-decision speaks upstream's common_json
+inline common_json to_common_json(const json & j) { return common_json::parse(j.dump()); }
+inline json from_common_json(const common_json & j) { return json::parse(j.dump()); }
+
+// Display form of a raw token piece: a lone high-bit byte is hex-escaped,
+// any other ill-formed piece is sanitized (JSI strings require well-formed UTF-8)
+std::string token_piece_to_output_string(const std::string & piece);
+
+std::string tokens_to_output_formatted_string(const llama_context *ctx, const llama_token token);
+
+std::string tokens_to_str(llama_context *ctx, const std::vector<llama_token>::const_iterator begin, const std::vector<llama_token>::const_iterator end);
+
+// M-RoPE media chunks occupy fewer time positions than placeholder tokens
+// (e.g. an 81-token Qwen-VL image spans 9 positions, all at the chunk start),
+// so the memory frontier legitimately lags the token count for media prefixes.
+bool model_uses_mrope(const llama_model *model);
+
+// State-file sidecar ("<state_path>.meta"): persists the media chunk identity
+// hashes alongside a saved sequence state. The state file's token list only
+// carries LLAMA_TOKEN_NULL placeholders for media positions, which are
+// identical for different media; without the hashes a loaded state cannot
+// prove the cached media matches the new prompt and must be reprocessed.
+// write_state_meta removes a stale sidecar when hashes is empty.
+void write_state_meta(const std::string &state_path, const std::vector<std::string> &bitmap_hashes);
+std::vector<std::string> read_state_meta(const std::string &state_path);
+
+// Token pieces are raw bytes (a multi-byte character can split across tokens;
+// malformed generations can emit stray bytes), while consumers of generated
+// text (chat parsers, JSON, JSI strings) require well-formed UTF-8. Text is
+// sanitized where it enters: token decode through a utf8_stream_gate, and
+// JS-supplied prefill at intake - so generated_text is well-formed at all times.
+
+// Number of trailing bytes (0..3) forming a well-formed but incomplete
+// multi-byte sequence - the only kind of tail future bytes can complete.
+size_t utf8_incomplete_suffix_length(const std::string & text);
+
+bool utf8_is_well_formed(const std::string & text);
+
+// Replaces each ill-formed sequence (stray continuations, invalid leads,
+// overlongs, surrogates, > U+10FFFF) with one U+FFFD per maximal subpart.
+std::string utf8_sanitize(const std::string & text);
+
+// Turns a stream of raw token pieces into well-formed UTF-8: an incomplete
+// multi-byte tail is buffered until the next piece completes it, dead bytes
+// become U+FFFD. All token text must reach generated_text through a gate.
+struct utf8_stream_gate {
+    // Returns the bytes ready to append/emit (well-formed, possibly empty).
+    std::string feed(const std::string & piece);
+
+    // End of generation: flushes a still-buffered tail as U+FFFD.
+    std::string finish();
+
+    bool has_pending() const { return !pending.empty(); }
+    void reset() { pending.clear(); }
+
+private:
+    std::string pending;
+};
+
+ggml_type kv_cache_type_from_str(const std::string & s);
+
+enum llama_flash_attn_type flash_attn_type_from_str(const std::string & s);
+
+// Forward declarations - actual definitions are in rn-completion.h
+// Note: enum forward declarations not allowed in C++, using include in implementation file
+struct completion_token_output;
+struct completion_chat_output;
+struct llama_rn_context_mtmd;
+
+struct llama_rn_context_tts;
+
+struct llama_rn_context_completion;
+
+struct llama_rn_slot_manager;
+
+struct llama_rn_tokenize_result {
+  std::vector<llama_token> tokens;
+  bool has_media = false;
+  std::vector<std::string> bitmap_hashes;
+  std::vector<size_t> chunk_pos; // both text and media
+  std::vector<size_t> chunk_pos_media; // media only
+};
+
+// Main context class
+struct llama_rn_context {
+    // Model state fields
+    llama_model *model = nullptr;
+    llama_model_ptr draft_model;
+    float loading_progress = 0;
+    bool is_load_interrupted = false;
+    common_params params;
+    // n_probs readout mode for the next completion (see get_token_probabilities);
+    // false = softmax of the raw logits, true = the sampler chain's candidates
+    bool post_sampling_probs = true;
+    common_init_result_ptr llama_init;
+    llama_context *ctx = nullptr;
+    common_chat_templates_ptr templates;
+    int n_ctx = 0;
+
+    // Prompt state cache tuning (see rn-completion.h). Budget 0 disables it;
+    // no-op on pure-attention models.
+    size_t state_cache_budget_bytes = (size_t) 160 * 1024 * 1024; // 0 = disabled
+    int32_t state_cache_max_checkpoints = 8;
+
+    // Completion context (DEPRECATED: Use slot_manager for parallel decoding)
+    llama_rn_context_completion *completion = nullptr;
+
+    // NEW: Slot manager for parallel decoding
+    llama_rn_slot_manager *slot_manager = nullptr;
+    bool parallel_mode_enabled = false;
+
+    // Held for the whole of a JSI op that touches the single-sequence state
+    // (completion, sampler, params, KV cache), so overlapping ops are rejected
+    // instead of racing on it. See ContextClaim in cpp/jsi/RNLlamaJSI.cpp.
+    std::atomic<bool> is_claimed{false};
+
+    ggml_threadpool *threadpool = nullptr;
+    ggml_threadpool *threadpool_batch = nullptr;
+
+    ~llama_rn_context();
+
+    bool loadModel(common_params &params_);
+    bool hasDraftModel() const;
+    llama_model * getMTPDraftModel() const;
+    llama_context * createMTPDraftContext(const common_params &params_for_context) const;
+    void cleanupThreadpools();
+    bool attachThreadpoolsIfAvailable();
+
+    // Parallel decoding methods
+    void enableParallelMode(int32_t n_parallel, int32_t n_batch = 512);
+    void disableParallelMode();
+
+    // Model methods
+    bool validateModelChatTemplate(bool use_jinja, const char *name) const;
+    common_chat_params getFormattedChatWithJinja(
+      const std::string& messages,
+      const std::string& chat_template,
+      const std::string& json_schema,
+      const std::string& tools,
+      const bool& parallel_tool_calls,
+      const std::string& tool_choice,
+      const bool& enable_thinking,
+      const std::string& reasoning_format,
+      const bool& add_generation_prompt = true,
+      const std::string& now_str = "",
+      const std::map<std::string, std::string>& chat_template_kwargs = {},
+      const bool& force_pure_content = false
+    ) const;
+    std::string getFormattedChat(
+      const std::string &messages,
+      const std::string &chat_template
+    ) const;
+    llama_rn_tokenize_result tokenize(const std::string &text, const std::vector<std::string> &media_paths);
+
+    // Lora methods
+    std::vector<common_adapter_lora_info> lora;
+    // Init-time adapters are owned by common_init_result. Runtime apply/remove
+    // operations load their own adapter handles and release them here.
+    std::vector<llama_adapter_lora_ptr> owned_lora;
+    void applyLoraAdapters(std::vector<common_adapter_lora_info> lora);
+    void removeLoraAdapters();
+    std::vector<common_adapter_lora_info> getLoadedLoraAdapters();
+
+    // Multimodal fields and methods
+    llama_rn_context_mtmd *mtmd_wrapper = nullptr;
+    bool has_multimodal = false;
+    bool initMultimodal(const std::string &mmproj_path, bool use_gpu, int image_min_tokens = -1, int image_max_tokens = -1);
+    bool isMultimodalEnabled() const;
+    bool isMultimodalSupportVision() const;
+    bool isMultimodalSupportAudio() const;
+    void releaseMultimodal();
+    // Media identity hashes tracked by the multimodal wrapper (empty when
+    // multimodal is disabled); persisted alongside session/state files
+    std::vector<std::string> getMediaHashes() const;
+    void setMediaHashes(const std::vector<std::string> &hashes);
+
+    // Typed decision models, see rn-decision.h
+    llama_rn_decision_context decision;
+    // false if the model only answers decisions (it runs in embedding mode)
+    bool canGenerateText() const;
+    // TypeSafe /v1/systemone request in, response out; runs on the completion's sequence, which starts over
+    json decide(const json & body);
+    // general.name of the model, or its file name
+    std::string modelName() const;
+    // the multimodal context a decision with images is evaluated with, nullptr if not initialized
+    mtmd_context * decisionMtmdContext() const;
+
+    // TTS fields and methods (delegated to TTS context)
+    llama_rn_context_tts *tts_wrapper = nullptr;
+    bool has_vocoder = false;
+    bool initVocoder(const std::string &vocoder_model_path, int batch_size = -1, bool use_gpu = false);
+    bool isVocoderEnabled() const;
+    void releaseVocoder();
+
+    // Cache management
+    void clearCache(bool clear_data = false);
+};
+
+// Utility functions
+inline void llama_batch_add(llama_batch *batch, llama_token id, llama_pos pos, std::vector<llama_seq_id> seq_ids, bool logits) {
+    batch->token   [batch->n_tokens] = id;
+    batch->pos     [batch->n_tokens] = pos;
+    batch->n_seq_id[batch->n_tokens] = seq_ids.size();
+    for (size_t i = 0; i < seq_ids.size(); i++) {
+        batch->seq_id[batch->n_tokens][i] = seq_ids[i];
+    }
+    batch->logits  [batch->n_tokens] = logits ? 1 : 0;
+    batch->n_tokens += 1;
+}
+
+// Device info functions
+json get_backend_devices_info();
+
+// Forward ggml abort messages to the platform log (process-wide, safe to call repeatedly)
+void install_ggml_abort_handler();
+
+// Backend device and GGUF accessors for the JSI glue.
+//
+// The glue is compiled into the host app and linked against this library as a
+// dynamic framework. When another ggml-based framework (e.g. whisper.rn) lives
+// in the same app, an app-level reference to a ggml symbol binds to whichever
+// framework the linker sees first. The glue therefore only calls these
+// rnllama-namespaced functions; using ggml *types* from the headers is fine,
+// referencing ggml *symbols* is not.
+size_t backend_dev_count();
+ggml_backend_dev_t backend_dev_get(size_t index);
+const char * backend_dev_name(ggml_backend_dev_t dev);
+enum ggml_backend_dev_type backend_dev_type(ggml_backend_dev_t dev);
+// Name of the backend registry owning the device ("Metal", "RPC", ...), or nullptr.
+const char * backend_dev_reg_name(ggml_backend_dev_t dev);
+// Vendor device id from the device props, or an empty string.
+std::string backend_dev_device_id(ggml_backend_dev_t dev);
+ggml_backend_buffer_type_t backend_cpu_buffer_type();
+
+struct gguf_file_info {
+    uint32_t version = 0;
+    size_t alignment = 0;
+    size_t data_offset = 0;
+    std::vector<std::pair<std::string, std::string>> kv;
+};
+// Reads GGUF header metadata (no tensor data). Returns false if the file cannot be parsed.
+bool read_gguf_file_info(const std::string & path, gguf_file_info & info);
+
+// Logging functions
+void log(const char *level, const char *function, int line, const char *format, ...);
+
+// Logging macros
+extern bool rnllama_verbose;
+
+#if RNLLAMA_VERBOSE != 1
+#define LOG_VERBOSE(MSG, ...)
+#else
+#define LOG_VERBOSE(MSG, ...)                                       \
+    do                                                              \
+    {                                                               \
+        if (rnllama_verbose)                                        \
+        {                                                           \
+            log("VERBOSE", __func__, __LINE__, MSG, ##__VA_ARGS__); \
+        }                                                           \
+    } while (0)
+#endif
+
+#define LOG_ERROR(MSG, ...) log("ERROR", __func__, __LINE__, MSG, ##__VA_ARGS__)
+#define LOG_WARNING(MSG, ...) log("WARNING", __func__, __LINE__, MSG, ##__VA_ARGS__)
+#define LOG_INFO(MSG, ...) log("INFO", __func__, __LINE__, MSG, ##__VA_ARGS__)
+
+} // namespace rnllama
+
+#endif /* RNLLAMA_H */

@@ -325,7 +325,9 @@ private fun CodeModeMainContent(
               }
             // ~3 caractères par token ; on garde ~2100 tokens pour la réponse.
             val maxTokens =
-              selectedModel.getIntConfigValue(ConfigKeys.MAX_TOKENS, DEFAULT_MAX_TOKEN)
+              (selectedModel.instance as? com.google.ai.edge.gallery.runtime.LlamaCppModelInstance)
+                ?.contextLength
+                ?: selectedModel.getIntConfigValue(ConfigKeys.MAX_TOKENS, DEFAULT_MAX_TOKEN)
             val promptBudget = (maxTokens - 2100).coerceAtLeast(0) * 3
             viewModel.setInProgress(true)
             viewModel.setPreparing(true)

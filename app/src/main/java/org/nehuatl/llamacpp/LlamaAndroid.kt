@@ -124,8 +124,7 @@ class LlamaAndroid(val resolver: ContentResolver) {
     }
 
     fun releaseContext(id: Int) {
-        contexts[id]!!.release()
-        contexts.remove(id)
+        contexts.remove(id)?.release()
     }
 
     fun isGGUF(uri: Uri): Boolean {

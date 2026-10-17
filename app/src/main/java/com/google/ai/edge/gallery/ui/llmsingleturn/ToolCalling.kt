@@ -155,6 +155,21 @@ object ToolCalling {
     return text.replace(re, "").trim()
   }
 
+  /** The answer without reasoning blocks (also an unterminated one) and stray closing tags. */
+  fun stripThinking(text: String): String =
+    text
+      .replace(
+        Regex(
+          Regex.escape(THINK_OPEN) + ".*?(?:" + Regex.escape(THINK_CLOSE) + "|\\z)",
+          RegexOption.DOT_MATCHES_ALL,
+        ),
+        "",
+      )
+      .replace(THINK_CLOSE, "")
+
+  /** What the user should see of a raw llama.cpp answer: no reasoning, no tool-call JSON. */
+  fun displayText(raw: String): String = stripToolCalls(stripThinking(raw))
+
   internal val THINK_OPEN = "<" + "think>"
   internal val THINK_CLOSE = "<" + "/think>"
   internal val TOOL_CALL_OPEN get() = CALL_OPEN

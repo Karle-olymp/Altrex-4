@@ -61,6 +61,9 @@ class LlamaContext(
             }
         }
 
+        /** [ALTREX] Last llama.cpp warnings/errors (explains a failed load). */
+        @JvmStatic external fun getLastNativeError(): String
+
         private fun isArm64V8a(): Boolean = Build.SUPPORTED_ABIS[0] == "arm64-v8a"
         private fun isX86_64(): Boolean = Build.SUPPORTED_ABIS[0] == "x86_64"
         private fun getCpuFeatures(): String {
@@ -125,7 +128,10 @@ class LlamaContext(
             // int mmproj_fd,
             params["mmproj_fd"] as? Int ?: -1,
             // int[] image_fds
-            (params["image_fds"] as? List<Int>)?.toIntArray() ?: intArrayOf()
+            (params["image_fds"] as? List<Int>)?.toIntArray() ?: intArrayOf(),
+            // [ALTREX] boolean use_mtp, int mtp_n_max (MTP speculative decoding)
+            params["use_mtp"] as? Boolean ?: false,
+            params["mtp_n_max"] as? Int ?: 3,
         )
         if (this.context == 0L) {
             throw IllegalStateException("Failed to initialize llama context")
@@ -281,7 +287,9 @@ class LlamaContext(
         rope_freq_base: Float,
         rope_freq_scale: Float,
         mmprojFd: Int,
-        imageFds: IntArray
+        imageFds: IntArray,
+        useMtp: Boolean,
+        mtpNMax: Int,
     ): Long
 
     private external fun loadModelDetails(contextPtr: Long): Map<String, Any>

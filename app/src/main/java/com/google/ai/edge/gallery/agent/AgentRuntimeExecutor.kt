@@ -124,4 +124,11 @@ interface AgentRuntimeExecutor {
    * @param onDone callback invoked once resource teardown is completed
    */
   fun cleanUp(onDone: () -> Unit = {})
+
+  /**
+   * [ALTREX] Cleans up [model] specifically. The default only knows the active session, which
+   * released the wrong model when asked to free another one (two GGUF models left in RAM).
+   */
+  fun cleanUpModel(model: com.google.ai.edge.gallery.data.Model, onDone: () -> Unit = {}) =
+    cleanUp(onDone)
 }

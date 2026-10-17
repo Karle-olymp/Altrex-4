@@ -254,15 +254,16 @@ fun ModelImportDialog(
               IMPORT_CONFIGS_LLM.filter {
                 it.key != ConfigKeys.COMPATIBLE_ACCELERATORS &&
                   it.key != ConfigKeys.SUPPORT_IMAGE &&
-                  it.key != ConfigKeys.SUPPORT_AUDIO &&
-                  it.key != ConfigKeys.SUPPORT_SPECULATIVE_DECODING
+                  it.key != ConfigKeys.SUPPORT_AUDIO
               }
             } else {
               IMPORT_CONFIGS_LLM
             }
           if (isGguf) {
             Text(
-              "Modèle GGUF : exécuté sur le processeur par llama.cpp, texte uniquement.",
+              "Modèle GGUF : exécuté sur le processeur par llama.cpp, texte uniquement. " +
+                "Le décodage spéculatif utilise la couche MTP du modèle (Qwen3.5 « -MTP »…) s'il en a " +
+                "une : expérimental, souvent plus lent sur processeur, à mesurer sur ton téléphone.",
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

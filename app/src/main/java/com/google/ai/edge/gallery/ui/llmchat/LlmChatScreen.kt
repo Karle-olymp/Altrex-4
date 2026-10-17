@@ -312,9 +312,37 @@ fun ChatViewWrapper(
         if (text.isNotEmpty()) {
           modelManagerViewModel.addTextInputHistory(text)
         }
+        // [ALTREX] Attached document: its text goes before the question, cut to fit the context.
+        val doc = chatMessageText?.data as? com.google.ai.edge.gallery.ui.common.chat.AttachedDocument
+        var input = text
+        if (doc != null) {
+          val contextTokens =
+            (model.instance as? com.google.ai.edge.gallery.runtime.LlamaCppModelInstance)?.contextLength
+              ?: model.getIntConfigValue(
+                com.google.ai.edge.gallery.data.ConfigKeys.MAX_TOKENS,
+                com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN,
+              )
+          // About 3 characters per token; a third of the context stays for the history and answer.
+          val (prompt, keptPages) =
+            com.google.ai.edge.gallery.ui.common.chat.DocumentReader.buildPrompt(
+              doc = doc,
+              question = text,
+              maxChars = contextTokens * 2,
+            )
+          input = prompt
+          if (keptPages != null) {
+            android.widget.Toast.makeText(
+                context,
+                if (doc.isPdf) "Document trop long pour ce modèle : les $keptPages premières pages ont été gardées."
+                else "Document trop long pour ce modèle : seul le début a été gardé.",
+                android.widget.Toast.LENGTH_LONG,
+              )
+              .show()
+          }
+        }
         viewModel.generateResponse(
           model = model,
-          input = text,
+          input = input,
           images = images,
           audioMessages = audioMessages,
           onFirstToken = onFirstToken,

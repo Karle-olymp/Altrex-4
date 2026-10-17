@@ -84,6 +84,7 @@ import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FlipCameraAndroid
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Photo
@@ -278,6 +279,30 @@ fun MessageInputText(
       permissionGranted ->
       if (permissionGranted) {
         handleClickRecordAudioClip()
+      }
+    }
+
+  // [ALTREX] Attached document (PDF or text file), its text extracted on the phone.
+  var pickedDocument by remember { mutableStateOf<AttachedDocument?>(null) }
+  var readingDocument by remember { mutableStateOf(false) }
+  val pickDocument =
+    rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+      if (uri != null) {
+        readingDocument = true
+        scope.launch {
+          try {
+            pickedDocument = DocumentReader.read(context, uri)
+          } catch (e: Exception) {
+            android.widget.Toast.makeText(
+                context,
+                if (e is DocumentImportException) e.message else "Impossible de lire ce document.",
+                android.widget.Toast.LENGTH_LONG,
+              )
+              .show()
+          } finally {
+            readingDocument = false
+          }
+        }
       }
     }
 
@@ -494,6 +519,20 @@ fun MessageInputText(
   }
 
   Column {
+    // [ALTREX] The attached document, above the media.
+    pickedDocument?.let { doc ->
+      Row(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
+        AttachedDocumentChip(doc = doc, onRemove = { pickedDocument = null })
+      }
+    }
+    if (readingDocument) {
+      Text(
+        "Lecture du document…",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 20.dp, bottom = 8.dp),
+      )
+    }
     // A preview panel for the selected images and audio clips.
     if (pickedImages.isNotEmpty() || pickedAudioClips.isNotEmpty()) {
       Row(
@@ -751,7 +790,7 @@ fun MessageInputText(
                   val canSend =
                     !inProgress &&
                       !isResettingSession &&
-                      (curMessage.isNotEmpty() || pickedAudioClips.isNotEmpty())
+                      (curMessage.isNotEmpty() || pickedAudioClips.isNotEmpty() || pickedDocument != null)
                   // The send button grows slightly when there is something to send.
                   val sendScale by
                     animateFloatAsState(
@@ -773,10 +812,12 @@ fun MessageInputText(
                           pickedImages = pickedImages,
                           audioClips = pickedAudioClips,
                           text = message,
+                          document = pickedDocument,
                         )
                       )
                       pickedImages = listOf()
                       pickedAudioClips = listOf()
+                      pickedDocument = null
                     },
                     colors =
                       IconButtonDefaults.iconButtonColors(
@@ -966,6 +1007,19 @@ fun MessageInputText(
               }
             }
           }
+        }
+        AddContentRow(icon = Icons.Rounded.Description, label = "Document (PDF ou texte)") {
+          showAddContentMenu = false
+          pickDocument.launch(
+            arrayOf(
+              "application/pdf",
+              "text/*",
+              "application/json",
+              "application/xml",
+              "application/x-yaml",
+              "application/javascript",
+            )
+          )
         }
         AddContentRow(icon = Icons.Rounded.History, label = stringResource(R.string.input_history)) {
           showAddContentMenu = false
@@ -1273,6 +1327,7 @@ private fun createMessagesToSend(
   pickedImages: List<Bitmap>,
   audioClips: List<AudioClip>,
   text: String,
+  document: AttachedDocument? = null,
 ): List<ChatMessage> {
   val messages: MutableList<ChatMessage> = mutableListOf()
 
@@ -1311,7 +1366,11 @@ private fun createMessagesToSend(
   }
   messages.addAll(audioMessages)
 
-  if (text.isNotEmpty()) {
+  if (document != null) {
+    // [ALTREX] The bubble shows the question; the document travels in `data`.
+    val question = text.ifEmpty { "Résume ce document." }
+    messages.add(ChatMessageText(content = question, side = ChatSide.USER, data = document))
+  } else if (text.isNotEmpty()) {
     messages.add(ChatMessageText(content = text, side = ChatSide.USER))
   }
 
