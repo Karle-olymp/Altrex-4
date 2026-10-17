@@ -31,10 +31,12 @@ import com.google.ai.edge.gallery.common.getJsonResponse
 import com.google.ai.edge.gallery.common.isAICoreSupported
 import com.google.ai.edge.gallery.customtasks.common.CustomTask
 import com.google.ai.edge.gallery.data.Accelerator
+import com.google.ai.edge.gallery.data.ArgoraManifest
 import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.Category
 import com.google.ai.edge.gallery.data.CategoryInfo
 import com.google.ai.edge.gallery.data.Config
+import com.google.ai.edge.gallery.data.DEFAULT_REPEAT_PENALTY
 import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.DataStoreRepository
 import com.google.ai.edge.gallery.data.DownloadRepository
@@ -1274,6 +1276,13 @@ constructor(
           accelerators = accelerators,
           supportThinking = llmSupportThinking,
           supportSpeculativeDecoding = llmSupportSpeculativeDecoding,
+          defaultRepeatPenalty =
+            if (isGguf) {
+              info.llmConfig.defaultRepeatPenalty.takeIf { it > 0f } ?: DEFAULT_REPEAT_PENALTY
+            } else {
+              null
+            },
+          defaultThinkingBudget = if (isGguf) info.llmConfig.defaultThinkingBudget else null,
         )
         .toMutableList()
     val capabilities: MutableList<ModelCapability> = mutableListOf()
@@ -1311,6 +1320,7 @@ constructor(
         capabilities = capabilities.toList(),
         capabilityToTaskTypes = capabilityToTaskTypes.toMap(),
         llmMaxToken = llmMaxToken,
+        argoraManifest = ArgoraManifest.parse(info.llmConfig.manifestJson),
         accelerators = accelerators,
         isLlm = true,
         // Detect the actual runtime engine from the imported file's extension: GGUF files run

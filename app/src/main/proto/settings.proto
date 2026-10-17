@@ -63,6 +63,11 @@ message LlmConfig {
   reserved 8, 9;
   bool support_thinking = 10;
   bool support_speculative_decoding = 11;
+  // [ALTREX] llama.cpp (GGUF) settings. 0 means "not set".
+  float default_repeat_penalty = 12;
+  int32 default_thinking_budget = 13;
+  // Raw argora-manifest.json imported with the model (empty when none).
+  string manifest_json = 14;
 }
 
 message Settings {

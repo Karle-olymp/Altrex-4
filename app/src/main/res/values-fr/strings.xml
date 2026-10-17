@@ -474,6 +474,10 @@
   <string name="config_label_max_output_tokens">Tokens de sortie max</string>
   <string name="config_label_topk">TopK</string>
   <string name="config_label_topp">TopP</string>
+  <string name="config_label_num_threads">Threads processeur (0 = automatique)</string>
+  <string name="config_label_basic_cpu">Mode compatibilité processeur (plus lent, effet au prochain lancement de l’appli)</string>
+  <string name="config_label_repeat_penalty">Pénalité de répétition</string>
+  <string name="config_label_thinking_budget">Budget de réflexion (tokens, 0 = sans limite)</string>
   <string name="config_label_temperature">Température</string>
   <string name="config_label_default_max_tokens">Taille du contexte (tokens)</string>
   <string name="config_label_default_topk">TopK par défaut</string>

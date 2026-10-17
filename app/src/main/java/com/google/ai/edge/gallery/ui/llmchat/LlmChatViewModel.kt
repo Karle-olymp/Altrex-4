@@ -30,6 +30,7 @@ import com.google.ai.edge.gallery.agent.AgentRuntimeExecutor
 import com.google.ai.edge.gallery.agent.AiChatExecutor
 import com.google.ai.edge.gallery.agent.Attachment
 import com.google.ai.edge.gallery.common.SystemPromptHelper
+import com.google.ai.edge.gallery.data.ARGORA_MODE_KEY
 import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.SystemPromptRepository
@@ -170,6 +171,7 @@ open class LlmChatViewModelBase(
     onDone: () -> Unit = {},
     onError: (String) -> Unit,
     allowThinking: Boolean = false,
+    argoraMode: String? = null,
   ) {
     val accelerator = model.getStringConfigValue(key = ConfigKeys.ACCELERATOR, defaultValue = "")
     viewModelScope.launch(Dispatchers.Default) {
@@ -190,7 +192,10 @@ open class LlmChatViewModelBase(
       val enableThinking =
         allowThinking &&
           model.getBooleanConfigValue(key = ConfigKeys.ENABLE_THINKING, defaultValue = false)
-      val extraContext = if (enableThinking) mapOf("enable_thinking" to "true") else emptyMap()
+      val extraContext = buildMap {
+        if (enableThinking) put("enable_thinking", "true")
+        if (argoraMode != null) put(ARGORA_MODE_KEY, argoraMode)
+      }
       val metadata =
         if (extraContext.isNotEmpty()) {
           mapOf(AgentRequest.LITERTLM_EXTRA_CONTEXT to extraContext)

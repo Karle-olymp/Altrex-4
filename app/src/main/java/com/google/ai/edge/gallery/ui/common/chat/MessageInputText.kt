@@ -524,6 +524,29 @@ fun MessageInputText(
       Row(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
         AttachedDocumentChip(doc = doc, onRemove = { pickedDocument = null })
       }
+      // [ALTREX] Argora tasks: one tap writes the exact instruction the model was trained on.
+      val argoraTasks = modelManagerUiState.selectedModel.argoraManifest?.tasks.orEmpty()
+      if (argoraTasks.isNotEmpty()) {
+        val docName = doc.name.lowercase()
+        val baseName = docName.removeSuffix(".txt")
+        // Tasks made for this kind of file first.
+        val sorted =
+          argoraTasks.sortedByDescending { t ->
+            t.extensions.any { ext -> baseName.endsWith(ext.lowercase()) || docName.endsWith(ext.lowercase()) }
+          }
+        Row(
+          modifier =
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          for (t in sorted) {
+            androidx.compose.material3.AssistChip(
+              onClick = { onValueChanged(t.prompt) },
+              label = { Text(t.label) },
+            )
+          }
+        }
+      }
     }
     if (readingDocument) {
       Text(

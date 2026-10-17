@@ -42,6 +42,9 @@ const val KEY_MODEL_IS_IMPORTED = "KEY_MODEL_IS_IMPORTED"
 const val DEFAULT_MAX_TOKEN = 1024
 const val DEFAULT_TOPK = 64
 const val DEFAULT_TOPP = 0.95f
+
+// [ALTREX] llama.cpp repetition penalty when the model brings none (Argora manifests use 1.1).
+const val DEFAULT_REPEAT_PENALTY = 1.05f
 const val DEFAULT_TEMPERATURE = 1.0f
 const val DEFAULT_MAX_OUTPUT_TOKEN = 1024
 val DEFAULT_ACCELERATORS = listOf(Accelerator.GPU)

@@ -52,6 +52,12 @@ object ConfigKeys {
   val TOPK = ConfigKey("topk", "TopK", R.string.config_label_topk)
   val TOPP = ConfigKey("topp", "TopP", R.string.config_label_topp)
   val TEMPERATURE = ConfigKey("temperature", "Temperature", R.string.config_label_temperature)
+  val REPEAT_PENALTY =
+    ConfigKey("repeat_penalty", "Repetition penalty", R.string.config_label_repeat_penalty)
+  val THINKING_BUDGET =
+    ConfigKey("thinking_budget", "Thinking budget", R.string.config_label_thinking_budget)
+  val NUM_THREADS = ConfigKey("num_threads", "CPU threads", R.string.config_label_num_threads)
+  val BASIC_CPU = ConfigKey("basic_cpu", "CPU compatibility mode", R.string.config_label_basic_cpu)
   val DEFAULT_MAX_TOKENS =
     ConfigKey("default_max_tokens", "Default max tokens", R.string.config_label_default_max_tokens)
   val DEFAULT_TOPK = ConfigKey("default_topk", "Default TopK", R.string.config_label_default_topk)
@@ -264,6 +270,9 @@ fun createLlmChatConfigs(
   accelerators: List<Accelerator> = DEFAULT_ACCELERATORS,
   supportThinking: Boolean = false,
   supportSpeculativeDecoding: Boolean = false,
+  // [ALTREX] llama.cpp (GGUF) only: null hides the setting.
+  defaultRepeatPenalty: Float? = null,
+  defaultThinkingBudget: Int? = null,
 ): List<Config> {
   var maxTokensConfig: Config =
     LabelConfig(key = ConfigKeys.MAX_TOKENS, defaultValue = "$defaultMaxToken")
@@ -309,8 +318,46 @@ fun createLlmChatConfigs(
       )
       .toMutableList()
 
+  if (defaultRepeatPenalty != null) {
+    configs.add(
+      NumberSliderConfig(
+        key = ConfigKeys.REPEAT_PENALTY,
+        sliderMin = 1.0f,
+        sliderMax = 1.5f,
+        defaultValue = defaultRepeatPenalty,
+        valueType = ValueType.FLOAT,
+        needReinitialization = false,
+      )
+    )
+  }
+  if (defaultRepeatPenalty != null) {
+    // [ALTREX] llama.cpp diagnostics: thread count, and the plain ARMv8 build instead of the
+    // dotprod/i8mm one.
+    configs.add(
+      NumberSliderConfig(
+        key = ConfigKeys.NUM_THREADS,
+        sliderMin = 0f,
+        sliderMax = 8f,
+        defaultValue = 0f,
+        valueType = ValueType.INT,
+      )
+    )
+    configs.add(BooleanSwitchConfig(key = ConfigKeys.BASIC_CPU, defaultValue = false))
+  }
   if (supportThinking) {
     configs.add(BooleanSwitchConfig(key = ConfigKeys.ENABLE_THINKING, defaultValue = false))
+    if (defaultThinkingBudget != null) {
+      configs.add(
+        NumberSliderConfig(
+          key = ConfigKeys.THINKING_BUDGET,
+          sliderMin = 0f,
+          sliderMax = 4096f,
+          defaultValue = defaultThinkingBudget.toFloat(),
+          valueType = ValueType.INT,
+          needReinitialization = false,
+        )
+      )
+    }
   }
   if (supportSpeculativeDecoding) {
     configs.add(

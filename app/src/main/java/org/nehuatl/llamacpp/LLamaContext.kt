@@ -17,9 +17,21 @@ class LlamaContext(
     companion object {
         private const val NAME = "RNLlamaContext"
 
+        /** Name of the native build in use, for the diagnostics. */
+        @Volatile @JvmStatic var loadedVariant: String = ""
+            private set
+
+        private fun load(name: String) {
+            Log.d(NAME, "Loading lib$name.so")
+            System.loadLibrary(name)
+            loadedVariant = name
+        }
+
         init {
             try {
-                if (isArm64V8a()) {
+                if (isArm64V8a() && NativeCpuOptions.forceBasicCpu) {
+                    load("rnllama_v8")
+                } else if (isArm64V8a()) {
                     val cpuFeatures = getCpuFeatures()
                     Log.d(NAME, "CPU features: $cpuFeatures")
 
@@ -29,29 +41,23 @@ class LlamaContext(
 
                     when {
                         isAtLeastArmV82 && hasDotProd && hasI8mm -> {
-                            Log.d(NAME, "Loading librnllama_v8_2_dotprod_i8mm.so")
-                            System.loadLibrary("rnllama_v8_2_dotprod_i8mm")
+                            load("rnllama_v8_2_dotprod_i8mm")
                         }
                         isAtLeastArmV82 && hasDotProd -> {
-                            Log.d(NAME, "Loading librnllama_v8_2_dotprod.so")
-                            System.loadLibrary("rnllama_v8_2_dotprod")
+                            load("rnllama_v8_2_dotprod")
                         }
                         isAtLeastArmV82 && hasI8mm -> {
-                            Log.d(NAME, "Loading librnllama_v8_2_i8mm.so")
-                            System.loadLibrary("rnllama_v8_2_i8mm")
+                            load("rnllama_v8_2_i8mm")
                         }
                         isAtLeastArmV82 -> {
-                            Log.d(NAME, "Loading librnllama_v8_2.so")
-                            System.loadLibrary("rnllama_v8_2")
+                            load("rnllama_v8_2")
                         }
                         else -> {
-                            Log.d(NAME, "Loading librnllama_v8.so")
-                            System.loadLibrary("rnllama_v8")
+                            load("rnllama_v8")
                         }
                     }
                 } else if (isX86_64()) {
-                    Log.d(NAME, "Loading librnllama_x86_64.so")
-                    System.loadLibrary("rnllama_x86_64")
+                    load("rnllama_x86_64")
                 } else {
                     Log.d(NAME, "Loading default librnllama.so")
                     System.loadLibrary("rnllama")

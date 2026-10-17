@@ -143,16 +143,17 @@ class RunJsTool(
       val resultJson = runCatching { jsonAdapter.fromJson(result) }.getOrNull()
       val error = resultJson?.error
 
+      // Error case. [ALTREX] Checked first: {"error": ...} has no result, image or webview and was
+      // reported to the model as a success.
+      if (error != null) {
+        mapOf("error" to error, "status" to "failed")
+      }
       // Failed to parse. Treat its whole as a result string.
-      if (
+      else if (
         resultJson == null ||
           (resultJson.result == null && resultJson.webview == null && resultJson.image == null)
       ) {
         mapOf("result" to result, "status" to "succeeded")
-      }
-      // Error case.
-      else if (error != null) {
-        mapOf("error" to error, "status" to "failed")
       }
       // Non-error cases.
       else {

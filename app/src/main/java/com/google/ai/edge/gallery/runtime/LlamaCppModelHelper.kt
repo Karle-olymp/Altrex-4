@@ -19,8 +19,10 @@ package com.google.ai.edge.gallery.runtime
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
+import com.google.ai.edge.gallery.data.ARGORA_MODE_KEY
 import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN
+import com.google.ai.edge.gallery.data.DEFAULT_REPEAT_PENALTY
 import com.google.ai.edge.gallery.data.DEFAULT_TEMPERATURE
 import com.google.ai.edge.gallery.data.DEFAULT_TOPK
 import com.google.ai.edge.gallery.data.DEFAULT_TOPP
@@ -86,6 +88,16 @@ object LlamaCppModelHelper : LlmModelHelper {
 
     val maxTokens =
       model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN)
+    // [ALTREX] The native build is chosen when the library loads: remember the choice for the next
+    // app start.
+    context
+      .getSharedPreferences(org.nehuatl.llamacpp.NativeCpuOptions.PREFS, Context.MODE_PRIVATE)
+      .edit()
+      .putBoolean(
+        org.nehuatl.llamacpp.NativeCpuOptions.KEY_FORCE_BASIC_CPU,
+        model.getBooleanConfigValue(key = ConfigKeys.BASIC_CPU, defaultValue = false),
+      )
+      .apply()
     val modelPath = model.getPath(context = context)
 
     // Memory guard. A big model next to Android and the other apps can get the process killed
@@ -130,6 +142,7 @@ object LlamaCppModelHelper : LlmModelHelper {
         // [ALTREX] MTP speculative decoding when the user turned on speculative decoding.
         useMtp =
           model.getBooleanConfigValue(key = ConfigKeys.ENABLE_SPECULATIVE_DECODING, defaultValue = false),
+        nThreads = model.getIntConfigValue(key = ConfigKeys.NUM_THREADS, defaultValue = 0),
         onError = { errorMsg ->
           if (initDone.compareAndSet(false, true)) {
             Log.e(TAG, "Failed to load '${model.name}': $errorMsg")
@@ -138,7 +151,11 @@ object LlamaCppModelHelper : LlmModelHelper {
           }
         },
       ) { contextId ->
-        Log.i(TAG, "Model loaded, context id=$contextId, $effectiveContext tokens")
+        Log.i(
+          TAG,
+          "Model loaded, context id=$contextId, $effectiveContext tokens, native build " +
+            org.nehuatl.llamacpp.LlamaContext.loadedVariant,
+        )
         if (initDone.compareAndSet(false, true)) {
           model.instance =
             LlamaCppModelInstance(
@@ -237,15 +254,34 @@ object LlamaCppModelHelper : LlmModelHelper {
     instance.finishCurrent = { finish(null) }
 
     val maxTokens = instance.contextLength
-    val sampling =
+    // [ALTREX] A task or a mode of an Argora model brings its own settings (e.g. "analyse": low
+    // temperature for stable file audits).
+    val argoraMode = extraContext?.get(ARGORA_MODE_KEY)?.let { model.argoraManifest?.modes?.get(it) }
+    val baseSampling =
       LlamaHelper.Sampling(
         temperature =
           model.getFloatConfigValue(key = ConfigKeys.TEMPERATURE, defaultValue = DEFAULT_TEMPERATURE),
         topK = model.getIntConfigValue(key = ConfigKeys.TOPK, defaultValue = DEFAULT_TOPK),
         topP = model.getFloatConfigValue(key = ConfigKeys.TOPP, defaultValue = DEFAULT_TOPP),
+        repeatPenalty =
+          model.getFloatConfigValue(
+            key = ConfigKeys.REPEAT_PENALTY,
+            defaultValue = DEFAULT_REPEAT_PENALTY,
+          ),
         // Leave room for the prompt: at most half the context, between 1024 and 8192 tokens.
         maxOutputTokens = (maxTokens / 2).coerceIn(1024, 8192),
+        thinkingBudget = model.getIntConfigValue(key = ConfigKeys.THINKING_BUDGET, defaultValue = 0),
       )
+    val sampling =
+      argoraMode?.let {
+        baseSampling.copy(
+          temperature = it.temperature,
+          topK = it.topK,
+          topP = it.topP,
+          repeatPenalty = it.repeatPenalty,
+          thinkingBudget = it.thinkingBudget,
+        )
+      } ?: baseSampling
 
     try {
       instance.llamaHelper.predict(

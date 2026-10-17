@@ -32,6 +32,10 @@ class GalleryApplication : Application() {
 
   override fun onCreate() {
     super.onCreate()
+    // [ALTREX] Must be set before the llama.cpp library is loaded.
+    org.nehuatl.llamacpp.NativeCpuOptions.forceBasicCpu =
+      getSharedPreferences(org.nehuatl.llamacpp.NativeCpuOptions.PREFS, MODE_PRIVATE)
+        .getBoolean(org.nehuatl.llamacpp.NativeCpuOptions.KEY_FORCE_BASIC_CPU, false)
     // Initialize the notification schedule manager to load the scheduled notifications from the
     // disk.
     notificationScheduleManager.initialize()

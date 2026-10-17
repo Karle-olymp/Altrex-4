@@ -144,6 +144,28 @@ object DocumentReader {
     return out.toByteArray()
   }
 
+  /** Code block language for a file name (empty when unknown), as in Argora's training data. */
+  fun codeLanguage(fileName: String): String {
+    val name = fileName.lowercase().removeSuffix(".txt")
+    val ext = name.substringAfterLast('.', "")
+    return when {
+      name.startsWith("dockerfile") -> "dockerfile"
+      name.contains("nginx") -> "nginx"
+      name.contains("sshd_config") || name.contains("sudoers") -> ""
+      name.contains("docker-compose") -> "yaml"
+      ext == "py" -> "python"
+      ext == "js" || ext == "mjs" -> "javascript"
+      ext == "ts" -> "typescript"
+      ext == "sh" || ext == "bash" -> "bash"
+      ext == "yml" || ext == "yaml" -> "yaml"
+      ext in setOf("php", "java", "go", "json", "toml", "ini", "sql", "xml") -> ext
+      ext == "cs" -> "csharp"
+      ext == "rb" -> "ruby"
+      ext == "env" || name == ".env" -> "dotenv"
+      else -> ""
+    }
+  }
+
   private fun displayName(context: Context, uri: Uri): String? =
     try {
       context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
@@ -158,7 +180,12 @@ object DocumentReader {
    * first) followed by the user's question. Returns the prompt and the number of pages kept (or
    * null when everything fits).
    */
-  fun buildPrompt(doc: AttachedDocument, question: String, maxChars: Int): Pair<String, Int?> {
+  fun buildPrompt(
+    doc: AttachedDocument,
+    question: String,
+    maxChars: Int,
+    argoraFormat: Boolean = false,
+  ): Pair<String, Int?> {
     val budget = maxChars.coerceAtLeast(2_000)
     val body = StringBuilder()
     var keptPages = 0
@@ -177,6 +204,12 @@ object DocumentReader {
       keptPages++
     }
     if (doc.pageTexts.size < doc.pages) truncated = true
+    if (argoraFormat) {
+      // [ALTREX] The form Argora saw in training: the instruction, then the file in a code block.
+      val fence = if (body.contains("```")) "~~~" else "```"
+      val prompt = "${question.trim()}\n\n$fence${codeLanguage(doc.name)}\n${body.toString().trimEnd()}\n$fence"
+      return prompt to (if (truncated) keptPages else null)
+    }
     val header =
       buildString {
         append("Document joint : ").append(doc.name)

@@ -73,6 +73,7 @@ constructor(
     onDone: () -> Unit,
     onError: (String) -> Unit,
     allowThinking: Boolean,
+    argoraMode: String?,
   ) {
     if (!autonomousModeEnabled.value) {
       super.generateResponse(
@@ -84,6 +85,7 @@ constructor(
         onDone = onDone,
         onError = onError,
         allowThinking = allowThinking,
+        argoraMode = argoraMode,
       )
       return
     }
@@ -192,6 +194,7 @@ constructor(
       },
       onError = onError,
       allowThinking = allowThinking,
+      argoraMode = null,
     )
   }
 
@@ -231,6 +234,7 @@ constructor(
       },
       onError = onError,
       allowThinking = allowThinking,
+      argoraMode = null,
     )
   }
 }

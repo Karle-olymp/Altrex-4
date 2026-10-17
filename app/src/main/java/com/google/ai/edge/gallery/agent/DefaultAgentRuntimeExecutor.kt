@@ -18,6 +18,7 @@ package com.google.ai.edge.gallery.agent
 
 import android.content.Context
 import android.util.Log
+import com.google.ai.edge.gallery.data.ARGORA_MODE_KEY
 import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN
 import com.google.ai.edge.gallery.data.Model
@@ -203,6 +204,7 @@ open class DefaultAgentRuntimeExecutor(
                 request = request,
                 systemInstruction = session.systemInstruction,
                 enableThinking = extraContext?.get("enable_thinking") == "true",
+                argoraModeId = extraContext?.get(ARGORA_MODE_KEY),
                 emit = { producer.emitEvent(it) },
               )
             if (finalResponse == null) {
@@ -389,6 +391,7 @@ open class DefaultAgentRuntimeExecutor(
     request: AgentRequest,
     systemInstruction: String?,
     enableThinking: Boolean,
+    argoraModeId: String? = null,
     emit: (AgentEvent) -> Unit,
   ): String? {
     // Triggers the ViewModel's "first token" handling so the loading state clears even when the
@@ -398,8 +401,18 @@ open class DefaultAgentRuntimeExecutor(
     val stopped = { stopGen.get() != myStop }
 
     val specs = LlamaCppToolBridge.availableSpecs(toolsProvider)
+    // [ALTREX] Without tools, an Argora model gets the exact system prompt it was trained with (plus
+    // the suffix of the mode in use). With tools it keeps the agent prompt and its skill list: Argora
+    // is trained on that exact format (argora docs/FORMAT_OUTILS.md § 4.5).
+    val manifest = model.argoraManifest
+    val argoraMode =
+      manifest?.let { m ->
+        argoraModeId?.let { m.modes[it] } ?: if (enableThinking) m.thinkingMode else m.defaultModeSettings
+      }
+    val thinking = argoraMode?.thinking ?: enableThinking
     val instructions =
-      systemInstruction?.takeIf { it.isNotBlank() }
+      manifest?.takeIf { specs.isEmpty() }?.systemPromptFor(argoraMode)
+        ?: systemInstruction?.takeIf { it.isNotBlank() }
         ?: org.nehuatl.llamacpp.LlamaHelper.getDefaultSystemPrompt()
     // No tools in this screen: a plain system prompt and a single turn.
     val system = if (specs.isEmpty()) instructions else ToolCalling.systemPrompt(specs, instructions)
@@ -420,7 +433,12 @@ open class DefaultAgentRuntimeExecutor(
         emit(AgentEvent.StreamToken(token = "\n\n", done = false))
       }
       val response =
-        runLlamaCppTurn(model = model, prompt = prompt, enableThinking = enableThinking) { chunk ->
+        runLlamaCppTurn(
+          model = model,
+          prompt = prompt,
+          enableThinking = thinking,
+          argoraModeId = argoraMode?.id,
+        ) { chunk ->
           // The native callback thread and this one (after a Stop) can both get here.
           synchronized(splitter) { emitSplit(splitter.feed(chunk), shown, emit) }
         }
@@ -499,6 +517,7 @@ open class DefaultAgentRuntimeExecutor(
     model: Model,
     prompt: String,
     enableThinking: Boolean = false,
+    argoraModeId: String? = null,
     onChunk: (String) -> Unit = {},
   ): String {
     val buffer = StringBuilder()
@@ -506,7 +525,12 @@ open class DefaultAgentRuntimeExecutor(
     model.runtimeHelper.runInference(
       model = model,
       input = prompt,
-      extraContext = if (enableThinking) mapOf("enable_thinking" to "true") else null,
+      extraContext =
+        buildMap {
+            if (enableThinking) put("enable_thinking", "true")
+            if (argoraModeId != null) put(ARGORA_MODE_KEY, argoraModeId)
+          }
+          .ifEmpty { null },
       resultListener = { partialResult, done, _ ->
         if (partialResult.isNotEmpty() && !completion.isCompleted) {
           buffer.append(partialResult)
