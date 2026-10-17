@@ -290,6 +290,9 @@ data class Model(
   /** The max token for llm model. */
   val llmMaxToken: Int = 0,
 
+  /** [ALTREX] argora-manifest.json imported with this GGUF (system prompt, modes, tasks). */
+  val argoraManifest: ArgoraManifest? = null,
+
   /** Compatible accelerators. */
   val accelerators: List<Accelerator> = listOf(),
 

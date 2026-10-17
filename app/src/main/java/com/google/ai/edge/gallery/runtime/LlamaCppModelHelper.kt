@@ -19,6 +19,7 @@ package com.google.ai.edge.gallery.runtime
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
+import com.google.ai.edge.gallery.data.ARGORA_MODE_KEY
 import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN
 import com.google.ai.edge.gallery.data.DEFAULT_REPEAT_PENALTY
@@ -238,7 +239,10 @@ object LlamaCppModelHelper : LlmModelHelper {
     instance.finishCurrent = { finish(null) }
 
     val maxTokens = instance.contextLength
-    val sampling =
+    // [ALTREX] A task or a mode of an Argora model brings its own settings (e.g. "analyse": low
+    // temperature for stable file audits).
+    val argoraMode = extraContext?.get(ARGORA_MODE_KEY)?.let { model.argoraManifest?.modes?.get(it) }
+    val baseSampling =
       LlamaHelper.Sampling(
         temperature =
           model.getFloatConfigValue(key = ConfigKeys.TEMPERATURE, defaultValue = DEFAULT_TEMPERATURE),
@@ -253,6 +257,16 @@ object LlamaCppModelHelper : LlmModelHelper {
         maxOutputTokens = (maxTokens / 2).coerceIn(1024, 8192),
         thinkingBudget = model.getIntConfigValue(key = ConfigKeys.THINKING_BUDGET, defaultValue = 0),
       )
+    val sampling =
+      argoraMode?.let {
+        baseSampling.copy(
+          temperature = it.temperature,
+          topK = it.topK,
+          topP = it.topP,
+          repeatPenalty = it.repeatPenalty,
+          thinkingBudget = it.thinkingBudget,
+        )
+      } ?: baseSampling
 
     try {
       instance.llamaHelper.predict(

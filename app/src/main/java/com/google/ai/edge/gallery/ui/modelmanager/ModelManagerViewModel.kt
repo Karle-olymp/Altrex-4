@@ -31,6 +31,7 @@ import com.google.ai.edge.gallery.common.getJsonResponse
 import com.google.ai.edge.gallery.common.isAICoreSupported
 import com.google.ai.edge.gallery.customtasks.common.CustomTask
 import com.google.ai.edge.gallery.data.Accelerator
+import com.google.ai.edge.gallery.data.ArgoraManifest
 import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.Category
 import com.google.ai.edge.gallery.data.CategoryInfo
@@ -1319,6 +1320,7 @@ constructor(
         capabilities = capabilities.toList(),
         capabilityToTaskTypes = capabilityToTaskTypes.toMap(),
         llmMaxToken = llmMaxToken,
+        argoraManifest = ArgoraManifest.parse(info.llmConfig.manifestJson),
         accelerators = accelerators,
         isLlm = true,
         // Detect the actual runtime engine from the imported file's extension: GGUF files run

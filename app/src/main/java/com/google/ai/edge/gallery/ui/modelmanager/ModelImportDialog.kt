@@ -17,6 +17,10 @@
 package com.google.ai.edge.gallery.ui.modelmanager
 
 import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.OutlinedButton
+import com.google.ai.edge.gallery.data.ArgoraManifest
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
@@ -217,6 +221,45 @@ fun ModelImportDialog(
   }
   val interactionSource = remember { MutableInteractionSource() }
 
+  // [ALTREX] Optional argora-manifest.json: fills in the settings Argora was trained for and keeps
+  // its system prompt, modes and tasks with the model.
+  var manifestJson by remember { mutableStateOf("") }
+  var manifestInfo by remember { mutableStateOf<String?>(null) }
+  val manifestPicker =
+    rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { picked ->
+      if (picked == null) return@rememberLauncherForActivityResult
+      val text =
+        try {
+          context.contentResolver.openInputStream(picked)?.use { stream ->
+            stream.readBytes().takeIf { it.size <= 512 * 1024 }?.toString(Charsets.UTF_8)
+          }
+        } catch (e: Exception) {
+          Log.e(TAG, "Cannot read manifest $picked", e)
+          null
+        }
+      val manifest = text?.let { ArgoraManifest.parse(it) }
+      if (manifest == null) {
+        manifestJson = ""
+        manifestInfo = "Ce fichier n'est pas un manifeste Argora reconnu (argora-manifest.json, schéma 1)."
+        return@rememberLauncherForActivityResult
+      }
+      manifestJson = text
+      manifest.defaultModeSettings?.let { mode ->
+        values[ConfigKeys.DEFAULT_TEMPERATURE.label] = mode.temperature
+        values[ConfigKeys.DEFAULT_TOPP.label] = mode.topP
+        values[ConfigKeys.DEFAULT_TOPK.label] = mode.topK.toFloat()
+      }
+      values[ConfigKeys.SUPPORT_THINKING.label] = manifest.thinkingMode != null
+      values[ConfigKeys.DEFAULT_MAX_TOKENS.label] = manifest.recommendedContext.toFloat()
+      manifestInfo = buildString {
+        append("${manifest.name} ${manifest.version} : réglages, prompt système, modes ")
+        append("et ${manifest.tasks.size} tâches appliqués.")
+        if (manifest.fileNames.isNotEmpty() && fileName !in manifest.fileNames) {
+          append(" Attention : ce manifeste ne cite pas « $fileName ».")
+        }
+      }
+    }
+
   Dialog(onDismissRequest = onDismiss) {
     val focusManager = LocalFocusManager.current
     Card(
@@ -267,6 +310,18 @@ fun ModelImportDialog(
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+          }
+          if (isGguf) {
+            OutlinedButton(onClick = { manifestPicker.launch(arrayOf("application/json", "text/plain", "*/*")) }) {
+              Text("Charger le manifeste Argora (argora-manifest.json)")
+            }
+            manifestInfo?.let {
+              Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
           }
           ConfigEditorsPanel(configs = shownConfigs, values = values)
         }
@@ -354,6 +409,11 @@ fun ModelImportDialog(
                   this.supportAudio = supportAudio
                   this.supportThinking = supportThinking
                   this.supportSpeculativeDecoding = supportSpeculativeDecoding
+                  ArgoraManifest.parse(manifestJson)?.let { manifest ->
+                    manifest.defaultModeSettings?.let { this.defaultRepeatPenalty = it.repeatPenalty }
+                    manifest.thinkingMode?.let { this.defaultThinkingBudget = it.thinkingBudget }
+                    this.manifestJson = manifestJson
+                  }
                 }
               }
 
