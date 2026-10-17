@@ -315,6 +315,10 @@ fun ChatViewWrapper(
         // [ALTREX] Attached document: its text goes before the question, cut to fit the context.
         val doc = chatMessageText?.data as? com.google.ai.edge.gallery.ui.common.chat.AttachedDocument
         var input = text
+        // [ALTREX] An Argora model analyses an attached file in its "analyse" mode, with the
+        // message form it was trained on.
+        val argora = model.argoraManifest
+        val argoraMode = if (doc != null && argora?.modes?.containsKey("analyse") == true) "analyse" else null
         if (doc != null) {
           val contextTokens =
             (model.instance as? com.google.ai.edge.gallery.runtime.LlamaCppModelInstance)?.contextLength
@@ -328,6 +332,7 @@ fun ChatViewWrapper(
               doc = doc,
               question = text,
               maxChars = contextTokens * 2,
+              argoraFormat = argora != null,
             )
           input = prompt
           if (keptPages != null) {
@@ -357,6 +362,7 @@ fun ChatViewWrapper(
             )
           },
           allowThinking = task.allowCapability(ModelCapability.LLM_THINKING, model),
+          argoraMode = argoraMode,
         )
 
         val activeSkills = getActiveSkills()
