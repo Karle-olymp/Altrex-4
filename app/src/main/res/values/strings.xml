@@ -570,6 +570,8 @@
   <string name="config_label_topk">TopK</string>
   <!-- Label for the 'TopP' option in the model configuration dialog. -->
   <string name="config_label_topp">TopP</string>
+  <string name="config_label_num_threads">CPU threads (0 = automatic)</string>
+  <string name="config_label_basic_cpu">CPU compatibility mode (slower, applies at next app start)</string>
   <string name="config_label_repeat_penalty">Repetition penalty</string>
   <string name="config_label_thinking_budget">Thinking budget (tokens, 0 = no limit)</string>
   <!-- Label for the 'Temperature' option in the model configuration dialog. -->

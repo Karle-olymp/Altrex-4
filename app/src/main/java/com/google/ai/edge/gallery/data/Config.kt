@@ -56,6 +56,8 @@ object ConfigKeys {
     ConfigKey("repeat_penalty", "Repetition penalty", R.string.config_label_repeat_penalty)
   val THINKING_BUDGET =
     ConfigKey("thinking_budget", "Thinking budget", R.string.config_label_thinking_budget)
+  val NUM_THREADS = ConfigKey("num_threads", "CPU threads", R.string.config_label_num_threads)
+  val BASIC_CPU = ConfigKey("basic_cpu", "CPU compatibility mode", R.string.config_label_basic_cpu)
   val DEFAULT_MAX_TOKENS =
     ConfigKey("default_max_tokens", "Default max tokens", R.string.config_label_default_max_tokens)
   val DEFAULT_TOPK = ConfigKey("default_topk", "Default TopK", R.string.config_label_default_topk)
@@ -327,6 +329,20 @@ fun createLlmChatConfigs(
         needReinitialization = false,
       )
     )
+  }
+  if (defaultRepeatPenalty != null) {
+    // [ALTREX] llama.cpp diagnostics: thread count, and the plain ARMv8 build instead of the
+    // dotprod/i8mm one.
+    configs.add(
+      NumberSliderConfig(
+        key = ConfigKeys.NUM_THREADS,
+        sliderMin = 0f,
+        sliderMax = 8f,
+        defaultValue = 0f,
+        valueType = ValueType.INT,
+      )
+    )
+    configs.add(BooleanSwitchConfig(key = ConfigKeys.BASIC_CPU, defaultValue = false))
   }
   if (supportThinking) {
     configs.add(BooleanSwitchConfig(key = ConfigKeys.ENABLE_THINKING, defaultValue = false))

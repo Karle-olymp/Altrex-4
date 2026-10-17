@@ -61,6 +61,7 @@ class LlamaHelper(
         contextLength: Int,
         mmprojPath: String? = null,
         useMtp: Boolean = false,
+        nThreads: Int = 0,
         onError: ((String) -> Unit)? = null,
         loaded: (Long) -> Unit
     ) {
@@ -85,7 +86,7 @@ class LlamaHelper(
                 "n_ctx" to contextLength,
                 "embedding" to false,
                 "n_batch" to 512,
-                "n_threads" to 0,
+                "n_threads" to nThreads,
                 "n_gpu_layers" to 0,
                 "vocab_only" to false,
                 "lora" to "",

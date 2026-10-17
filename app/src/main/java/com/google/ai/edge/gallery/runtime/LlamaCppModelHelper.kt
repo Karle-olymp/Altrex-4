@@ -88,6 +88,16 @@ object LlamaCppModelHelper : LlmModelHelper {
 
     val maxTokens =
       model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN)
+    // [ALTREX] The native build is chosen when the library loads: remember the choice for the next
+    // app start.
+    context
+      .getSharedPreferences(org.nehuatl.llamacpp.NativeCpuOptions.PREFS, Context.MODE_PRIVATE)
+      .edit()
+      .putBoolean(
+        org.nehuatl.llamacpp.NativeCpuOptions.KEY_FORCE_BASIC_CPU,
+        model.getBooleanConfigValue(key = ConfigKeys.BASIC_CPU, defaultValue = false),
+      )
+      .apply()
     val modelPath = model.getPath(context = context)
 
     // Memory guard. A big model next to Android and the other apps can get the process killed
@@ -132,6 +142,7 @@ object LlamaCppModelHelper : LlmModelHelper {
         // [ALTREX] MTP speculative decoding when the user turned on speculative decoding.
         useMtp =
           model.getBooleanConfigValue(key = ConfigKeys.ENABLE_SPECULATIVE_DECODING, defaultValue = false),
+        nThreads = model.getIntConfigValue(key = ConfigKeys.NUM_THREADS, defaultValue = 0),
         onError = { errorMsg ->
           if (initDone.compareAndSet(false, true)) {
             Log.e(TAG, "Failed to load '${model.name}': $errorMsg")
@@ -140,7 +151,11 @@ object LlamaCppModelHelper : LlmModelHelper {
           }
         },
       ) { contextId ->
-        Log.i(TAG, "Model loaded, context id=$contextId, $effectiveContext tokens")
+        Log.i(
+          TAG,
+          "Model loaded, context id=$contextId, $effectiveContext tokens, native build " +
+            org.nehuatl.llamacpp.LlamaContext.loadedVariant,
+        )
         if (initDone.compareAndSet(false, true)) {
           model.instance =
             LlamaCppModelInstance(
