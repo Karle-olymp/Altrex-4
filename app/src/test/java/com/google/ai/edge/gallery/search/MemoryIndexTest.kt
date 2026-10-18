@@ -57,4 +57,16 @@ class MemoryIndexTest {
     assertEquals(index.chunks, loaded.chunks)
     assertEquals("notes/sauvegardes.md", loaded.search("restic NAS", 2_000).first().path)
   }
+
+  @Test
+  fun sourcesNameEachFileOnceWithItsPages() {
+    val hits =
+      listOf(
+        MemoryHit("docs/rapport.pdf", 25, "a", 1.0),
+        MemoryHit("notes.md", 0, "b", 0.9),
+        MemoryHit("docs/rapport.pdf", 4, "c", 0.8),
+        MemoryHit("docs/rapport.pdf", 25, "d", 0.7),
+      )
+    assertEquals("rapport.pdf (p. 4, 25), notes.md", MemoryIndex.sourcesLabel(hits))
+  }
 }

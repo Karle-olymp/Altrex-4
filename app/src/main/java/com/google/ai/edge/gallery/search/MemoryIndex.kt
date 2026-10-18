@@ -176,6 +176,22 @@ class MemoryIndex(val files: List<MemoryFile>, val chunks: List<MemoryChunk>) {
     /** Reciprocal rank fusion constant (the usual value). */
     private const val RRF_K = 60.0
 
+    /**
+     * The files the passages come from, each named once with its pages in order:
+     * "rapport.pdf (p. 4, 8, 25), notes.md".
+     */
+    fun sourcesLabel(hits: List<MemoryHit>): String {
+      val pages = LinkedHashMap<String, java.util.TreeSet<Int>>()
+      for (h in hits) {
+        val set = pages.getOrPut(h.path) { java.util.TreeSet() }
+        if (h.page > 0) set.add(h.page)
+      }
+      return pages.entries.joinToString(", ") { (path, set) ->
+        val name = path.substringAfterLast('/')
+        if (set.isEmpty()) name else "$name (p. ${set.joinToString(", ")})"
+      }
+    }
+
     fun read(reader: BufferedReader): MemoryIndex? {
       val files = ArrayList<MemoryFile>()
       val chunks = ArrayList<MemoryChunk>()
