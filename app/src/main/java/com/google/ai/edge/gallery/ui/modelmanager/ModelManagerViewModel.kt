@@ -967,9 +967,21 @@ constructor(
     }
   }
 
+  /**
+   * [ALTREX] Loads the model list unless it is already there or on its way (the manager is shared
+   * by every screen of the process; see SharedModelManager).
+   */
+  fun loadModelAllowlistIfNeeded() {
+    if (uiState.value.tasks.isNotEmpty() || allowlistLoading) return
+    loadModelAllowlist()
+  }
+
+  @Volatile private var allowlistLoading = false
+
   fun loadModelAllowlist() {
     _uiState.update { it.copy(loadingModelAllowlist = true, loadingModelAllowlistError = "") }
 
+    allowlistLoading = true
     viewModelScope.launch(Dispatchers.IO) {
       try {
         // Clear existing allowlist models.
@@ -1111,6 +1123,8 @@ constructor(
         Log.d(TAG, "loadModelAllowlist: Done")
       } catch (e: Exception) {
         Log.e(TAG, "Failed to load model allowlist", e)
+      } finally {
+        allowlistLoading = false
       }
     }
   }
