@@ -610,6 +610,37 @@ fun GalleryNavHost(
     )
   }
 
+  // [ALTREX] Content sent from another app ("Demander à Altrex", share sheet): open the chat with a
+  // downloaded model unless it is already on screen. The chat input then takes the request.
+  val sharedRequest by com.google.ai.edge.gallery.ui.common.chat.SharedInbox.pending.collectAsState()
+  val shareContext = LocalContext.current
+  LaunchedEffect(sharedRequest, modelManagerUiState.tasks.isNotEmpty()) {
+    if (sharedRequest == null || modelManagerUiState.tasks.isEmpty()) return@LaunchedEffect
+    val entry = navController.currentBackStackEntry
+    val onChat =
+      entry?.destination?.route?.startsWith(ROUTE_MODEL) == true &&
+        entry.arguments?.getString("taskId") == BuiltInTaskId.LLM_CHAT
+    if (onChat) return@LaunchedEffect
+    val chatTask = modelManagerUiState.tasks.find { it.id == BuiltInTaskId.LLM_CHAT }
+    fun downloaded(name: String) =
+      modelManagerUiState.modelDownloadStatus[name]?.status == ModelDownloadStatusType.SUCCEEDED
+    val model =
+      chatTask?.models?.firstOrNull {
+        it.name == modelManagerUiState.selectedModel.name && downloaded(it.name)
+      } ?: chatTask?.models?.firstOrNull { downloaded(it.name) }
+    if (chatTask == null || model == null) {
+      com.google.ai.edge.gallery.ui.common.chat.SharedInbox.take()
+      android.widget.Toast.makeText(
+          shareContext,
+          "Télécharge ou importe d'abord un modèle pour discuter avec Altrex.",
+          android.widget.Toast.LENGTH_LONG,
+        )
+        .show()
+      return@LaunchedEffect
+    }
+    navController.navigate("$ROUTE_MODEL/${chatTask.id}/${model.name}")
+  }
+
   // Handle incoming intents for deep links
   val intent = androidx.activity.compose.LocalActivity.current?.intent
   val data = intent?.data
