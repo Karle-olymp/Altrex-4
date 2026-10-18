@@ -58,7 +58,7 @@ class RunIntentTool(private val context: Context, private val skillsProvider: Sk
       return guardMissingEntityWithSkillFallback(name = intent, type = "Intent")
     }
 
-    Log.d(TAG, "Run intent. Intent: '$intent', parameters: '$parameters'")
+    Log.d(TAG, "Run intent. Intent: '$intent', parameters: '${com.google.ai.edge.gallery.security.SecretRedactor.redact(parameters)}'")
 
     // [ALTREX] Actions that run without a screen of their own: the user approves them first.
     val action = IntentAction.from(intent)

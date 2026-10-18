@@ -207,7 +207,8 @@ object DocumentReader {
     if (argoraFormat) {
       // [ALTREX] The form Argora saw in training: the instruction, then the file in a code block.
       val fence = if (body.contains("```")) "~~~" else "```"
-      val prompt = "${question.trim()}\n\n$fence${codeLanguage(doc.name)}\n${body.toString().trimEnd()}\n$fence"
+      val safe = com.google.ai.edge.gallery.security.UntrustedContent.neutralize(body.toString().trimEnd())
+      val prompt = "${question.trim()}\n\n$fence${codeLanguage(doc.name)}\n$safe\n$fence"
       return prompt to (if (truncated) keptPages else null)
     }
     val header =
@@ -219,7 +220,11 @@ object DocumentReader {
           append(if (doc.isPdf) "les $keptPages premières pages" else "le début du texte")
         }
       }
-    val prompt = "$header\n<<<\n${body.toString().trimEnd()}\n>>>\n\n$question"
+    // [ALTREX] The document is framed as data: instructions hidden inside it are not followed.
+    val prompt =
+      "$header\n" +
+        com.google.ai.edge.gallery.security.UntrustedContent.frame("document « ${doc.name} »", body.toString()) +
+        "\n\n$question"
     return prompt to (if (truncated) keptPages else null)
   }
 }

@@ -1,5 +1,6 @@
 package com.google.ai.edge.gallery.ui.common.chat
 
+import com.google.ai.edge.gallery.security.UntrustedContent
 import java.text.Normalizer
 import kotlin.math.ln
 
@@ -189,12 +190,13 @@ object DocumentPlanner {
     val prompt =
       if (argoraFormat) {
         val fence = if (body.contains("```")) "~~~" else "```"
-        "${question.trim()}\n\n$fence${DocumentReader.codeLanguage(doc.name)}\n${body.toString().trimEnd()}\n$fence"
+        "${question.trim()}\n\n$fence${DocumentReader.codeLanguage(doc.name)}\n" +
+          UntrustedContent.neutralize(body.toString().trimEnd()) + "\n$fence"
       } else {
         val where = if (pages.isEmpty()) "" else " (pages ${pages.joinToString(", ")})"
         "Document joint : ${doc.name}" + (if (doc.isPdf) " (${doc.pages} pages)" else "") +
           " — trop long pour être lu en entier : voici les passages liés à la question$where.\n" +
-          "<<<\n${body.toString().trimEnd()}\n>>>\n\n$question"
+          UntrustedContent.frame("document « ${doc.name} »", body.toString()) + "\n\n$question"
       }
     return DocumentPlan.Passages(prompt = prompt, pages = pages)
   }
@@ -265,7 +267,7 @@ object DocumentPlanner {
       "Prends des notes qui serviront ensuite à répondre à cette demande : « $goal »\n" +
       "Écris 4 à 8 points courts, avec les faits, chiffres, noms et numéros de page importants. " +
       "Pas d'introduction ni de conclusion.\n" +
-      "<<<\n${section.text.trimEnd()}\n>>>"
+      UntrustedContent.frame("document « ${doc.name} »", section.text)
   }
 
   /** Final request: the notes of every part, then the user's question. */
@@ -287,6 +289,7 @@ object DocumentPlanner {
     val partial = if (plan.condensed) " (les passages principaux de chaque partie)" else ""
     return "Document joint : ${doc.name}" + (if (doc.isPdf) " (${doc.pages} pages)" else "") +
       ". Il a été lu en ${notes.size} parties$partial ; voici les notes prises sur chacune.\n" +
-      "<<<\n${body.toString().trimEnd()}\n>>>\n\n" + question.ifBlank { "Résume ce document." }
+      UntrustedContent.frame("notes de lecture", body.toString()) + "\n\n" +
+      question.ifBlank { "Résume ce document." }
   }
 }

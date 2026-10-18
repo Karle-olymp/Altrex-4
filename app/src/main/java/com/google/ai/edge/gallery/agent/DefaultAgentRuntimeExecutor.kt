@@ -502,12 +502,13 @@ open class DefaultAgentRuntimeExecutor(
             }
             RepeatCallGuard.Verdict.REFUSE -> toolNote("error", RepeatCallGuard.REFUSAL)
             else -> {
-              val result =
+              val raw =
                 if (call.name.lowercase().replace("_", "") == "readtooloutput") {
                   resultBudget.read(call.arguments.optString("id"), call.arguments.optInt("offset", 0))
                 } else {
                   resultBudget.fit(LlamaCppToolBridge.dispatch(call = call, toolsProvider = toolsProvider))
                 }
+              val result = frameToolResult(call.name, raw)
               if (verdict == RepeatCallGuard.Verdict.RUN_WITH_WARNING) {
                 result + "\n" + toolNote("warning", RepeatCallGuard.WARNING)
               } else {
@@ -525,6 +526,17 @@ open class DefaultAgentRuntimeExecutor(
       }
     }
   }
+
+  /**
+   * [ALTREX] Results that may carry outside text (web, MCP server, script) are framed as data, so
+   * that an injected "ignore your instructions…" is not obeyed. A loaded skill and the app's own
+   * intent results are trusted: a skill's text is meant to be followed.
+   */
+  private fun frameToolResult(toolName: String, result: String): String =
+    when (toolName.lowercase().replace("_", "")) {
+      "loadskill", "runintent" -> result
+      else -> com.google.ai.edge.gallery.security.UntrustedContent.frame("résultat de l'outil $toolName", result)
+    }
 
   /** Adds an instruction to the last user message (tool results are user messages). */
   private fun addNudge(messages: MutableList<AgentMsg>, nudge: String) {

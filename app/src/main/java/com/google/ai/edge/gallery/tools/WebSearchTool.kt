@@ -66,6 +66,14 @@ class WebSearchTool : ToolDefinition {
           "status" to "failed",
         )
       }
+      // [ALTREX] A secret (key, token, password) must never leave the phone in a search query.
+      if (com.google.ai.edge.gallery.security.SecretRedactor.containsSecret(trimmed)) {
+        return@runBlocking mapOf(
+          "error" to
+            "The query contains a secret (key, token or password) and was not sent. Search again without it.",
+          "status" to "failed",
+        )
+      }
 
       executionContext?.actionChannel?.trySend(
         SkillProgressToolAction(
