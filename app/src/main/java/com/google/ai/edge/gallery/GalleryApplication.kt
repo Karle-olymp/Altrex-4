@@ -43,6 +43,9 @@ class GalleryApplication : Application() {
     // Load saved theme.
     ThemeSettings.themeOverride.value = dataStoreRepository.readTheme()
 
+    // [ALTREX] Local memory: loads its index and refreshes it in the background if it is old.
+    com.google.ai.edge.gallery.search.LocalMemory.warmUp(this)
+
     FirebaseApp.initializeApp(this)
     firebaseAnalytics?.setAnalyticsCollectionEnabled(dataStoreRepository.readFirebaseAnalytics())
   }

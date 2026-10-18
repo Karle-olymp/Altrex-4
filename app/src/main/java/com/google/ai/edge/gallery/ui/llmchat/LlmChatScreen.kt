@@ -371,6 +371,27 @@ fun ChatViewWrapper(
             }
           }
         }
+        // [ALTREX] Local memory: passages of the user's chosen folder that match the question, about
+        // a third of the context at most; the chat shows which files were used.
+        if (doc == null && text.isNotBlank() && com.google.ai.edge.gallery.search.LocalMemory.isActive(context)) {
+          val contextTokens =
+            (model.instance as? com.google.ai.edge.gallery.runtime.LlamaCppModelInstance)?.contextLength
+              ?: model.getIntConfigValue(
+                com.google.ai.edge.gallery.data.ConfigKeys.MAX_TOKENS,
+                com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN,
+              )
+          val hits = com.google.ai.edge.gallery.search.LocalMemory.search(context, text, budgetChars = contextTokens)
+          if (hits.isNotEmpty()) {
+            input = com.google.ai.edge.gallery.search.LocalMemory.prompt(context, hits, text)
+            viewModel.addMessage(
+              model = model,
+              message =
+                com.google.ai.edge.gallery.ui.common.chat.ChatMessageInfo(
+                  "Mémoire locale : " + com.google.ai.edge.gallery.search.LocalMemory.sourcesLabel(hits)
+                ),
+            )
+          }
+        }
         val onError: (String) -> Unit = { errorMessage ->
           viewModel.handleError(
             context = context,
