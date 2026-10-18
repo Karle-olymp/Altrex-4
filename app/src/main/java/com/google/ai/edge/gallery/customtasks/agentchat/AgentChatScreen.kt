@@ -92,6 +92,7 @@ import com.google.ai.edge.gallery.tools.AskInfoToolAction
 import com.google.ai.edge.gallery.tools.AskMcpToolCallPermissionAction
 import com.google.ai.edge.gallery.tools.CallJsToolAction
 import com.google.ai.edge.gallery.tools.PermissionResult
+import com.google.ai.edge.gallery.tools.AskActionPermissionAction
 import com.google.ai.edge.gallery.tools.RequestPermissionToolAction
 import com.google.ai.edge.gallery.tools.SkillProgressToolAction
 import com.google.ai.edge.gallery.ui.common.BaseGalleryWebViewClient
@@ -150,6 +151,7 @@ fun AgentChatScreen(
   var showMcpManagerBottomSheet by remember { mutableStateOf(false) }
   var showAskInfoDialog by remember { mutableStateOf(false) }
   var currentAskInfoAction by remember { mutableStateOf<AskInfoToolAction?>(null) }
+  var currentActionPermission by remember { mutableStateOf<AskActionPermissionAction?>(null) }
   var currentMcpPermissionAction by remember {
     mutableStateOf<AskMcpToolCallPermissionAction?>(null)
   }
@@ -457,6 +459,9 @@ fun AgentChatScreen(
             is AskMcpToolCallPermissionAction -> {
               currentMcpPermissionAction = action
             }
+            is AskActionPermissionAction -> {
+              currentActionPermission = action
+            }
           }
         }
       }
@@ -631,6 +636,19 @@ fun AgentChatScreen(
         action.result.complete("")
         showAskInfoDialog = false
         currentAskInfoAction = null
+      },
+    )
+  }
+
+  // [ALTREX] A phone action without its own confirmation screen (alarm, notification…).
+  currentActionPermission?.let { action ->
+    McpToolCallPermissionDialog(
+      title = action.label,
+      toolName = action.label,
+      argument = action.parameters,
+      onResult = { result ->
+        action.result.complete(result)
+        currentActionPermission = null
       },
     )
   }

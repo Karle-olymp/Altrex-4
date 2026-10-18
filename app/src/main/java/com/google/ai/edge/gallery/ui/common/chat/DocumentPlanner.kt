@@ -25,28 +25,35 @@ object DocumentPlanner {
   /** Beyond this many parts the reading gets too long on a phone: parts are condensed instead. */
   const val MAX_SECTIONS = 8
 
+  /** Pieces read part by part. */
   private const val CHUNK_CHARS = 900
+
+  /**
+   * Pieces searched for a precise question: small, so that the score points at the right place;
+   * each match is then sent with its neighbours ("parent-child" retrieval).
+   */
+  private const val SEARCH_CHUNK_CHARS = 450
 
   fun plan(doc: AttachedDocument, question: String, budgetChars: Int, argoraFormat: Boolean): DocumentPlan {
     val budget = budgetChars.coerceAtLeast(2_000)
     if (doc.charCount + doc.pageTexts.size * 20 <= budget) {
       return DocumentPlan.Direct(DocumentReader.buildPrompt(doc, question, budget, argoraFormat).first)
     }
-    val chunks = chunk(doc)
     val terms = queryTerms(question)
     if (!isGlobalRequest(question) && terms.isNotEmpty()) {
-      val scores = bm25(chunks, terms)
+      val small = chunk(doc, SEARCH_CHUNK_CHARS)
+      val scores = bm25(small, terms)
       if ((scores.maxOrNull() ?: 0.0) > 0.0) {
-        return passages(doc, question, chunks, scores, budget, argoraFormat)
+        return passages(doc, question, small, scores, budget, argoraFormat)
       }
     }
-    return sections(doc, chunks, budget)
+    return sections(doc, chunk(doc, CHUNK_CHARS), budget)
   }
 
-  /** Text pieces of about [CHUNK_CHARS] characters, cut at paragraph or sentence ends. */
+  /** Text pieces of about [size] characters, cut at paragraph or sentence ends. */
   private data class Chunk(val page: Int, val order: Int, val text: String)
 
-  private fun chunk(doc: AttachedDocument): List<Chunk> {
+  private fun chunk(doc: AttachedDocument, size: Int): List<Chunk> {
     val out = ArrayList<Chunk>()
     for ((pageIndex, page) in doc.pageTexts.withIndex()) {
       val pageNo = if (doc.isPdf) pageIndex + 1 else 0
@@ -57,10 +64,10 @@ object DocumentPlanner {
       }
       for (paragraph in page.split(Regex("\n\\s*\n"))) {
         val pieces =
-          if (paragraph.length <= CHUNK_CHARS) listOf(paragraph)
-          else paragraph.split(Regex("(?<=[.!?;])\\s+|\n")).flatMap { it.chunked(CHUNK_CHARS) }
+          if (paragraph.length <= size) listOf(paragraph)
+          else paragraph.split(Regex("(?<=[.!?;])\\s+|\n")).flatMap { it.chunked(size) }
         for (piece in pieces) {
-          if (current.length + piece.length > CHUNK_CHARS) flush()
+          if (current.length + piece.length > size) flush()
           current.append(piece).append('\n')
         }
       }
@@ -153,8 +160,9 @@ object DocumentPlanner {
     val chosen = sortedSetOf<Int>()
     var used = 0
     for (index in ranked) {
-      // The best passage and the next one, which often finishes its sentence or its table.
-      for (i in listOf(index, index + 1)) {
+      // The match, then its neighbours: the next piece often finishes its sentence or its table,
+      // the previous one gives its title or context.
+      for (i in listOf(index, index + 1, index - 1)) {
         if (i !in chunks.indices || i in chosen) continue
         val cost = chunks[i].text.length + 24
         if (used + cost > budget) continue

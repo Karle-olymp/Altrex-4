@@ -51,6 +51,12 @@ private const val TAG = "AGDefaultAgentRuntimeExecutor"
 /** Maximum number of tool-calling steps for local llama.cpp models before giving up. */
 private const val MAX_LLAMA_AGENT_STEPS = 6
 
+private const val FINAL_ANSWER_NUDGE =
+  "N'appelle plus d'outil. Réponds maintenant à l'utilisateur avec ce que tu as déjà trouvé."
+
+private const val EMPTY_ANSWER_NUDGE =
+  "Tu n'as rien écrit pour l'utilisateur. Réponds-lui maintenant, directement."
+
 /** Messages kept in the llama.cpp conversation memory (user + assistant). */
 private const val MAX_LLAMA_HISTORY = 20
 
@@ -419,13 +425,30 @@ open class DefaultAgentRuntimeExecutor(
     val messages = ArrayList<AgentMsg>()
     messages.addAll(fitHistory(model, system, request.query))
     messages.add(AgentMsg("user", request.query))
+    val requestIndex = messages.lastIndex
     val shown = StringBuilder()
 
-    for (step in 0 until MAX_LLAMA_AGENT_STEPS) {
+    // [ALTREX] Guards for small models: repeated calls, oversized results, a context that fills up
+    // during the loop, an empty answer, and too many steps.
+    val contextTokens = contextLength(model)
+    val repeatGuard = RepeatCallGuard()
+    val resultBudget = ToolResultBudget.forContext(contextTokens)
+    // About 3 characters per token; half of the context stays free for the answer.
+    val loopBudgetChars = (contextTokens * 3 / 2 - system.length).coerceAtLeast(2_000)
+    var forceAnswer = false
+    var nudgedEmpty = false
+    var step = 0
+
+    while (true) {
       if (stopped()) {
         return null
       }
-      val prompt = ToolCalling.buildChatRequest(system, messages)
+      if (step >= MAX_LLAMA_AGENT_STEPS && !forceAnswer) {
+        forceAnswer = true
+        addNudge(messages, FINAL_ANSWER_NUDGE)
+      }
+      step++
+      val prompt = ToolCalling.buildChatRequest(system, AgentContextFitter.fit(messages, requestIndex, loopBudgetChars))
       // [ALTREX] Stream the answer as it is written; tool calls stay hidden, reasoning goes to the
       // thinking area.
       val splitter = StreamSplitter()
@@ -445,9 +468,22 @@ open class DefaultAgentRuntimeExecutor(
       synchronized(splitter) { emitSplit(splitter.finish(), shown, emit) }
 
       // Tool calls written inside the reasoning are not real calls.
-      val calls = if (specs.isEmpty()) emptyList() else ToolCalling.parseToolCalls(stripThinking(response))
+      val calls =
+        if (specs.isEmpty() || forceAnswer) emptyList() else ToolCalling.parseToolCalls(stripThinking(response))
 
       if (calls.isEmpty() || stopped()) {
+        // Nothing for the user (only reasoning, or nothing at all): ask once for the answer.
+        if (!stopped() && !forceAnswer && !nudgedEmpty && ToolCalling.displayText(response).isBlank()) {
+          nudgedEmpty = true
+          messages.add(AgentMsg("assistant", stripThinking(response).trim().ifEmpty { "…" }))
+          addNudge(messages, EMPTY_ANSWER_NUDGE)
+          continue
+        }
+        if (!stopped() && shown.isBlank()) {
+          val fallback = "Je n'ai pas réussi à formuler de réponse. Reformule ta demande ou réessaie."
+          shown.append(fallback)
+          emit(AgentEvent.StreamToken(token = fallback, done = false))
+        }
         emit(AgentEvent.StreamToken(token = "", done = true))
         if (sessionGen.get() == mySession) rememberTurn(request.query, shown.toString().trim())
         // Stopped by the user: the loop ends here, callers must not treat it as a finished answer.
@@ -455,17 +491,56 @@ open class DefaultAgentRuntimeExecutor(
       }
 
       val results = ArrayList<String>()
+      var stuck = false
       for (call in calls.take(4)) {
-        results.add(LlamaCppToolBridge.dispatch(call = call, toolsProvider = toolsProvider))
+        val verdict = repeatGuard.check(call)
+        results.add(
+          when (verdict) {
+            RepeatCallGuard.Verdict.STOP -> {
+              stuck = true
+              toolNote("error", RepeatCallGuard.REFUSAL)
+            }
+            RepeatCallGuard.Verdict.REFUSE -> toolNote("error", RepeatCallGuard.REFUSAL)
+            else -> {
+              val result =
+                if (call.name.lowercase().replace("_", "") == "readtooloutput") {
+                  resultBudget.read(call.arguments.optString("id"), call.arguments.optInt("offset", 0))
+                } else {
+                  resultBudget.fit(LlamaCppToolBridge.dispatch(call = call, toolsProvider = toolsProvider))
+                }
+              if (verdict == RepeatCallGuard.Verdict.RUN_WITH_WARNING) {
+                result + "\n" + toolNote("warning", RepeatCallGuard.WARNING)
+              } else {
+                result
+              }
+            }
+          }
+        )
       }
       messages.add(AgentMsg("assistant", stripThinking(response).trim()))
       messages.add(ToolCalling.toolResponseMessage(results))
+      if (stuck) {
+        forceAnswer = true
+        addNudge(messages, FINAL_ANSWER_NUDGE)
+      }
     }
-
-    val message = "Reached the maximum number of steps ($MAX_LLAMA_AGENT_STEPS)."
-    emit(AgentEvent.StreamToken(token = message, done = true))
-    return message
   }
+
+  /** Adds an instruction to the last user message (tool results are user messages). */
+  private fun addNudge(messages: MutableList<AgentMsg>, nudge: String) {
+    val last = messages.lastOrNull()
+    if (last != null && last.role == "user") {
+      messages[messages.lastIndex] = last.copy(content = last.content + "\n\n" + nudge)
+    } else {
+      messages.add(AgentMsg("user", nudge))
+    }
+  }
+
+  private fun toolNote(key: String, message: String): String = org.json.JSONObject().put(key, message).toString()
+
+  private fun contextLength(model: Model): Int =
+    (model.instance as? com.google.ai.edge.gallery.runtime.LlamaCppModelInstance)?.contextLength
+      ?: model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN)
 
   // The chat screen handles a token carrying both thinking and text as thinking only: send the
   // two parts as separate events.

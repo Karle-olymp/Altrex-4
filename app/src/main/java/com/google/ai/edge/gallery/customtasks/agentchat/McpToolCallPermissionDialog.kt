@@ -46,12 +46,14 @@ fun McpToolCallPermissionDialog(
   toolName: String,
   argument: String,
   onResult: (PermissionResult) -> Unit,
+  /** [ALTREX] Also used for the phone actions the agent asks to run (alarm, notification…). */
+  title: String? = null,
 ) {
   AlertDialog(
     onDismissRequest = { onResult(PermissionResult.DENY) },
     title = {
       Text(
-        stringResource(R.string.mcp_tool_call_permission_title),
+        title ?: stringResource(R.string.mcp_tool_call_permission_title),
         style = MaterialTheme.typography.titleLarge,
         color = MaterialTheme.colorScheme.onSurface,
         maxLines = 1,
