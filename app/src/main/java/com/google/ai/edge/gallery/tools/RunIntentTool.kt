@@ -26,6 +26,16 @@ import com.google.ai.edge.litertlm.ToolParam
 
 private const val TAG = "AGRunIntentTool"
 
+private const val PERMISSIONS_PREFS = "altrex_action_permissions"
+
+/** [ALTREX] Intents that act directly, with no confirmation screen from Android or another app. */
+private val SILENT_ACTIONS =
+  mapOf(
+    IntentAction.SET_ALARM to "Altrex veut régler une alarme",
+    IntentAction.SCHEDULE_NOTIFICATION to "Altrex veut programmer une notification",
+    IntentAction.DEVICE_CONTROL to "Altrex veut contrôler l'appareil",
+  )
+
 class RunIntentTool(private val context: Context, private val skillsProvider: SkillsProvider) :
   ToolDefinition {
   override val alwaysAllow: Boolean = true
@@ -48,7 +58,25 @@ class RunIntentTool(private val context: Context, private val skillsProvider: Sk
       return guardMissingEntityWithSkillFallback(name = intent, type = "Intent")
     }
 
-    Log.d(TAG, "Run intent. Intent: '$intent', parameters: '$parameters'")
+    Log.d(TAG, "Run intent. Intent: '$intent', parameters: '${com.google.ai.edge.gallery.security.SecretRedactor.redact(parameters)}'")
+
+    // [ALTREX] Actions that run without a screen of their own: the user approves them first.
+    val action = IntentAction.from(intent)
+    val label = SILENT_ACTIONS[action]
+    val channel = executionContext?.actionChannel
+    if (label != null && channel != null && !isAlwaysAllowed(intent)) {
+      val ask = AskActionPermissionAction(label = label, parameters = parameters)
+      channel.send(ask)
+      when (ask.result.await()) {
+        PermissionResult.DENY ->
+          return mapOf(
+            "action" to intent,
+            "result" to "refused: the user did not allow this action. Do not try again; tell the user.",
+          )
+        PermissionResult.ALWAYS_ALLOW -> setAlwaysAllowed(intent)
+        PermissionResult.ALLOW_ONCE -> {}
+      }
+    }
 
     executionContext
       ?.actionChannel
@@ -69,6 +97,13 @@ class RunIntentTool(private val context: Context, private val skillsProvider: Sk
       }
 
     return mapOf("action" to intent, "parameters" to parameters, "result" to res)
+  }
+
+  private fun isAlwaysAllowed(intent: String): Boolean =
+    context.getSharedPreferences(PERMISSIONS_PREFS, Context.MODE_PRIVATE).getBoolean(intent, false)
+
+  private fun setAlwaysAllowed(intent: String) {
+    context.getSharedPreferences(PERMISSIONS_PREFS, Context.MODE_PRIVATE).edit().putBoolean(intent, true).apply()
   }
 
   /**

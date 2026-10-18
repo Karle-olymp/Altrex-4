@@ -116,7 +116,7 @@ class RunJsTool(
           ?: return@runBlocking mapOf(
             "result" to "JS Skill URL not set properly or skill not found"
           )
-      Log.d(TAG, "Calling JS script.\n- url: $url\n- data: $data")
+      Log.d(TAG, "Calling JS script.\n- url: $url\n- data: ${com.google.ai.edge.gallery.security.SecretRedactor.redact(data)}")
 
       // Update progress.
       executionContext

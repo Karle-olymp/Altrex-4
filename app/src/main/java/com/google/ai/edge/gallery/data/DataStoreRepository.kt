@@ -18,6 +18,7 @@ package com.google.ai.edge.gallery.data
 
 import androidx.datastore.core.DataStore
 import com.google.ai.edge.gallery.proto.AccessTokenData
+import com.google.ai.edge.gallery.security.SecretCipher
 import com.google.ai.edge.gallery.proto.BenchmarkResult
 import com.google.ai.edge.gallery.proto.BenchmarkResults
 import com.google.ai.edge.gallery.proto.Cutout
@@ -189,16 +190,20 @@ class DefaultDataStoreRepository(
     }
   }
 
+  // [ALTREX] Secrets are stored encrypted with a key of the Android Keystore (SecretCipher). Values
+  // saved before in plain text are still read, and encrypted on their first read.
   override fun saveSecret(key: String, value: String) {
     runBlocking {
       userDataDataStore.updateData { userData ->
-        userData.toBuilder().putSecrets(key, value).build()
+        userData.toBuilder().putSecrets(key, SecretCipher.encrypt(value)).build()
       }
     }
   }
 
   override fun readSecret(key: String): String? {
-    return runBlocking { userDataDataStore.data.first().secretsMap[key] }
+    val stored = runBlocking { userDataDataStore.data.first().secretsMap[key] } ?: return null
+    if (stored.isNotEmpty() && !SecretCipher.isEncrypted(stored)) saveSecret(key, stored)
+    return SecretCipher.decrypt(stored)
   }
 
   override fun deleteSecret(key: String) {
@@ -219,8 +224,8 @@ class DefaultDataStoreRepository(
           .toBuilder()
           .setAccessTokenData(
             AccessTokenData.newBuilder()
-              .setAccessToken(accessToken)
-              .setRefreshToken(refreshToken)
+              .setAccessToken(SecretCipher.encrypt(accessToken))
+              .setRefreshToken(SecretCipher.encrypt(refreshToken))
               .setExpiresAtMs(expiresAt)
               .build()
           )
@@ -239,10 +244,18 @@ class DefaultDataStoreRepository(
   }
 
   override fun readAccessTokenData(): AccessTokenData? {
-    return runBlocking {
-      val userData = userDataDataStore.data.first()
-      userData.accessTokenData
+    val stored = runBlocking { userDataDataStore.data.first().accessTokenData } ?: return null
+    val plain =
+      stored
+        .toBuilder()
+        .setAccessToken(SecretCipher.decrypt(stored.accessToken))
+        .setRefreshToken(SecretCipher.decrypt(stored.refreshToken))
+        .build()
+    // Saved before encryption existed: encrypt it now.
+    if (stored.accessToken.isNotEmpty() && !SecretCipher.isEncrypted(stored.accessToken)) {
+      saveAccessTokenData(plain.accessToken, plain.refreshToken, plain.expiresAtMs)
     }
+    return plain
   }
 
   override fun saveImportedModels(importedModels: List<ImportedModel>) {

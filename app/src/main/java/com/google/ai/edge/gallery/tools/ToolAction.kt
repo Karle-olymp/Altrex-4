@@ -26,6 +26,7 @@ enum class ToolActionName() {
   ASK_INFO,
   REQUEST_PERMISSION,
   ASK_MCP_TOOL_CALL_PERMISSION,
+  ASK_ACTION_PERMISSION,
 }
 
 /**
@@ -116,6 +117,20 @@ class AskMcpToolCallPermissionAction(
   val argument: String,
   val result: CompletableDeferred<PermissionResult> = CompletableDeferred(),
 ) : ToolAction(name = ToolActionName.ASK_MCP_TOOL_CALL_PERMISSION)
+
+/**
+ * [ALTREX] Emitted before the agent runs a phone action that has no confirmation screen of its own
+ * (set an alarm, schedule a notification, switch the flashlight…).
+ *
+ * @property label What the action does, in words.
+ * @property parameters The JSON parameters chosen by the model.
+ * @property result Completed with the user's decision ([PermissionResult]).
+ */
+class AskActionPermissionAction(
+  val label: String,
+  val parameters: String,
+  val result: CompletableDeferred<PermissionResult> = CompletableDeferred(),
+) : ToolAction(name = ToolActionName.ASK_ACTION_PERMISSION)
 
 /**
  * Parsed JSON data returned from a JavaScript skill execution (`[CallJsToolAction]`).

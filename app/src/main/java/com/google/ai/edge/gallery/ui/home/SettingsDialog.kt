@@ -36,6 +36,13 @@ import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Psychology
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.collectAsState
+import com.google.ai.edge.gallery.search.LocalMemory
+import com.google.ai.edge.gallery.search.MemoryStatus
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.window.DialogProperties
@@ -327,14 +334,18 @@ fun SettingsDialog(
           }
         }
 
+        // [ALTREX] Local memory: a folder the model draws on.
+        SettingsSection("Mémoire locale") { MemorySettings() }
+
         // Privacy.
         SettingsSection("Confidentialité") {
           SettingsRow(
             icon = Icons.Outlined.Lock,
             title = "Ce qui sort du téléphone",
             subtitle =
-              "Les modèles tournent sur ton téléphone. Sécurité envoie du code à SecurCode après " +
-                "ton accord ; la recherche web de l'espace Code n'envoie que tes requêtes à Brave.",
+              "Les modèles et la mémoire locale restent sur ton téléphone. Sécurité envoie du code à " +
+                "SecurCode après ton accord ; la recherche web de l'espace Code n'envoie que tes " +
+                "requêtes à Brave, jamais un secret.",
           )
         }
 
@@ -354,6 +365,90 @@ fun SettingsDialog(
           )
         }
       }
+    }
+  }
+}
+
+/**
+ * [ALTREX] Local memory: choose a folder (notes, docs, configs, code, PDF), see its indexing, turn
+ * it on or off in the chat, index it again, or forget it.
+ */
+@Composable
+private fun MemorySettings() {
+  val context = LocalContext.current
+  val status by LocalMemory.status.collectAsState()
+  var enabled by remember { mutableStateOf(LocalMemory.isEnabled(context)) }
+  val folder = remember(status) { LocalMemory.folderName(context) }
+  val picker =
+    rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+      if (uri != null) {
+        LocalMemory.chooseFolder(context, uri)
+        enabled = true
+      }
+    }
+
+  SettingsRow(
+    icon = Icons.Outlined.Folder,
+    title = folder?.let { "Dossier : $it" } ?: "Choisir un dossier",
+    subtitle =
+      if (folder == null) {
+        "Altrex pourra y piocher pour répondre : notes, documents, configs, code, PDF. " +
+          "Rien ne quitte le téléphone."
+      } else {
+        "Touche pour choisir un autre dossier."
+      },
+    showChevron = true,
+    onClick = { picker.launch(null) },
+  )
+  if (folder == null) return
+
+  val statusText =
+    when (val st = status) {
+      is MemoryStatus.Indexing ->
+        if (st.total == 0) st.current else "Indexation… ${st.done}/${st.total} · ${st.current.substringAfterLast('/')}"
+      is MemoryStatus.Ready ->
+        "${st.files} fichiers · ${st.passages} passages" +
+          (if (st.truncated) " · limite atteinte, une partie du dossier n'est pas indexée" else "") +
+          (if (st.indexedAt > 0) " · mis à jour " + android.text.format.DateUtils.getRelativeTimeSpanString(st.indexedAt) else "")
+      is MemoryStatus.Failed -> "Erreur : ${st.message}"
+      MemoryStatus.NoFolder -> "Pas encore indexé."
+    }
+  Row(
+    verticalAlignment = Alignment.CenterVertically,
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+  ) {
+    Icon(
+      Icons.Outlined.Psychology,
+      contentDescription = null,
+      tint = MaterialTheme.colorScheme.primary,
+      modifier = Modifier.size(22.dp),
+    )
+    Spacer(modifier = Modifier.width(16.dp))
+    Column(modifier = Modifier.weight(1f)) {
+      Text("Utiliser dans le chat", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
+      Text(statusText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Switch(
+      checked = enabled,
+      onCheckedChange = {
+        enabled = it
+        LocalMemory.setEnabled(context, it)
+      },
+    )
+  }
+  Row(
+    horizontalArrangement = Arrangement.spacedBy(8.dp),
+    modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
+  ) {
+    OutlinedButton(
+      onClick = { LocalMemory.reindex(context) },
+      enabled = status !is MemoryStatus.Indexing,
+      modifier = Modifier.weight(1f),
+    ) {
+      Text("Réindexer")
+    }
+    OutlinedButton(onClick = { LocalMemory.forget(context) }, modifier = Modifier.weight(1f)) {
+      Text("Oublier ce dossier")
     }
   }
 }

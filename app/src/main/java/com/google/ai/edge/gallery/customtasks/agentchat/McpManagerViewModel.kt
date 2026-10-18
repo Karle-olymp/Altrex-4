@@ -162,7 +162,7 @@ constructor(
             currentAuthBuilder.setRequestHeader(
               McpAuth.RequestHeader.newBuilder()
                 .setHeaderName(headerName)
-                .setHeaderValue(headerValue)
+                .setHeaderValue(com.google.ai.edge.gallery.security.SecretCipher.encrypt(headerValue))
                 .build()
             )
           }
@@ -418,7 +418,7 @@ constructor(
         StreamableHttpClientTransport(
           client = httpClient,
           url = url,
-          requestBuilder = { headers.append(reqHeader.headerName, reqHeader.headerValue) },
+          requestBuilder = { headers.append(reqHeader.headerName, com.google.ai.edge.gallery.security.SecretCipher.decrypt(reqHeader.headerValue)) },
         )
       } else {
         StreamableHttpClientTransport(client = httpClient, url = url)

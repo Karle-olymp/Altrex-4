@@ -83,7 +83,12 @@ class AskAltrexActivity : ComponentActivity() {
     }
     val text = selected.take(MAX_SELECTED_CHARS)
     // The text sent with the first question: what fits easily in a small model's context.
-    val quoted = "« ${text.take(MAX_PANEL_CHARS)}${if (text.length > MAX_PANEL_CHARS) " […]" else ""} »"
+    // Framed as data: a selected web text cannot give orders to the model.
+    val quoted =
+      com.google.ai.edge.gallery.security.UntrustedContent.frame(
+        "texte sélectionné",
+        text.take(MAX_PANEL_CHARS) + if (text.length > MAX_PANEL_CHARS) " […]" else "",
+      )
     // Read-only selections (a web page…) cannot be replaced.
     val canReplace = !intent.getBooleanExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, true)
     val session = newSession()
@@ -125,7 +130,9 @@ class AskAltrexActivity : ComponentActivity() {
           onAsk = { label, question, useScreen ->
             val prompt =
               if (useScreen && screenText.isNotEmpty()) {
-                "Voici le texte affiché sur mon écran :\n« $screenText »\n\n$question"
+                "Voici le texte affiché sur mon écran :\n" +
+                  com.google.ai.edge.gallery.security.UntrustedContent.frame("texte de l'écran", screenText) +
+                  "\n\n$question"
               } else {
                 question
               }

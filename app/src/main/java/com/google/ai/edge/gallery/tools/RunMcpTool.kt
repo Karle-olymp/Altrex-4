@@ -50,7 +50,7 @@ class RunMcpTool(
     @ToolParam(description = "The name of the tool to run.") toolName: String,
     @ToolParam(description = "The parameters passed to tool as input") input: String,
   ): Map<String, String> {
-    Log.d(TAG, "Run MCP tool:\n- name: $toolName\n- input: $input")
+    Log.d(TAG, "Run MCP tool:\n- name: $toolName\n- input: ${com.google.ai.edge.gallery.security.SecretRedactor.redact(input)}")
     return runBlocking(Dispatchers.IO) {
       val serverState =
         mcpServersProvider.mcpServers.find { serverState ->
