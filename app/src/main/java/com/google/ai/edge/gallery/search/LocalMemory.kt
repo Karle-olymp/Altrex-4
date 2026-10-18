@@ -235,11 +235,7 @@ object LocalMemory {
   }
 
   /** Short list of the sources, for the line shown in the chat. */
-  fun sourcesLabel(hits: List<MemoryHit>): String =
-    hits
-      .map { if (it.page > 0) "${it.path.substringAfterLast('/')} (p. ${it.page})" else it.path.substringAfterLast('/') }
-      .distinct()
-      .joinToString(", ")
+  fun sourcesLabel(hits: List<MemoryHit>): String = MemoryIndex.sourcesLabel(hits)
 
   // ---- Indexing ----
 

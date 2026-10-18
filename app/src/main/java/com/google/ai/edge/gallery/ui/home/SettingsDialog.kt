@@ -351,9 +351,10 @@ fun SettingsDialog(
             icon = Icons.Outlined.Lock,
             title = "Ce qui sort du téléphone",
             subtitle =
-              "Les modèles et la mémoire locale restent sur ton téléphone. Sécurité envoie du code à " +
-                "SecurCode après ton accord ; la recherche web de l'espace Code n'envoie que tes " +
-                "requêtes à Brave, jamais un secret.",
+              "Les modèles et la mémoire locale restent sur ton téléphone. Le scan de l'espace Code " +
+                "envoie du code à SecurCode après ton accord, projet par projet ; la recherche web " +
+                "n'envoie que tes requêtes à Brave ; l'import GitHub ne fait que télécharger. Aucune " +
+                "clé n'est jamais montrée au modèle.",
           )
         }
 
