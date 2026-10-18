@@ -183,7 +183,7 @@ fun LlmSingleTurnScreen(
     remember(openedUri) {
       openedUri?.let { ProjectFolderManager.relativePath(context, it) ?: openedName }
     }
-  val startScan: () -> Unit = {
+  val startScan: (String) -> Unit = { target ->
     view = CodeView.CHAT
     viewModel.setInProgress(true)
     viewModel.setPreparing(true)
@@ -194,7 +194,7 @@ fun LlmSingleTurnScreen(
         viewModel = viewModel,
         task = task,
         model = selectedModel,
-        target = scanTarget ?: ".",
+        target = target,
         promptBudget = promptBudgetFor(selectedModel),
       )
     }
@@ -249,7 +249,7 @@ fun LlmSingleTurnScreen(
         scanLabel =
           if (scanTarget != null) "Scanner « $scanTarget » avec SecurCode"
           else "Scanner le projet avec SecurCode",
-        onScan = startScan,
+        onScan = { startScan(scanTarget ?: ".") },
       )
 
       val openFile = { file: androidx.documentfile.provider.DocumentFile ->
@@ -266,7 +266,11 @@ fun LlmSingleTurnScreen(
           when (view) {
             CodeView.CODE ->
               Column(modifier = Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding())) {
-                FileExplorerPanel(modifier = Modifier.fillMaxWidth(), onFileClicked = openFile)
+                FileExplorerPanel(
+                  modifier = Modifier.fillMaxWidth(),
+                  onFileClicked = openFile,
+                  onScanFolder = if (modelDownloaded && !uiState.inProgress) startScan else null,
+                )
                 val f = openedFile
                 if (f != null) {
                   CodeEditorPanel(
@@ -419,6 +423,13 @@ private fun CodeModeMainContent(
             viewModel.setInProgress(true)
             viewModel.setPreparing(true)
             scope.launch(Dispatchers.IO) {
+              // [ALTREX] A file of a repository imported from GitHub: someone else's code.
+              val openedUntrusted =
+                openedFile != null &&
+                  com.google.ai.edge.gallery.ui.github.GitHubSettings.isImported(
+                    context,
+                    ProjectFolderManager.relativePath(context, openedFile.uri) ?: openedFile.fileName,
+                  )
               val fence = "`".repeat(3)
               val agent = securityMode || AgentSettings.autoMode
               val openedNote =
@@ -494,6 +505,7 @@ private fun CodeModeMainContent(
                   openedFileName = openedFile?.fileName,
                   promptBudget = promptBudget,
                   profile = if (securityMode) SecurityAgent.profile else AgentProfiles.CODE,
+                  openedFileUntrusted = openedUntrusted,
                 )
               } else {
                 val finalInput =

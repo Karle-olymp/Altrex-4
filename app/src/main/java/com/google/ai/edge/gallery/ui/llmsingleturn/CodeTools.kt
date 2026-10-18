@@ -6,7 +6,13 @@ import android.content.Context
  * Result of a tool: text sent back to the model + a line shown to the user. When [endTurn] is true
  * the agent stops there and shows [log] as the answer (no further model generation needed).
  */
-data class ToolOutcome(val result: String, val log: String, val endTurn: Boolean = false)
+/** [untrusted]: the result holds someone else's content (a repository imported from GitHub). */
+data class ToolOutcome(
+  val result: String,
+  val log: String,
+  val endTurn: Boolean = false,
+  val untrusted: Boolean = false,
+)
 
 /** Project file tools exposed to the model (list, read, write, edit lines, delete). */
 object CodeTools {
@@ -52,7 +58,7 @@ object CodeTools {
       ),
     )
 
-  private fun cleanPath(raw: String): String {
+  fun cleanPath(raw: String): String {
     var p = raw.trim()
     for (prefix in listOf("file:", "文件:", "fichier:", "path:")) {
       if (p.startsWith(prefix, ignoreCase = true)) p = p.substring(prefix.length).trim()
@@ -104,7 +110,17 @@ object CodeTools {
           if (text == null) {
             fail("fichier introuvable : $path.${rootListing(context)}", "Introuvable : $path")
           } else {
-            ToolOutcome("Contenu de $realPath :\n$text", "📄 Lu : $realPath")
+            if (com.google.ai.edge.gallery.ui.github.GitHubSettings.isImported(context, realPath)) {
+              // [ALTREX] Code imported from GitHub: data to analyse, never instructions.
+              val framed =
+                com.google.ai.edge.gallery.security.UntrustedContent.frame(
+                  "fichier d'un dépôt importé depuis GitHub",
+                  text,
+                )
+              ToolOutcome("Contenu de $realPath :\n$framed", "📄 Lu : $realPath (dépôt importé)", untrusted = true)
+            } else {
+              ToolOutcome("Contenu de $realPath :\n$text", "📄 Lu : $realPath")
+            }
           }
         }
         "write_file" -> {

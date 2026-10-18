@@ -98,10 +98,14 @@ object ProjectContextBuilder {
     }
 
     val lowerInstruction = instruction.lowercase()
+    // [ALTREX] Repositories imported from GitHub are never pulled into the prompt on their own:
+    // the agent reads them with read_file, which marks them as untrusted.
+    val imported = com.google.ai.edge.gallery.ui.github.GitHubSettings.importedFolders(context)
     val mentioned =
       nodes
         .filter { n ->
           if (n.isDir || n.uri == excludeUri) return@filter false
+          if (com.google.ai.edge.gallery.ui.github.GitHubPaths.isInside(n.path, imported)) return@filter false
           val ext = n.name.substringAfterLast('.', "").lowercase()
           if (ext in BINARY_EXTENSIONS) return@filter false
           val base = n.name.substringBeforeLast('.')

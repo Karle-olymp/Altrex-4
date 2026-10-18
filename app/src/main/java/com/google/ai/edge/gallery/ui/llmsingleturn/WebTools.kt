@@ -19,7 +19,10 @@ import java.util.Locale
  *   blocked for the rest of the request (the user must send a new message to authorize writing);
  * - once web content has been read AND a project file has been read in the same request, further
  *   web calls are blocked (prevents a booby-trapped page from sending file contents out in a URL);
- * - web_fetch refuses local / private addresses, checks every redirect, and caps size and time.
+ * - web_fetch refuses local / private addresses, checks every redirect, and caps size and time;
+ * - a file of a repository imported from GitHub counts as untrusted content too: after reading
+ *   one, web calls and scans are blocked for the rest of the request, and writes are allowed only
+ *   inside the imported folders (fixing the repository still works, spreading out of it does not).
  */
 object WebTools {
   private const val TAG = "WebTools"
@@ -41,6 +44,7 @@ object WebTools {
 
   @Volatile private var webContentSeen = false
   @Volatile private var projectFileRead = false
+  @Volatile private var untrustedFileRead = false
 
   private val lock = Any()
   private var lastPageUrl: String = ""
@@ -77,12 +81,26 @@ object WebTools {
   fun beginRun() {
     webContentSeen = false
     projectFileRead = false
+    untrustedFileRead = false
+  }
+
+  /** The request starts with someone else's code in the prompt (opened file of an imported repo). */
+  fun markUntrustedRead() {
+    untrustedFileRead = true
   }
 
   /** Executor of the Code space: web tools, plus the file tools behind the web-content guard. */
   fun executeInCode(context: Context, call: AgentToolCall, readCap: Int): ToolOutcome {
     return when {
       call.name == "web_search" || call.name == "web_fetch" -> executeWeb(context, call)
+      call.name in WRITE_TOOLS && untrustedFileRead && !insideImported(context, call) ->
+        ToolOutcome(
+          "Erreur : écriture bloquée par sécurité. Un fichier d'un dépôt importé depuis GitHub a " +
+            "été lu pendant cette demande (il peut contenir des instructions piégées) : tu ne peux " +
+            "modifier que les fichiers de ce dépôt. Explique à l'utilisateur ce que tu proposerais.",
+          "⛔ ${call.name} bloqué hors du dépôt importé : un fichier de ce dépôt a été lu dans la même demande.",
+          endTurn = true,
+        )
       call.name in WRITE_TOOLS && webContentSeen ->
         ToolOutcome(
           "Erreur : écriture bloquée par sécurité, car du contenu web a été lu pendant cette " +
@@ -94,20 +112,48 @@ object WebTools {
         )
       // [ALTREX] The scan sends project code out (to SecurCode only, with consent): not after
       // web content was read, which may carry injected instructions.
-      call.name == "securcode_scan" && webContentSeen ->
+      // Next pages of the last report come from memory: nothing is sent, they stay allowed.
+      call.name == "securcode_scan" && (webContentSeen || untrustedFileRead) &&
+        call.arguments.optInt("page", 1) <= 1 ->
         failEnd(
-          "scan bloqué par sécurité, car du contenu web a été lu pendant cette demande. Dis à " +
+          "scan bloqué par sécurité, car du contenu non fiable a été lu pendant cette demande. Dis à " +
             "l'utilisateur de relancer le scan dans un nouveau message.",
-          "⛔ securcode_scan bloqué : du contenu web a été lu. Relance le scan dans un nouveau message.",
+          "⛔ securcode_scan bloqué : du contenu non fiable a été lu. Relance le scan dans un nouveau message.",
         )
-      call.name == "securcode_scan" ->
-        com.google.ai.edge.gallery.ui.security.SecurityTools.execute(context, call, readCap)
+      call.name == "securcode_scan" -> {
+        val out = com.google.ai.edge.gallery.ui.security.SecurityTools.execute(context, call, readCap)
+        // The report of an imported repository can quote its code: untrusted as well.
+        val target = FileActions.normalizeDir(call.arguments.optString("path", "."))
+        val imported = com.google.ai.edge.gallery.ui.github.GitHubSettings.importedFolders(context)
+        val coversImported =
+          target != null && imported.isNotEmpty() &&
+            (target.isEmpty() || com.google.ai.edge.gallery.ui.github.GitHubPaths.isInside(target, imported) ||
+              imported.any { it.startsWith("$target/") })
+        if (coversImported && !out.endTurn) {
+          untrustedFileRead = true
+          out.copy(
+            result =
+              com.google.ai.edge.gallery.security.UntrustedContent.frame(
+                "rapport SecurCode d'un dépôt importé depuis GitHub",
+                out.result,
+              ),
+            untrusted = true,
+          )
+        } else {
+          out
+        }
+      }
       call.name == "read_file" -> {
         projectFileRead = true
-        CodeTools.execute(context, call, readCap)
+        CodeTools.execute(context, call, readCap).also { if (it.untrusted) untrustedFileRead = true }
       }
       else -> CodeTools.execute(context, call, readCap)
     }
+  }
+
+  private fun insideImported(context: Context, call: AgentToolCall): Boolean {
+    val path = FileActions.normalize(CodeTools.cleanPath(call.arguments.optString("path", ""))) ?: return false
+    return com.google.ai.edge.gallery.ui.github.GitHubSettings.isImported(context, path)
   }
 
   private fun fail(message: String, log: String) = ToolOutcome("Erreur : $message", "✗ $log")
@@ -119,6 +165,14 @@ object WebTools {
     com.google.ai.edge.gallery.security.UntrustedContent.frame("page web", body)
 
   private fun executeWeb(context: Context, call: AgentToolCall): ToolOutcome {
+    if (untrustedFileRead) {
+      return failEnd(
+        "appel web bloqué par sécurité : un fichier d'un dépôt importé depuis GitHub a été lu dans " +
+          "cette demande.",
+        "⛔ Appel web bloqué : un fichier d'un dépôt importé a été lu dans la même demande. " +
+          "Redonne ta demande dans un nouveau message.",
+      )
+    }
     if (webContentSeen && projectFileRead) {
       return failEnd(
         "appel web bloqué par sécurité : du contenu web et un fichier du projet ont été lus dans " +
