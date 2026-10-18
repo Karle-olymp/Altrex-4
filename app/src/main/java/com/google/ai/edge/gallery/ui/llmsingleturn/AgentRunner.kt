@@ -102,9 +102,11 @@ object AgentRunner {
     openedFileName: String?,
     promptBudget: Int,
     profile: AgentProfile = AgentProfiles.CODE,
+    openedFileUntrusted: Boolean = false,
   ) {
     viewModel.clearResponse(model)
     WebTools.beginRun()
+    if (openedFileUntrusted) WebTools.markUntrustedRead()
     // The system prompt must stay identical between requests so that the engine can reuse its
     // cached prefix: the opened file is announced in the user message, never here.
     val system = ToolCalling.systemPrompt(profile.specs, profile.instructions(null))

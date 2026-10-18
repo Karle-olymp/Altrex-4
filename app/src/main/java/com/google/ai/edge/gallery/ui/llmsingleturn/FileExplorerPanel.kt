@@ -32,6 +32,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Folder
@@ -62,7 +63,11 @@ import androidx.documentfile.provider.DocumentFile
  * new files directly at the root of the project.
  */
 @Composable
-fun FileExplorerPanel(modifier: Modifier = Modifier, onFileClicked: (DocumentFile) -> Unit = {}) {
+fun FileExplorerPanel(
+  modifier: Modifier = Modifier,
+  onFileClicked: (DocumentFile) -> Unit = {},
+  onScanFolder: ((String) -> Unit)? = null,
+) {
   val context = LocalContext.current
   var rootFolder by remember {
     mutableStateOf(ProjectFolderManager.getSavedProjectFolder(context))
@@ -70,6 +75,7 @@ fun FileExplorerPanel(modifier: Modifier = Modifier, onFileClicked: (DocumentFil
   var treeExpanded by remember { mutableStateOf(true) }
   var rootChildren by remember(rootFolder) { mutableStateOf<List<DocumentFile>?>(null) }
   var showCreateFileDialog by remember { mutableStateOf(false) }
+  var showGitHubDialog by remember { mutableStateOf(false) }
 
   LaunchedEffect(rootFolder, ProjectEvents.tick.intValue) {
     rootChildren = rootFolder?.let { ProjectFolderManager.listChildren(it) }
@@ -108,7 +114,11 @@ fun FileExplorerPanel(modifier: Modifier = Modifier, onFileClicked: (DocumentFil
           modifier = Modifier.padding(end = 4.dp),
         )
         IconButton(onClick = { showCreateFileDialog = true }, modifier = Modifier.size(32.dp)) {
-          Icon(imageVector = Icons.Outlined.Add, contentDescription = "New file")
+          Icon(imageVector = Icons.Outlined.Add, contentDescription = "Nouveau fichier")
+        }
+        // [ALTREX] Import a repository from GitHub into the project.
+        IconButton(onClick = { showGitHubDialog = true }, modifier = Modifier.size(32.dp)) {
+          Icon(imageVector = Icons.Outlined.CloudDownload, contentDescription = "Importer depuis GitHub")
         }
       }
       TextButton(onClick = { folderPickerLauncher.launch(null) }) {
@@ -126,6 +136,13 @@ fun FileExplorerPanel(modifier: Modifier = Modifier, onFileClicked: (DocumentFil
         }
       }
     }
+  }
+
+  if (showGitHubDialog) {
+    com.google.ai.edge.gallery.ui.github.GitHubImportDialog(
+      onDismiss = { showGitHubDialog = false },
+      onScan = onScanFolder,
+    )
   }
 
   if (showCreateFileDialog) {

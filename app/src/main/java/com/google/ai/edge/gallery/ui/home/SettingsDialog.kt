@@ -405,6 +405,16 @@ private val API_KEYS =
       read = { com.google.ai.edge.gallery.ui.security.SecurCodeSettings.getApiKey(it) },
       save = { c, k -> com.google.ai.edge.gallery.ui.security.SecurCodeSettings.saveApiKey(c, k) },
     ),
+    ApiKeySpec(
+      name = "GitHub",
+      purpose = "Import de tes dépôts privés",
+      help =
+        "Colle un jeton GitHub « fine-grained » (github.com → Settings → Developer settings → " +
+          "Personal access tokens) limité à la lecture : Contents « Read-only ». Il n'est envoyé " +
+          "qu'à api.github.com. Sans jeton, seuls les dépôts publics sont importables.",
+      read = { com.google.ai.edge.gallery.ui.github.GitHubSettings.getToken(it) },
+      save = { c, k -> com.google.ai.edge.gallery.ui.github.GitHubSettings.saveToken(c, k) },
+    ),
   )
 
 /**
