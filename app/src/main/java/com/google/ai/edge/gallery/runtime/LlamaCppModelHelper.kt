@@ -143,6 +143,13 @@ object LlamaCppModelHelper : LlmModelHelper {
         useMtp =
           model.getBooleanConfigValue(key = ConfigKeys.ENABLE_SPECULATIVE_DECODING, defaultValue = false),
         nThreads = model.getIntConfigValue(key = ConfigKeys.NUM_THREADS, defaultValue = 0),
+        kvCacheType = model.getStringConfigValue(key = ConfigKeys.KV_CACHE_TYPE, defaultValue = "f16"),
+        flashAttn =
+          when (model.getStringConfigValue(key = ConfigKeys.FLASH_ATTENTION, defaultValue = "auto")) {
+            "off" -> 0
+            "on" -> 1
+            else -> -1
+          },
         onError = { errorMsg ->
           if (initDone.compareAndSet(false, true)) {
             Log.e(TAG, "Failed to load '${model.name}': $errorMsg")

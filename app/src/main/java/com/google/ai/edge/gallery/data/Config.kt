@@ -58,6 +58,9 @@ object ConfigKeys {
     ConfigKey("thinking_budget", "Thinking budget", R.string.config_label_thinking_budget)
   val NUM_THREADS = ConfigKey("num_threads", "CPU threads", R.string.config_label_num_threads)
   val BASIC_CPU = ConfigKey("basic_cpu", "CPU compatibility mode", R.string.config_label_basic_cpu)
+  val KV_CACHE_TYPE = ConfigKey("kv_cache_type", "KV cache type", R.string.config_label_kv_cache_type)
+  val FLASH_ATTENTION =
+    ConfigKey("flash_attention", "Flash attention", R.string.config_label_flash_attention)
   val DEFAULT_MAX_TOKENS =
     ConfigKey("default_max_tokens", "Default max tokens", R.string.config_label_default_max_tokens)
   val DEFAULT_TOPK = ConfigKey("default_topk", "Default TopK", R.string.config_label_default_topk)
@@ -343,6 +346,20 @@ fun createLlmChatConfigs(
       )
     )
     configs.add(BooleanSwitchConfig(key = ConfigKeys.BASIC_CPU, defaultValue = false))
+    configs.add(
+      SegmentedButtonConfig(
+        key = ConfigKeys.KV_CACHE_TYPE,
+        defaultValue = "f16",
+        options = listOf("f16", "bf16", "f32"),
+      )
+    )
+    configs.add(
+      SegmentedButtonConfig(
+        key = ConfigKeys.FLASH_ATTENTION,
+        defaultValue = "auto",
+        options = listOf("auto", "off", "on"),
+      )
+    )
   }
   if (supportThinking) {
     configs.add(BooleanSwitchConfig(key = ConfigKeys.ENABLE_THINKING, defaultValue = false))

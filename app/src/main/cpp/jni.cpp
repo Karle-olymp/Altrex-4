@@ -40,6 +40,10 @@ static std::deque<std::string> g_last_errors;
 // [ALTREX] Full llama.cpp log (INFO and above) of the recent loads, exported from the app to
 // diagnose a model that gives incoherent text on a device.
 static std::string g_full_log;
+// [ALTREX] Diagnostic load options set from Kotlin just before a load (KV cache type, flash attention).
+static std::mutex g_load_opts_mutex;
+static ggml_type g_next_kv_type = GGML_TYPE_F16;
+static llama_flash_attn_type g_next_flash_attn = LLAMA_FLASH_ATTN_TYPE_AUTO;
 static const size_t ALTREX_FULL_LOG_MAX = 160 * 1024;
 
 static void altrex_full_log_append(const char *text) {
@@ -444,6 +448,20 @@ Java_org_nehuatl_llamacpp_LlamaContext_initContextWithFd(
             LOGI("mmproj set to FD: %s", defaultParams.mmproj.path.c_str());
         }
         close(mmproj_fd);
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(g_load_opts_mutex);
+        defaultParams.cache_type_k = g_next_kv_type;
+        defaultParams.cache_type_v = g_next_kv_type;
+        defaultParams.flash_attn_type = g_next_flash_attn;
+    }
+    {
+        char opts[160];
+        snprintf(opts, sizeof(opts), "Altrex load options: cache_type_k/v=%s, flash_attn=%s\n",
+                 ggml_type_name(defaultParams.cache_type_k), llama_flash_attn_type_name(defaultParams.flash_attn_type));
+        altrex_full_log_append(opts);
+        LOGI("%s", opts);
     }
 
     defaultParams.rope_freq_base = rope_freq_base;
@@ -1099,6 +1117,23 @@ Java_org_nehuatl_llamacpp_LlamaContext_getLastNativeError(JNIEnv *env, jclass cl
         }
     }
     return utf8ToJString(env, out);
+}
+
+// [ALTREX] Diagnostic options for the next load: KV cache type ("f16", "bf16", "f32") and flash
+// attention (-1 auto, 0 off, 1 on).
+JNIEXPORT void JNICALL
+Java_org_nehuatl_llamacpp_LlamaContext_setLoadOptions(JNIEnv *env, jclass clazz, jstring kv_type, jint flash_attn) {
+    UNUSED(clazz);
+    const std::string kv = jstringToUtf8(env, kv_type);
+    ggml_type type = GGML_TYPE_F16;
+    if (kv == "bf16") type = GGML_TYPE_BF16;
+    else if (kv == "f32") type = GGML_TYPE_F32;
+    llama_flash_attn_type fa = LLAMA_FLASH_ATTN_TYPE_AUTO;
+    if (flash_attn == 0) fa = LLAMA_FLASH_ATTN_TYPE_DISABLED;
+    else if (flash_attn == 1) fa = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+    std::lock_guard<std::mutex> lock(g_load_opts_mutex);
+    g_next_kv_type = type;
+    g_next_flash_attn = fa;
 }
 
 // [ALTREX] Full llama.cpp log of the recent loads and generations (INFO and above).

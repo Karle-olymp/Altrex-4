@@ -73,6 +73,12 @@ class LlamaContext(
         /** [ALTREX] Full llama.cpp log of the recent loads (INFO and above), for diagnostics. */
         @JvmStatic external fun getNativeLog(): String
 
+        /**
+         * [ALTREX] Diagnostic options for the next load: KV cache type ("f16", "bf16", "f32") and
+         * flash attention (-1 auto, 0 off, 1 on).
+         */
+        @JvmStatic external fun setLoadOptions(kvCacheType: String, flashAttn: Int)
+
         private fun isArm64V8a(): Boolean = Build.SUPPORTED_ABIS[0] == "arm64-v8a"
         private fun isX86_64(): Boolean = Build.SUPPORTED_ABIS[0] == "x86_64"
         private fun getCpuFeatures(): String {
