@@ -18,19 +18,17 @@ plugins {
   alias(libs.plugins.android.application)
   // Note: set apply to true to enable google-services (requires google-services.json).
   alias(libs.plugins.google.services) apply false
-  alias(libs.plugins.kotlin.android)
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.kotlin.serialization)
   alias(libs.plugins.protobuf)
   alias(libs.plugins.hilt.application)
   alias(libs.plugins.oss.licenses)
   alias(libs.plugins.ksp)
-  kotlin("kapt")
 }
 
 android {
   namespace = "com.google.ai.edge.gallery"
-  compileSdk = 36
+  compileSdk = 37
 
   defaultConfig {
     applicationId = "com.aistudio.altrex.app"
@@ -88,10 +86,6 @@ externalNativeBuild {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
   }
-  kotlinOptions {
-    jvmTarget = "11"
-    freeCompilerArgs += "-Xcontext-receivers"
-  }
   buildFeatures {
     compose = true
     buildConfig = true
@@ -141,7 +135,7 @@ dependencies {
   implementation(libs.firebase.messaging)
   implementation(libs.androidx.exifinterface)
   implementation(libs.moshi.kotlin)
-  kapt(libs.hilt.android.compiler)
+  ksp(libs.hilt.android.compiler)
   testImplementation(libs.junit)
   testImplementation("org.json:json:20240303")
   androidTestImplementation(libs.androidx.junit)
@@ -165,7 +159,7 @@ protobuf {
     if (termuxProtoc.exists()) {
       path = termuxProtoc.absolutePath
     } else {
-      artifact = "com.google.protobuf:protoc:4.26.1"
+      artifact = "com.google.protobuf:protoc:4.36.2"
     }
   }
   generateProtoTasks {
@@ -175,5 +169,11 @@ protobuf {
         create("kotlin") { option("lite") }
       }
     }
+  }
+}
+
+kotlin {
+  compilerOptions {
+    jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
   }
 }

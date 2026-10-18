@@ -285,6 +285,50 @@ fun MessageInputText(
   // [ALTREX] Attached document (PDF or text file), its text extracted on the phone.
   var pickedDocument by remember { mutableStateOf<AttachedDocument?>(null) }
   var readingDocument by remember { mutableStateOf(false) }
+
+  // [ALTREX] Content sent from another app ("Demander à Altrex", share sheet): fill the input, or
+  // send it once the model is ready when the user already chose an action.
+  val sharedRequest by SharedInbox.pending.collectAsState()
+  val selectedModelName = modelManagerUiState.selectedModel.name
+  val modelReady =
+    modelManagerUiState.modelInitializationStatus[selectedModelName]?.status ==
+      com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType.INITIALIZED &&
+      !modelInitializing &&
+      !modelPreparing &&
+      !inProgress &&
+      !isResettingSession
+  LaunchedEffect(sharedRequest, modelReady) {
+    val request = sharedRequest ?: return@LaunchedEffect
+    if (task.id != com.google.ai.edge.gallery.data.BuiltInTaskId.LLM_CHAT) return@LaunchedEffect
+    if (request.autoSend && !modelReady) return@LaunchedEffect
+    if (SharedInbox.take() == null) return@LaunchedEffect
+    val images = if (showImagePicker) request.images.take(MAX_IMAGE_COUNT) else emptyList()
+    if (request.images.isNotEmpty() && images.isEmpty()) {
+      android.widget.Toast.makeText(
+          context,
+          "Ce modèle ne lit pas les images : choisis-en un qui les accepte.",
+          android.widget.Toast.LENGTH_LONG,
+        )
+        .show()
+    }
+    if (request.autoSend) {
+      onSendMessage(
+        createMessagesToSend(
+          pickedImages = images,
+          audioClips = listOf(),
+          text = request.text.trim(),
+          document = request.document,
+        )
+      )
+    } else {
+      onValueChanged(request.text)
+      pickedDocument = request.document
+      if (images.isNotEmpty()) {
+        pickedImages = images
+        onPickedImagesChanged(images)
+      }
+    }
+  }
   val pickDocument =
     rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
       if (uri != null) {
