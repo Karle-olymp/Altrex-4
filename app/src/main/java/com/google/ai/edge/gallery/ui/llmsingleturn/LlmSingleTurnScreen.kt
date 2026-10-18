@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -43,6 +44,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +53,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.core.os.bundleOf
 import com.google.ai.edge.gallery.GalleryEvent
@@ -101,6 +105,11 @@ fun LlmSingleTurnScreen(
   var navigatingUp by remember { mutableStateOf(false) }
   var showErrorDialog by remember { mutableStateOf(false) }
   var openedFile by remember { mutableStateOf<OpenedFile?>(null) }
+  // [ALTREX] Chat / Code / Aperçu. The text being edited lives here so that it survives a switch
+  // of view and the Aperçu shows it even before it is saved; null means "as on disk".
+  var view by rememberSaveable { mutableStateOf(CodeView.CHAT) }
+  var draft by remember { mutableStateOf<String?>(null) }
+  val viewStates = rememberSaveableStateHolder()
 
   val handleNavigateUp = {
     navigatingUp = true
@@ -162,6 +171,35 @@ fun LlmSingleTurnScreen(
     }
   }
 
+  // A file opened, reloaded or saved: the editor starts again from what is on disk.
+  LaunchedEffect(openedFile?.uri, openedFile?.content) { draft = null }
+  // A generation (typed request or scan) shows its answer in the Chat view.
+  LaunchedEffect(uiState.inProgress) { if (uiState.inProgress) view = CodeView.CHAT }
+
+  val modelDownloaded = curDownloadStatus?.status == ModelDownloadStatusType.SUCCEEDED
+  val openedUri = openedFile?.uri
+  val openedName = openedFile?.fileName
+  val scanTarget =
+    remember(openedUri) {
+      openedUri?.let { ProjectFolderManager.relativePath(context, it) ?: openedName }
+    }
+  val startScan: () -> Unit = {
+    view = CodeView.CHAT
+    viewModel.setInProgress(true)
+    viewModel.setPreparing(true)
+    scope.launch(Dispatchers.IO) {
+      AgentRunner.runScan(
+        scope = scope,
+        context = context,
+        viewModel = viewModel,
+        task = task,
+        model = selectedModel,
+        target = scanTarget ?: ".",
+        promptBudget = promptBudgetFor(selectedModel),
+      )
+    }
+  }
+
   Scaffold(
     modifier = modifier,
     topBar = {
@@ -200,59 +238,115 @@ fun LlmSingleTurnScreen(
       if (securityMode) {
         SecurityBar()
       } else {
-        WebBar()
+        // Only their dialogs (key asked by a tool, consent to send code): keys are in Settings.
+        WebBar(showStatus = false)
+        SecurityBar(showStatus = false)
       }
-      FileExplorerPanel(
-        modifier = Modifier.fillMaxWidth(),
-        onFileClicked = { file ->
-          val text = ProjectFolderManager.readTextFile(context, file.uri)
-          if (text != null) {
-            openedFile = OpenedFile(fileName = file.name ?: "file", uri = file.uri, content = text)
-          }
-        },
+      CodeViewSelector(
+        view = view,
+        onViewSelected = { view = it },
+        scanEnabled = modelDownloaded && !uiState.inProgress,
+        scanLabel =
+          if (scanTarget != null) "Scanner « $scanTarget » avec SecurCode"
+          else "Scanner le projet avec SecurCode",
+        onScan = startScan,
       )
 
-      Box(modifier = Modifier.weight(1f)) {
-        CodeModeMainContent(
-          task = task,
-          selectedModel = selectedModel,
-          viewModel = viewModel,
-          modelManagerViewModel = modelManagerViewModel,
-          curDownloadStatus = curDownloadStatus,
-          modelInitializationStatus = modelInitializationStatus,
-          showErrorDialog = showErrorDialog,
-          onDismissErrorDialog = { showErrorDialog = false },
-          innerPadding = innerPadding,
-          securityMode = securityMode,
-          openedFile = openedFile,
-          onOpenedFileCleared = { openedFile = null },
-          onFileContentSaved = { newContent -> openedFile = openedFile?.copy(content = newContent) },
-        )
+      val openFile = { file: androidx.documentfile.provider.DocumentFile ->
+        val text = ProjectFolderManager.readTextFile(context, file.uri)
+        if (text != null) {
+          openedFile = OpenedFile(fileName = file.name ?: "file", uri = file.uri, content = text)
+          view = CodeView.CODE
+        }
+      }
+      val editorText = draft ?: openedFile?.content.orEmpty()
 
-        // [ALTREX] Model loading screen over the editor and the response. Fully qualified: the
-        // ColumnScope overload would otherwise be picked from the outer Column.
-        androidx.compose.animation.AnimatedVisibility(
-          visible = modelInitializationStatus?.status == ModelInitializationStatusType.INITIALIZING,
-          enter = fadeIn(),
-          exit = fadeOut() + scaleOut(targetScale = 0.96f),
-        ) {
-          Box(
-            modifier =
-              Modifier.fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.94f))
-                .pointerInput(Unit) {},
-            contentAlignment = Alignment.Center,
-          ) {
-            AltrexModelLoading(
-              title = stringResource(R.string.aichat_initializing_title),
-              modelName = selectedModel.displayName.ifEmpty { selectedModel.name },
-              hint = stringResource(R.string.aichat_initializing_content),
-            )
+      Box(modifier = Modifier.weight(1f)) {
+        viewStates.SaveableStateProvider(view) {
+          when (view) {
+            CodeView.CODE ->
+              Column(modifier = Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding())) {
+                FileExplorerPanel(modifier = Modifier.fillMaxWidth(), onFileClicked = openFile)
+                val f = openedFile
+                if (f != null) {
+                  CodeEditorPanel(
+                    openedFile = f,
+                    text = editorText,
+                    onTextChange = { draft = it },
+                    onSaved = { saved -> openedFile = f.copy(content = saved) },
+                    modifier = Modifier.weight(1f),
+                  )
+                } else {
+                  EmptyPaneHint(
+                    "Choisis un dossier de projet, puis touche un fichier pour l'ouvrir ici.",
+                    Modifier.weight(1f),
+                  )
+                }
+              }
+            CodeView.PREVIEW ->
+              PreviewPanel(
+                openedFile = openedFile,
+                text = editorText,
+                modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding()),
+              )
+            CodeView.CHAT -> {
+              CodeModeMainContent(
+                task = task,
+                selectedModel = selectedModel,
+                viewModel = viewModel,
+                modelManagerViewModel = modelManagerViewModel,
+                curDownloadStatus = curDownloadStatus,
+                modelInitializationStatus = modelInitializationStatus,
+                showErrorDialog = showErrorDialog,
+                onDismissErrorDialog = { showErrorDialog = false },
+                innerPadding = innerPadding,
+                securityMode = securityMode,
+                openedFile = openedFile,
+                onOpenedFileCleared = { openedFile = null },
+                onFileContentSaved = { newContent -> openedFile = openedFile?.copy(content = newContent) },
+                onApplyToEditor = { code ->
+                  if (openedFile != null) {
+                    draft = code
+                    view = CodeView.CODE
+                  }
+                },
+              )
+
+              // [ALTREX] Model loading screen over the response and the request box.
+              androidx.compose.animation.AnimatedVisibility(
+                visible = modelInitializationStatus?.status == ModelInitializationStatusType.INITIALIZING,
+                enter = fadeIn(),
+                exit = fadeOut() + scaleOut(targetScale = 0.96f),
+              ) {
+                Box(
+                  modifier =
+                    Modifier.fillMaxSize()
+                      .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.94f))
+                      .pointerInput(Unit) {},
+                  contentAlignment = Alignment.Center,
+                ) {
+                  AltrexModelLoading(
+                    title = stringResource(R.string.aichat_initializing_title),
+                    modelName = selectedModel.displayName.ifEmpty { selectedModel.name },
+                    hint = stringResource(R.string.aichat_initializing_content),
+                  )
+                }
+              }
+            }
           }
         }
       }
     }
   }
+}
+
+/** Characters available for the prompt: the context minus ~2100 tokens kept for the answer. */
+private fun promptBudgetFor(model: Model): Int {
+  // ~3 caractères par token.
+  val maxTokens =
+    (model.instance as? com.google.ai.edge.gallery.runtime.LlamaCppModelInstance)?.contextLength
+      ?: model.getIntConfigValue(ConfigKeys.MAX_TOKENS, DEFAULT_MAX_TOKEN)
+  return (maxTokens - 2100).coerceAtLeast(0) * 3
 }
 
 @Composable
@@ -270,6 +364,7 @@ private fun CodeModeMainContent(
   openedFile: OpenedFile? = null,
   onOpenedFileCleared: () -> Unit = {},
   onFileContentSaved: (String) -> Unit = {},
+  onApplyToEditor: (String) -> Unit = {},
 ) {
   val modelDownloaded = curDownloadStatus?.status == ModelDownloadStatusType.SUCCEEDED
   val context = LocalContext.current
@@ -286,28 +381,25 @@ private fun CodeModeMainContent(
         // from ResponsePanel still works.
         .graphicsLayer { alpha = animatedAlpha },
   ) {
-    VerticalSplitView(
-      modifier = Modifier.fillMaxSize(),
-      topView = {
-        Box(
-          contentAlignment = Alignment.BottomCenter,
-          modifier =
-            Modifier.fillMaxSize().background(MaterialTheme.customColors.agentBubbleBgColor),
-        ) {
-          if (task.models.indexOf(selectedModel) >= 0) {
-            ResponsePanel(
-              task = task,
-              model = selectedModel,
-              viewModel = viewModel,
-              modelManagerViewModel = modelManagerViewModel,
-              modifier = Modifier.fillMaxSize(),
-              openedFile = openedFile,
-              onFileContentSaved = onFileContentSaved,
-            )
-          }
+    Column(modifier = Modifier.fillMaxSize()) {
+      Box(
+        contentAlignment = Alignment.BottomCenter,
+        modifier =
+          Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.customColors.agentBubbleBgColor),
+      ) {
+        if (task.models.indexOf(selectedModel) >= 0) {
+          ResponsePanel(
+            task = task,
+            model = selectedModel,
+            viewModel = viewModel,
+            modelManagerViewModel = modelManagerViewModel,
+            modifier = Modifier.fillMaxSize(),
+            openedFile = openedFile,
+            onFileContentSaved = onFileContentSaved,
+            onApplyToEditor = onApplyToEditor,
+          )
         }
-      },
-      bottomView = {
+      }
         PromptTemplatesPanel(
           model = selectedModel,
           viewModel = viewModel,
@@ -323,12 +415,7 @@ private fun CodeModeMainContent(
               } else {
                 fullPrompt
               }
-            // ~3 caractères par token ; on garde ~2100 tokens pour la réponse.
-            val maxTokens =
-              (selectedModel.instance as? com.google.ai.edge.gallery.runtime.LlamaCppModelInstance)
-                ?.contextLength
-                ?: selectedModel.getIntConfigValue(ConfigKeys.MAX_TOKENS, DEFAULT_MAX_TOKEN)
-            val promptBudget = (maxTokens - 2100).coerceAtLeast(0) * 3
+            val promptBudget = promptBudgetFor(selectedModel)
             viewModel.setInProgress(true)
             viewModel.setPreparing(true)
             scope.launch(Dispatchers.IO) {
@@ -431,10 +518,11 @@ private fun CodeModeMainContent(
           },
           onStopButtonClicked = { model -> viewModel.stopResponse(model = model) },
           modifier =
-            Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding()),
+            Modifier.fillMaxWidth()
+              .height(if (openedFile != null) 210.dp else 172.dp)
+              .padding(bottom = innerPadding.calculateBottomPadding()),
         )
-      },
-    )
+    }
   }
 
   // Download button for the selected model when the model is not downloaded.

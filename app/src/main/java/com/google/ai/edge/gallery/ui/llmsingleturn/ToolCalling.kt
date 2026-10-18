@@ -99,6 +99,12 @@ object ToolCalling {
   }
 
   /** Tool results, sent back as a user message. */
+  /** The assistant message of a tool call made by the app itself (the Scanner button). */
+  fun callMessage(name: String, arguments: JSONObject): AgentMsg {
+    val json = JSONObject().put("name", name).put("arguments", arguments).toString().replace("\\/", "/")
+    return AgentMsg("assistant", CALL_OPEN + "\n" + json + "\n" + CALL_CLOSE)
+  }
+
   fun toolResponseMessage(results: List<String>): AgentMsg {
     val sb = StringBuilder()
     for (r in results) {

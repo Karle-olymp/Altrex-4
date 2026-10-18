@@ -89,10 +89,37 @@ private data class OutputPart(val text: String, val isError: Boolean)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CodeRunnerSheet(language: RunLanguage, code: String, onDismiss: () -> Unit) {
+  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+  // Closing the sheet disposes the content, which stops and destroys the runner.
+  ModalBottomSheet(
+    onDismissRequest = onDismiss,
+    sheetState = sheetState,
+    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+  ) {
+    CodeRunnerContent(
+      language = language,
+      code = code,
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp),
+    )
+  }
+}
+
+/**
+ * [ALTREX] The runner itself: header, the page (HTML) or hidden WebView, the output and the
+ * Arrêter / Relancer buttons. In the sheet ([fill] false) it takes its natural height; in the
+ * Aperçu view of the Code space ([fill] true) the page or the output takes all the room left.
+ */
+@Composable
+fun CodeRunnerContent(
+  language: RunLanguage,
+  code: String,
+  modifier: Modifier = Modifier,
+  fill: Boolean = false,
+  title: String = "Exécution",
+) {
   val context = LocalContext.current
   val clipboard = LocalClipboardManager.current
   val scope = rememberCoroutineScope()
-  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
   var state by remember {
     mutableStateOf(
@@ -135,130 +162,127 @@ fun CodeRunnerSheet(language: RunLanguage, code: String, onDismiss: () -> Unit) 
     }
   }
 
-  ModalBottomSheet(
-    onDismissRequest = {
-      runner.stop()
-      onDismiss()
-    },
-    sheetState = sheetState,
-    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-  ) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
-      // Header: title, language, status.
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(modifier = Modifier.weight(1f)) {
-          Text("Exécution", style = MaterialTheme.typography.titleLarge)
-          Text(
-            language.label + " · sur le téléphone",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-        }
-        StatusPill(state)
-      }
-      Spacer(Modifier.height(14.dp))
-
-      if (state == RunState.NEEDS_DOWNLOAD || state == RunState.DOWNLOADING) {
-        DownloadCard(
-          downloading = state == RunState.DOWNLOADING,
-          progress = progress,
-          error = downloadError,
-          onDownload = {
-            downloadError = null
-            state = RunState.DOWNLOADING
-            scope.launch {
-              try {
-                PyodideStore.install(context) { p -> progress = p }
-                state = RunState.RUNNING
-              } catch (e: Exception) {
-                downloadError = e.message ?: "Échec du téléchargement"
-                state = RunState.NEEDS_DOWNLOAD
-              }
-            }
-          },
+  Column(modifier = modifier) {
+    // Header: title, language, status.
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      Column(modifier = Modifier.weight(1f)) {
+        Text(title, style = if (fill) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge)
+        Text(
+          language.label + " · sur le téléphone",
+          style = MaterialTheme.typography.labelMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }
+      StatusPill(state)
+    }
+    Spacer(Modifier.height(if (fill) 10.dp else 14.dp))
 
-      // HTML is shown as a page; for the other languages the WebView only runs the code.
-      val webModifier =
-        if (language == RunLanguage.HTML) {
-          Modifier.fillMaxWidth()
-            .height(320.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
-        } else {
-          Modifier.size(1.dp).alpha(0f)
-        }
-      if (state != RunState.NEEDS_DOWNLOAD && state != RunState.DOWNLOADING) {
-        AndroidView(factory = { runner.webView }, modifier = webModifier)
-        if (language == RunLanguage.HTML) Spacer(Modifier.height(12.dp))
-      }
-
-      // Output (console / stdout / stderr).
-      val parts = output.value
-      val errorColor = MaterialTheme.colorScheme.error
-      val text =
-        buildAnnotatedString {
-          for (p in parts) {
-            if (p.isError) withStyle(SpanStyle(color = errorColor)) { append(p.text) } else append(p.text)
-          }
-        }
-      Box(
-        modifier =
-          Modifier.fillMaxWidth()
-            .heightIn(min = 120.dp, max = 360.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
-            .verticalScroll(rememberScrollState())
-            .horizontalScroll(rememberScrollState())
-            .padding(14.dp)
-      ) {
-        if (parts.isEmpty()) {
-          Text(
-            when (state) {
-              RunState.RUNNING ->
-                if (language == RunLanguage.PYTHON) "Démarrage de Python…" else "Exécution…"
-              RunState.DONE -> "Terminé, sans rien afficher."
-              RunState.ERROR -> "Arrêté."
-              else -> "La sortie s'affichera ici."
-            },
-            fontFamily = codeFontFamily,
-            fontSize = 12.5.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-        } else {
-          Text(text, fontFamily = codeFontFamily, fontSize = 12.5.sp, lineHeight = 19.sp, softWrap = false)
-        }
-      }
-      Spacer(Modifier.height(14.dp))
-
-      // Actions.
-      Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (state == RunState.RUNNING) {
-          Button(onClick = { runner.stop() }) {
-            Icon(Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Arrêter")
-          }
-        } else if (state == RunState.DONE || state == RunState.ERROR) {
-          Button(
-            onClick = {
+    if (state == RunState.NEEDS_DOWNLOAD || state == RunState.DOWNLOADING) {
+      DownloadCard(
+        downloading = state == RunState.DOWNLOADING,
+        progress = progress,
+        error = downloadError,
+        onDownload = {
+          downloadError = null
+          state = RunState.DOWNLOADING
+          scope.launch {
+            try {
+              PyodideStore.install(context) { p -> progress = p }
               state = RunState.RUNNING
-              runId++
+            } catch (e: Exception) {
+              downloadError = e.message ?: "Échec du téléchargement"
+              state = RunState.NEEDS_DOWNLOAD
             }
-          ) {
-            Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Relancer")
           }
+        },
+      )
+    }
+
+    // HTML is shown as a page; for the other languages the WebView only runs the code.
+    val webModifier =
+      if (language == RunLanguage.HTML) {
+        Modifier.fillMaxWidth()
+          .then(if (fill) Modifier.weight(1f) else Modifier.height(320.dp))
+          .clip(RoundedCornerShape(16.dp))
+          .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+      } else {
+        Modifier.size(1.dp).alpha(0f)
+      }
+    if (state != RunState.NEEDS_DOWNLOAD && state != RunState.DOWNLOADING) {
+      AndroidView(factory = { runner.webView }, modifier = webModifier)
+      if (language == RunLanguage.HTML) Spacer(Modifier.height(12.dp))
+    }
+
+    // Output (console / stdout / stderr).
+    val parts = output.value
+    val errorColor = MaterialTheme.colorScheme.error
+    val text =
+      buildAnnotatedString {
+        for (p in parts) {
+          if (p.isError) withStyle(SpanStyle(color = errorColor)) { append(p.text) } else append(p.text)
         }
-        if (parts.isNotEmpty()) {
-          OutlinedButton(onClick = { clipboard.setText(AnnotatedString(parts.joinToString("") { it.text })) }) {
-            Icon(Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Copier la sortie")
+      }
+    Box(
+      modifier =
+        Modifier.fillMaxWidth()
+          .then(
+            when {
+              !fill -> Modifier.heightIn(min = 120.dp, max = 360.dp)
+              language == RunLanguage.HTML -> Modifier.heightIn(min = 48.dp, max = 120.dp)
+              else -> Modifier.weight(1f)
+            }
+          )
+          .clip(RoundedCornerShape(16.dp))
+          .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+          .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
+          .verticalScroll(rememberScrollState())
+          .horizontalScroll(rememberScrollState())
+          .padding(14.dp)
+    ) {
+      if (parts.isEmpty()) {
+        Text(
+          when (state) {
+            RunState.RUNNING ->
+              if (language == RunLanguage.PYTHON) "Démarrage de Python…" else "Exécution…"
+            RunState.DONE -> "Terminé, sans rien afficher."
+            RunState.ERROR -> "Arrêté."
+            else -> "La sortie s'affichera ici."
+          },
+          fontFamily = codeFontFamily,
+          fontSize = 12.5.sp,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      } else {
+        Text(text, fontFamily = codeFontFamily, fontSize = 12.5.sp, lineHeight = 19.sp, softWrap = false)
+      }
+    }
+    Spacer(Modifier.height(14.dp))
+
+    // Actions.
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+      if (state == RunState.RUNNING) {
+        Button(onClick = { runner.stop() }) {
+          Icon(Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(Modifier.width(6.dp))
+          Text("Arrêter")
+        }
+      } else if (state == RunState.DONE || state == RunState.ERROR) {
+        Button(
+          onClick = {
+            state = RunState.RUNNING
+            runId++
           }
+        ) {
+          Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(Modifier.width(6.dp))
+          Text("Relancer")
+        }
+      }
+      if (parts.isNotEmpty()) {
+        OutlinedButton(onClick = { clipboard.setText(AnnotatedString(parts.joinToString("") { it.text })) }) {
+          Icon(Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+          Spacer(Modifier.width(6.dp))
+          Text("Copier la sortie")
         }
       }
     }

@@ -33,7 +33,7 @@ import kotlinx.coroutines.withContext
  * dialogs the scan tool can trigger (API key entry, per-project consent to send code).
  */
 @Composable
-fun SecurityBar(modifier: Modifier = Modifier) {
+fun SecurityBar(modifier: Modifier = Modifier, showStatus: Boolean = true) {
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   var hasKey by remember { mutableStateOf(false) }
@@ -42,7 +42,9 @@ fun SecurityBar(modifier: Modifier = Modifier) {
   val keyRequested by SecurCodeSettings.keyDialogRequest
   val pending by SecurCodeSettings.pendingConsent
 
-  LaunchedEffect(Unit) {
+  // Refreshed when the key changes in the Settings.
+  val keysVersion by com.google.ai.edge.gallery.ui.common.ApiKeyEvents.version
+  LaunchedEffect(keysVersion) {
     hasKey = withContext(Dispatchers.IO) { SecurCodeSettings.getApiKey(context) != null }
   }
   LaunchedEffect(keyRequested) {
@@ -53,8 +55,9 @@ fun SecurityBar(modifier: Modifier = Modifier) {
     }
   }
 
-  // [ALTREX] Shared status bar (icon + label, key pill) instead of emoji text.
-  ToolStatusBar(
+  // [ALTREX] Shared status bar (icon + label, key pill) instead of emoji text. Without it
+  // ([showStatus] false) only the dialogs remain; the keys are also managed in the Settings.
+  if (showStatus) ToolStatusBar(
     icon = Icons.Outlined.Shield,
     label = "Lecture seule",
     keyName = "Clé SecurCode",

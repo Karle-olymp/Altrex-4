@@ -19,6 +19,7 @@ package com.google.ai.edge.gallery.ui.llmsingleturn
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.core.content.edit
 import androidx.documentfile.provider.DocumentFile
 
@@ -57,6 +58,21 @@ object ProjectFolderManager {
   fun clearProjectFolder(context: Context) {
     context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
       remove(KEY_PROJECT_FOLDER_URI)
+    }
+  }
+
+  /**
+   * Path of [uri] relative to the project folder ("src/app.js"), or null when it is not inside it
+   * or the provider does not use path-like document ids.
+   */
+  fun relativePath(context: Context, uri: Uri): String? {
+    val root = getSavedProjectFolder(context) ?: return null
+    return try {
+      val rootId = DocumentsContract.getTreeDocumentId(root.uri)
+      val docId = DocumentsContract.getDocumentId(uri)
+      docId.takeIf { it.startsWith("$rootId/") }?.removePrefix("$rootId/")
+    } catch (e: IllegalArgumentException) {
+      null
     }
   }
 

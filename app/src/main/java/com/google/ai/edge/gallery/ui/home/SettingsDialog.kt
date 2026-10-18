@@ -42,6 +42,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.collectAsState
 import com.google.ai.edge.gallery.search.Embedder
+import com.google.ai.edge.gallery.ui.common.ApiKeyEvents
 import com.google.ai.edge.gallery.search.LocalMemory
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.runtime.LaunchedEffect
@@ -81,6 +82,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -337,6 +339,9 @@ fun SettingsDialog(
           }
         }
 
+        // [ALTREX] API keys of the online tools, stored encrypted on the phone.
+        SettingsSection("Clés d'API") { ApiKeysSettings() }
+
         // [ALTREX] Local memory: a folder the model draws on.
         SettingsSection("Mémoire locale") { MemorySettings() }
 
@@ -369,6 +374,109 @@ fun SettingsDialog(
         }
       }
     }
+  }
+}
+
+/** [ALTREX] An online service whose key is kept in the Settings. */
+private class ApiKeySpec(
+  val name: String,
+  val purpose: String,
+  val help: String,
+  val read: (android.content.Context) -> String?,
+  val save: (android.content.Context, String) -> Boolean,
+)
+
+private val API_KEYS =
+  listOf(
+    ApiKeySpec(
+      name = "Brave Search",
+      purpose = "Recherche web de l'espace Code",
+      help =
+        "Colle ta clé Brave Search (api-dashboard.search.brave.com → API keys). Seules tes requêtes " +
+          "de recherche partent vers Brave, jamais ton code ni un secret.",
+      read = { com.google.ai.edge.gallery.ui.llmsingleturn.WebSettings.getBraveKey(it) },
+      save = { c, k -> com.google.ai.edge.gallery.ui.llmsingleturn.WebSettings.saveBraveKey(c, k) },
+    ),
+    ApiKeySpec(
+      name = "SecurCode",
+      purpose = "Scan de sécurité du code",
+      help =
+        "Colle ta clé SecurCode. Le code n'est envoyé au scan qu'après ton accord, projet par projet.",
+      read = { com.google.ai.edge.gallery.ui.security.SecurCodeSettings.getApiKey(it) },
+      save = { c, k -> com.google.ai.edge.gallery.ui.security.SecurCodeSettings.saveApiKey(c, k) },
+    ),
+  )
+
+/**
+ * [ALTREX] Every API key in one place: status (masked), add or change, delete. Keys are stored
+ * encrypted on the phone and are never sent to the model.
+ */
+@Composable
+private fun ApiKeysSettings() {
+  val context = LocalContext.current
+  var version by remember { mutableStateOf(0) }
+  var editing by remember { mutableStateOf<ApiKeySpec?>(null) }
+  var input by remember { mutableStateOf("") }
+
+  for (spec in API_KEYS) {
+    val key = remember(version) { spec.read(context) }
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      modifier =
+        Modifier.fillMaxWidth()
+          .clickable {
+            input = ""
+            editing = spec
+          }
+          .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+      Icon(
+        Icons.Outlined.Key,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.size(22.dp),
+      )
+      Spacer(modifier = Modifier.width(16.dp))
+      Column(modifier = Modifier.weight(1f)) {
+        Text(spec.name, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
+        Text(
+          spec.purpose + " · " + (key?.let { "enregistrée (…${it.takeLast(4)})" } ?: "aucune clé"),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+      if (key != null) {
+        TextButton(
+          onClick = {
+            spec.save(context, "")
+            ApiKeyEvents.changed()
+            version++
+          }
+        ) {
+          Text("Supprimer")
+        }
+      } else {
+        Text("Ajouter", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+      }
+    }
+  }
+
+  editing?.let { spec ->
+    com.google.ai.edge.gallery.customtasks.agentchat.SecretEditorDialog(
+      title = "Clé ${spec.name}",
+      fieldLabel = spec.help + " Elle est stockée chiffrée sur ce téléphone et n'est jamais envoyée au modèle.",
+      value = input,
+      onValueChange = { input = it },
+      onDone = {
+        if (input.isNotBlank()) {
+          spec.save(context, input.trim())
+          ApiKeyEvents.changed()
+          version++
+        }
+        editing = null
+      },
+      onDismiss = { editing = null },
+    )
   }
 }
 

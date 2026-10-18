@@ -16,31 +16,33 @@ object SecurityTools {
   private val READ_ONLY_FROM_CODE = setOf("list_dir", "read_file")
   private val WRITE_TOOLS = setOf("write_file", "replace_lines", "delete_file")
 
-  val specs: List<AgentToolSpec> =
-    CodeTools.specs.filter { it.name in READ_ONLY_FROM_CODE } +
-      AgentToolSpec(
-        name = "securcode_scan",
-        description =
-          "Analyse la sécurité d'un dossier, d'un fichier .zip ou d'un fichier du projet avec " +
-            "SecurCode (secrets, dépendances vulnérables, failles). Le code est envoyé à " +
-            "SecurCode : l'utilisateur doit l'avoir autorisé. Chaque scan consomme 1 des 20 " +
-            "analyses quotidiennes. Pour voir la suite des failles du dernier scan, rappelle " +
-            "l'outil avec la même cible et page=2, 3... (sans refaire de scan).",
-        params =
-          listOf(
-            AgentToolParam(
-              "path",
-              "string",
-              "Chemin relatif du dossier, du .zip ou du fichier à analyser, ou . pour tout le projet",
-            ),
-            AgentToolParam(
-              "page",
-              "integer",
-              "Page de résultats (10 failles par page). 1 par défaut = nouveau scan",
-              required = false,
-            ),
+  /** The scan tool, also offered to the agent of the Code space. */
+  val scanSpec =
+    AgentToolSpec(
+      name = "securcode_scan",
+      description =
+        "Analyse la sécurité d'un dossier, d'un fichier .zip ou d'un fichier du projet avec " +
+          "SecurCode (secrets, dépendances vulnérables, failles). Le code est envoyé à " +
+          "SecurCode : l'utilisateur doit l'avoir autorisé. Chaque scan consomme 1 des 20 " +
+          "analyses quotidiennes. Pour voir la suite des failles du dernier scan, rappelle " +
+          "l'outil avec la même cible et page=2, 3... (sans refaire de scan).",
+      params =
+        listOf(
+          AgentToolParam(
+            "path",
+            "string",
+            "Chemin relatif du dossier, du .zip ou du fichier à analyser, ou . pour tout le projet",
           ),
-      )
+          AgentToolParam(
+            "page",
+            "integer",
+            "Page de résultats (10 failles par page). 1 par défaut = nouveau scan",
+            required = false,
+          ),
+        ),
+    )
+
+  val specs: List<AgentToolSpec> = CodeTools.specs.filter { it.name in READ_ONLY_FROM_CODE } + scanSpec
 
   fun execute(context: Context, call: AgentToolCall, readCap: Int): ToolOutcome {
     return when {

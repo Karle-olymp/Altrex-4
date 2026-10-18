@@ -41,7 +41,15 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.agent.AgentRuntimeConfig
 import com.google.ai.edge.gallery.agent.AgentRuntimeExecutor
+import com.google.ai.edge.gallery.agent.AgentChatExecutor
 import com.google.ai.edge.gallery.agent.AiChatExecutor
+import com.google.ai.edge.gallery.customtasks.agentchat.AgentChatScreen
+import com.google.ai.edge.gallery.customtasks.agentchat.AgentTools
+import com.google.ai.edge.gallery.customtasks.agentchat.ChatTools
+import com.google.ai.edge.gallery.customtasks.agentchat.DEFAULT_SYSTEM_PROMPT_TRIMMED
+import com.google.ai.edge.gallery.customtasks.agentchat.buildAgentSystemPrompt
+import com.google.ai.edge.gallery.skills.SkillManager
+import com.google.ai.edge.gallery.skills.SkillsProvider
 import com.google.ai.edge.gallery.customtasks.common.CustomTask
 import com.google.ai.edge.gallery.customtasks.common.CustomTaskDataForBuiltinTask
 import com.google.ai.edge.gallery.data.BuiltInTaskId
@@ -66,11 +74,18 @@ import kotlinx.coroutines.launch
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // AI Chat.
 
+/**
+ * [ALTREX] "Discuter": the main chat. It runs on the agent engine; "Skills et outils" (off by
+ * default, see ChatTools) decides whether the model is offered skills, MCP tools and phone actions.
+ * Off, it is a plain chat: the chat's own system prompt and no tool in the prompt.
+ */
 class LlmChatTask
 @Inject
 constructor(
   @ApplicationContext private val context: Context,
-  @AiChatExecutor private val executor: AgentRuntimeExecutor,
+  private val skillsProvider: SkillsProvider,
+  private val agentTools: AgentTools,
+  @AgentChatExecutor private val executor: AgentRuntimeExecutor,
 ) : CustomTask {
   override val task: Task by lazy {
     Task(
@@ -96,13 +111,21 @@ constructor(
     onDone: (String) -> Unit,
   ) {
     coroutineScope.launch(Dispatchers.Default) {
+      // The assistant panel also loads this model, without a chat screen: no tools then.
+      val tools = ChatTools.isEnabled(context) && agentTools.isReady()
+      agentTools.toolsEnabled = tools
+      val prompt =
+        if (tools) buildAgentSystemPrompt(agentTools, skillsProvider, DEFAULT_SYSTEM_PROMPT_TRIMMED)
+        else systemInstruction?.toString()
       val config =
         AgentRuntimeConfig(
           model = model,
           taskId = task.id,
+          actionChannel = if (tools) agentTools.sendActionChannel else null,
           supportImage = model.llmSupportImage,
           supportAudio = model.llmSupportAudio,
-          systemInstruction = systemInstruction?.toString(),
+          enableConversationConstrainedDecoding = tools,
+          systemInstruction = prompt,
         )
       executor.initialize(context = context, config = config, onDone = onDone)
     }
@@ -120,75 +143,64 @@ constructor(
   @Composable
   override fun MainScreen(data: Any) {
     val myData = data as CustomTaskDataForBuiltinTask
-    val viewModel: LlmChatViewModel = hiltViewModel()
-    LaunchedEffect(task) { viewModel.loadSystemPrompt(task) }
-    val uiSystemPrompt by viewModel.uiSystemPrompt.collectAsState()
-    val systemPromptUpdatedMessage = stringResource(R.string.system_prompt_updated)
-    LlmChatScreen(
+    AgentChatScreen(
+      task = task,
       modelManagerViewModel = myData.modelManagerViewModel,
       navigateUp = myData.onNavUp,
+      agentTools = agentTools,
       onMenuClicked = myData.onMenuClicked,
-      viewModel = viewModel,
-      allowEditingSystemPrompt = true,
-      curSystemPrompt = uiSystemPrompt,
-      showImagePicker = true,
-      showAudioPicker = true,
-      onSystemPromptChanged = { newPrompt ->
-        val selectedModel = myData.modelManagerViewModel.uiState.value.selectedModel
-        viewModel.applySystemPromptChange(
-          task = task,
-          model = selectedModel,
-          newPrompt = newPrompt,
-          systemPromptUpdatedMessage = systemPromptUpdatedMessage,
-        )
-      },
-      emptyStateComposable = { model ->
-        Box(modifier = Modifier.fillMaxSize()) {
-          Column(
-            modifier =
-              Modifier.align(Alignment.Center).padding(horizontal = 48.dp).padding(bottom = 48.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-          ) {
-            Text(stringResource(R.string.aichat_emptystate_title), style = emptyStateTitle)
-            Text(
-              stringResource(R.string.aichat_emptystate_content),
-              style = emptyStateContent,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              textAlign = TextAlign.Center,
-            )
-            val multimodalRes =
-              when {
-                model.llmSupportImage && model.llmSupportAudio -> {
-                  if (model.runtimeType == RuntimeType.AICORE) {
-                    R.string.aichat_emptystate_support_image_aicore_audio
-                  } else {
-                    R.string.aichat_emptystate_support_image_audio
-                  }
-                }
-                model.llmSupportImage -> {
-                  if (model.runtimeType == RuntimeType.AICORE) {
-                    R.string.aichat_emptystate_support_image_aicore
-                  } else {
-                    R.string.aichat_emptystate_support_image
-                  }
-                }
-                model.llmSupportAudio -> R.string.aichat_emptystate_support_audio
-                else -> null
-              }
+      initialQuery = myData.initialQuery,
+      optionalTools = true,
+    )
+  }
+}
 
-            if (multimodalRes != null) {
-              Text(
-                stringResource(multimodalRes),
-                style = emptyStateContent,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-              )
+/** Empty state of the main chat (without skills): what the loaded model can take as input. */
+@Composable
+fun AiChatEmptyState(model: Model) {
+  Box(modifier = Modifier.fillMaxSize()) {
+    Column(
+      modifier =
+        Modifier.align(Alignment.Center).padding(horizontal = 48.dp).padding(bottom = 48.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Text(stringResource(R.string.aichat_emptystate_title), style = emptyStateTitle)
+      Text(
+        stringResource(R.string.aichat_emptystate_content),
+        style = emptyStateContent,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+      )
+      val multimodalRes =
+        when {
+          model.llmSupportImage && model.llmSupportAudio -> {
+            if (model.runtimeType == RuntimeType.AICORE) {
+              R.string.aichat_emptystate_support_image_aicore_audio
+            } else {
+              R.string.aichat_emptystate_support_image_audio
             }
           }
+          model.llmSupportImage -> {
+            if (model.runtimeType == RuntimeType.AICORE) {
+              R.string.aichat_emptystate_support_image_aicore
+            } else {
+              R.string.aichat_emptystate_support_image
+            }
+          }
+          model.llmSupportAudio -> R.string.aichat_emptystate_support_audio
+          else -> null
         }
-      },
-    )
+
+      if (multimodalRes != null) {
+        Text(
+          stringResource(multimodalRes),
+          style = emptyStateContent,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          textAlign = TextAlign.Center,
+        )
+      }
+    }
   }
 }
 
@@ -199,9 +211,11 @@ internal object LlmChatTaskModule {
   @IntoSet
   fun provideTask(
     @ApplicationContext context: Context,
-    @AiChatExecutor executor: AgentRuntimeExecutor,
+    skillManager: SkillManager,
+    agentTools: AgentTools,
+    @AgentChatExecutor executor: AgentRuntimeExecutor,
   ): CustomTask {
-    return LlmChatTask(context, executor)
+    return LlmChatTask(context, skillManager, agentTools, executor)
   }
 }
 

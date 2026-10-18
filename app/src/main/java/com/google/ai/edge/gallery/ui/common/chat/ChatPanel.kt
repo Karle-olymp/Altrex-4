@@ -748,8 +748,13 @@ fun ChatPanel(
         onPickedImagesChanged = { pickedImagesCount = it.size },
         onPickedAudioClipsChanged = { pickedAudioClipsCount = it.size },
         showPromptTemplatesInMenu = false,
-        showSkillsPicker = task.id === BuiltInTaskId.LLM_AGENT_CHAT,
-        showMcpPicker = task.id === BuiltInTaskId.LLM_AGENT_CHAT,
+        // [ALTREX] Also in the main chat when "Skills et outils" is on.
+        showSkillsPicker =
+          task.id === BuiltInTaskId.LLM_AGENT_CHAT ||
+            com.google.ai.edge.gallery.customtasks.agentchat.LocalShowToolPickers.current,
+        showMcpPicker =
+          task.id === BuiltInTaskId.LLM_AGENT_CHAT ||
+            com.google.ai.edge.gallery.customtasks.agentchat.LocalShowToolPickers.current,
         showImagePicker = showImagePicker,
         showAudioPicker = showAudioPicker,
         showStopButtonWhenInProgress = showStopButtonInInputWhenInProgress,
