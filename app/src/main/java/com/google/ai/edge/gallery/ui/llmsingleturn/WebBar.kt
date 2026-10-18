@@ -39,7 +39,9 @@ fun WebBar(modifier: Modifier = Modifier) {
   var keyInput by remember { mutableStateOf("") }
   val keyRequested by WebSettings.keyDialogRequest
 
-  LaunchedEffect(Unit) {
+  // Refreshed when the key changes in the Settings.
+  val keysVersion by com.google.ai.edge.gallery.ui.common.ApiKeyEvents.version
+  LaunchedEffect(keysVersion) {
     hasKey = withContext(Dispatchers.IO) { WebSettings.getBraveKey(context) != null }
   }
   LaunchedEffect(keyRequested) {

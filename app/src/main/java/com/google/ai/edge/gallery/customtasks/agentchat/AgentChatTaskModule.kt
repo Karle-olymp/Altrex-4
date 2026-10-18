@@ -49,6 +49,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 private const val TAG = "AGAgentChatTask"
@@ -155,29 +156,8 @@ constructor(
   ) {
     val initialSystemPrompt = systemInstruction?.toString() ?: task.defaultSystemPrompt
     coroutineScope.launch(Dispatchers.Default) {
-      val skillsJob = launch {
-        agentTools.skillsProvider.loadSkills(SkillManagerViewModel.DEFAULT_DISABLED_SKILLS)
-      }
-      val mcpJob = launch { agentTools.mcpManagerViewModel.loadMcpServers() }
-      skillsJob.join()
-      mcpJob.join()
-
-      // Determine base system prompt based on whether MCP tools are enabled.
-      val toolsPrompt = agentTools.mcpManagerViewModel.getToolsPrompt()
-      val baseSystemPrompt =
-        getEffectiveBaseSystemPrompt(initialSystemPrompt, toolsPrompt.isNotEmpty())
-
-      // TODO: inject prompt expander as a dependency.
-      val finalSystemPrompt =
-        PromptExpander()
-          .formatSystemInstructions(
-            template = baseSystemPrompt,
-            substitutions =
-              mapOf(
-                "___SKILLS___" to formatSelectedSkills(skillsProvider.getAvailableSkills()),
-                "___TOOLS___" to toolsPrompt,
-              ),
-          )
+      agentTools.toolsEnabled = true
+      val finalSystemPrompt = buildAgentSystemPrompt(agentTools, skillsProvider, initialSystemPrompt)
 
       val config =
         AgentRuntimeConfig(
@@ -259,6 +239,34 @@ internal object AgentChatTaskModule {
       produceFile = { context.dataStoreFile("mcp_servers.pb") },
     )
   }
+}
+
+/**
+ * [ALTREX] The agent's system prompt: [template] with the selected skills and the MCP tools put
+ * in (the default template depends on whether MCP tools are on). Shared by the main chat with
+ * "Skills et outils" on and the Agent Skills task.
+ */
+suspend fun buildAgentSystemPrompt(
+  agentTools: AgentTools,
+  skillsProvider: SkillsProvider,
+  template: String,
+): String = coroutineScope {
+  val skillsJob = launch { agentTools.skillsProvider.loadSkills(SkillManagerViewModel.DEFAULT_DISABLED_SKILLS) }
+  val mcpJob = launch { agentTools.mcpManagerViewModel.loadMcpServers() }
+  skillsJob.join()
+  mcpJob.join()
+  val toolsPrompt = agentTools.mcpManagerViewModel.getToolsPrompt()
+  val baseSystemPrompt = getEffectiveBaseSystemPrompt(template, toolsPrompt.isNotEmpty())
+  // TODO: inject prompt expander as a dependency.
+  PromptExpander()
+    .formatSystemInstructions(
+      template = baseSystemPrompt,
+      substitutions =
+        mapOf(
+          "___SKILLS___" to formatSelectedSkills(skillsProvider.getAvailableSkills()),
+          "___TOOLS___" to toolsPrompt,
+        ),
+    )
 }
 
 // Check whether the system prompt is the default one.

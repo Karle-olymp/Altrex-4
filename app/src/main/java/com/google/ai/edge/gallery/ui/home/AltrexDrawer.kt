@@ -41,7 +41,6 @@ import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Mms
 import androidx.compose.material.icons.outlined.Shield
-import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material3.Icon
@@ -80,7 +79,8 @@ private data class DrawerEntry(
 
 private val SPACES =
   listOf(
-    DrawerEntry(BuiltInTaskId.LLM_CHAT, "Discuter", "Chat avec un modèle local", Icons.Outlined.Forum, 2),
+    // [ALTREX] Skills and tools are now a switch in the chat (Agent Skills merged into it).
+    DrawerEntry(BuiltInTaskId.LLM_CHAT, "Discuter", "Chat, skills et outils", Icons.Outlined.Forum, 2),
     DrawerEntry(
       BuiltInTaskId.LLM_PROMPT_LAB,
       "Code",
@@ -99,13 +99,6 @@ private val SPACES =
 
 private val TOOLS =
   listOf(
-    DrawerEntry(
-      BuiltInTaskId.LLM_AGENT_CHAT,
-      "Agent Skills",
-      "Tâches agentiques par chat",
-      Icons.Rounded.Flag,
-      1,
-    ),
     DrawerEntry(
       BuiltInTaskId.LLM_ASK_IMAGE,
       "Ask Image",
@@ -157,7 +150,7 @@ fun AltrexDrawer(
               title = entry.title,
               subtitle = entry.subtitle,
               icon = entry.icon,
-              active = entry.taskId == currentTaskId,
+              active = entry.taskId == currentTaskId || (entry.taskId == BuiltInTaskId.LLM_CHAT && currentTaskId == BuiltInTaskId.LLM_AGENT_CHAT),
               onClick = { onOpenTask(entry.taskId) },
             )
           }

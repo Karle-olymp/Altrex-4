@@ -46,6 +46,12 @@ interface AgentTools : ToolsProvider {
   var resultImageToShow: CallJsSkillResultImage?
   var resultWebviewToShow: CallJsSkillResultWebview?
 
+  /** [ALTREX] Off in the main chat until "Skills et outils" is turned on: no tool is offered. */
+  var toolsEnabled: Boolean
+
+  /** [ALTREX] True once a chat screen has given the tools what they need (context, MCP…). */
+  fun isReady(): Boolean
+
   fun sendToolAction(action: ToolAction)
 }
 
@@ -80,7 +86,14 @@ open class AgentToolsImpl : AgentTools {
 
   val webSearchTool by lazy { WebSearchTool() }
 
+  override var toolsEnabled: Boolean = true
+
+  override fun isReady(): Boolean =
+    ::context.isInitialized && ::dataStoreRepository.isInitialized &&
+      ::mcpManagerViewModel.isInitialized && ::taskId.isInitialized
+
   override fun getAvailableTools(): List<ToolDefinition> {
+    if (!toolsEnabled || !isReady()) return emptyList()
     return listOf(loadSkillTool, runMcpTool, runJsTool, runIntentTool, webSearchTool) + activeTools
   }
 

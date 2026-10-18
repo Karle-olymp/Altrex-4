@@ -52,6 +52,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -136,8 +137,13 @@ fun AgentChatScreen(
   skillManagerViewModel: SkillManagerViewModel = hiltViewModel(),
   mcpManagerViewModel: McpManagerViewModel = hiltViewModel(),
   initialQuery: String? = null,
+  /** [ALTREX] Main chat: skills and tools only when "Skills et outils" is on (ChatTools). */
+  optionalTools: Boolean = false,
 ) {
   val context = LocalContext.current
+  val toolsPref by ChatTools.enabled(context).collectAsState()
+  val toolsOn = !optionalTools || toolsPref == true
+  agentTools.toolsEnabled = toolsOn
   val scope = rememberCoroutineScope()
   agentTools.context = context
   agentTools.skillsProvider = skillManagerViewModel.skillManager
@@ -189,15 +195,17 @@ fun AgentChatScreen(
       .filter { it.mcpServer.enabled }
       .sumOf { it.mcpServer.toolsList.count { tool -> tool.enabled } }
 
-  LaunchedEffect(uiSystemPrompt, mcpToolsCount) {
-    curSystemPrompt = getEffectiveBaseSystemPrompt(uiSystemPrompt, mcpToolsCount > 0)
-  }
+  // [ALTREX] Main chat without skills: its own prompt. With skills: the agent prompt (skills list).
+  fun promptFor(tools: Boolean): String =
+    if (optionalTools && !tools) uiSystemPrompt
+    else getEffectiveBaseSystemPrompt(if (optionalTools) DEFAULT_SYSTEM_PROMPT_TRIMMED else uiSystemPrompt, mcpToolsCount > 0)
+  LaunchedEffect(uiSystemPrompt, mcpToolsCount, toolsOn) { curSystemPrompt = promptFor(toolsOn) }
 
   val selectedModel = modelManagerUiState.selectedModel
   val modelInitStatus = modelManagerUiState.modelInitializationStatus[selectedModel.name]
 
-  DisposableEffect(selectedModel.name, task.id) {
-    if (selectedModel.setupAgentSkillTopK()) {
+  DisposableEffect(selectedModel.name, task.id, toolsOn) {
+    if (toolsOn && selectedModel.setupAgentSkillTopK()) {
       modelManagerViewModel.updateConfigValuesUpdateTrigger()
     }
 
@@ -233,16 +241,43 @@ fun AgentChatScreen(
     }
   }
 
+  CompositionLocalProvider(LocalShowToolPickers provides toolsOn) {
   LlmChatScreen(
     modelManagerViewModel = modelManagerViewModel,
-    taskId = BuiltInTaskId.LLM_AGENT_CHAT,
+    taskId = task.id,
     navigateUp = navigateUp,
     onMenuClicked = onMenuClicked,
     viewModel = viewModel,
     skillCount = skillCount,
     mcpCount = mcpCount,
     mcpToolsCount = mcpToolsCount,
-    topContent = { AutonomousModeToggleRow(viewModel = viewModel) },
+    topContent = {
+      Column {
+        if (optionalTools) {
+          ToolsToggleRow(
+            checked = toolsOn,
+            onCheckedChange = { on ->
+              ChatTools.setEnabled(context, on)
+              agentTools.toolsEnabled = on
+              if (!on) viewModel.setAutonomousMode(false)
+              // The model starts again with the new prompt, and keeps the conversation so far.
+              val model = modelManagerViewModel.uiState.value.selectedModel
+              resetSessionWithCurrentSkillsAndMcps(
+                viewModel,
+                modelManagerViewModel,
+                skillManagerViewModel,
+                task,
+                promptFor(on),
+                agentTools,
+                initialMessages = viewModel.uiState.value.messagesByModel[model.name].orEmpty(),
+                clearHistory = false,
+              )
+            },
+          )
+        }
+        if (toolsOn) AutonomousModeToggleRow(viewModel = viewModel)
+      }
+    },
     onFirstToken = { model ->
       scope.launch(Dispatchers.Main) {
         updateProgressPanel(viewModel = viewModel, model = model, agentTools = agentTools)
@@ -514,6 +549,10 @@ fun AgentChatScreen(
       )
     },
     emptyStateComposable = { model ->
+      if (!toolsOn) {
+        com.google.ai.edge.gallery.ui.llmchat.AiChatEmptyState(model)
+        return@LlmChatScreen
+      }
       val uiState by viewModel.uiState.collectAsState()
       val modelManagerUiState by modelManagerViewModel.uiState.collectAsState()
       val modelInitializationStatus = modelManagerUiState.modelInitializationStatus[model.name]
@@ -619,6 +658,7 @@ fun AgentChatScreen(
     },
     sendMessageTrigger = sendMessageTrigger,
   )
+  }
 
   if (showAskInfoDialog && currentAskInfoAction != null) {
     val action = currentAskInfoAction!!
@@ -733,6 +773,27 @@ fun AgentChatScreen(
         }
       },
     )
+  }
+}
+
+/** [ALTREX] Main chat: turns skills, MCP tools and phone actions on or off. */
+@Composable
+private fun ToolsToggleRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+  Row(
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+    horizontalArrangement = Arrangement.SpaceBetween,
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+      Text("Skills et outils", style = MaterialTheme.typography.bodyMedium)
+      Text(
+        if (checked) "Skills, serveurs MCP, actions du téléphone et recherche web"
+        else "Désactivés : réponses plus rapides, idéal pour un petit modèle",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+    }
+    Switch(checked = checked, onCheckedChange = onCheckedChange)
   }
 }
 

@@ -42,7 +42,9 @@ fun SecurityBar(modifier: Modifier = Modifier) {
   val keyRequested by SecurCodeSettings.keyDialogRequest
   val pending by SecurCodeSettings.pendingConsent
 
-  LaunchedEffect(Unit) {
+  // Refreshed when the key changes in the Settings.
+  val keysVersion by com.google.ai.edge.gallery.ui.common.ApiKeyEvents.version
+  LaunchedEffect(keysVersion) {
     hasKey = withContext(Dispatchers.IO) { SecurCodeSettings.getApiKey(context) != null }
   }
   LaunchedEffect(keyRequested) {
