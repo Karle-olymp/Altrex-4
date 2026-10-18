@@ -40,7 +40,6 @@ import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Mms
-import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material3.Icon
@@ -81,19 +80,13 @@ private val SPACES =
   listOf(
     // [ALTREX] Skills and tools are now a switch in the chat (Agent Skills merged into it).
     DrawerEntry(BuiltInTaskId.LLM_CHAT, "Discuter", "Chat, skills et outils", Icons.Outlined.Forum, 2),
+    // [ALTREX] The Sécurité space is merged into Code (Scanner button, securcode_scan tool).
     DrawerEntry(
       BuiltInTaskId.LLM_PROMPT_LAB,
       "Code",
-      "Écrire, expliquer et corriger du code",
+      "Chat, éditeur, aperçu et scan SecurCode",
       Icons.Outlined.Code,
       3,
-    ),
-    DrawerEntry(
-      BuiltInTaskId.LLM_SECURITY,
-      "Sécurité",
-      "Analyse de code avec SecurCode",
-      Icons.Outlined.Shield,
-      0,
     ),
   )
 
@@ -150,7 +143,8 @@ fun AltrexDrawer(
               title = entry.title,
               subtitle = entry.subtitle,
               icon = entry.icon,
-              active = entry.taskId == currentTaskId || (entry.taskId == BuiltInTaskId.LLM_CHAT && currentTaskId == BuiltInTaskId.LLM_AGENT_CHAT),
+              active = entry.taskId == currentTaskId || (entry.taskId == BuiltInTaskId.LLM_CHAT && currentTaskId == BuiltInTaskId.LLM_AGENT_CHAT) ||
+                  (entry.taskId == BuiltInTaskId.LLM_PROMPT_LAB && currentTaskId == BuiltInTaskId.LLM_SECURITY),
               onClick = { onOpenTask(entry.taskId) },
             )
           }

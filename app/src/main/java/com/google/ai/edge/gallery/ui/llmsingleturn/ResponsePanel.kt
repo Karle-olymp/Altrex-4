@@ -101,6 +101,7 @@ fun ResponsePanel(
   modifier: Modifier = Modifier,
   openedFile: OpenedFile? = null,
   onFileContentSaved: (String) -> Unit = {},
+  onApplyToEditor: (String) -> Unit = {},
 ) {
   val uiState by viewModel.uiState.collectAsState()
   val modelManagerUiState by modelManagerViewModel.uiState.collectAsState()
@@ -108,34 +109,12 @@ fun ResponsePanel(
   val initializing = uiState.preparing
   val selectedPromptTemplateType = uiState.selectedPromptTemplateType
   val responseScrollState = rememberScrollState()
-  val codeScrollState = rememberScrollState()
-  // 0 = Response tab, 1 = Code tab.
-  var selectedOptionIndex by remember { mutableIntStateOf(0) }
   val clipboard = LocalClipboard.current
   val scope = rememberCoroutineScope()
   val pagerState =
     rememberPagerState(initialPage = task.models.indexOf(model), pageCount = { task.models.size })
   val accelerator = model.getStringConfigValue(key = ConfigKeys.ACCELERATOR, defaultValue = "")
   val context = LocalContext.current
-
-  // Select the "response" tab when prompt template changes.
-  // Code block proposed by the model, pending review in the Code tab (not saved yet).
-  var pendingApply by remember { mutableStateOf<Pair<Uri, String>?>(null) }
-  LaunchedEffect(selectedPromptTemplateType) { selectedOptionIndex = 0 }
-
-  // Switch to the "Code" tab as soon as a file is opened.
-  LaunchedEffect(openedFile) {
-    if (openedFile != null) {
-      selectedOptionIndex = 1
-    }
-  }
-
-  // Switch back to "Response" as soon as a generation starts.
-  LaunchedEffect(inProgress) {
-    if (inProgress) {
-      selectedOptionIndex = 0
-    }
-  }
 
   // Update selected model and clean up previous model when page is settled on a model page.
   LaunchedEffect(pagerState.settledPage) {
@@ -165,129 +144,8 @@ fun ResponsePanel(
       uiState.responsesByModel[curPageModel.name]?.get(selectedPromptTemplateType.name) ?: ""
 
     Column(modifier = modifier.fillMaxSize()) {
-      // Compact Code/Response tab selector — only shown once a file has been opened.
-      if (openedFile != null) {
-        Row(
-          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-          SegmentedTabButton(
-            label = "Code",
-            selected = selectedOptionIndex == 1,
-            onClick = { selectedOptionIndex = 1 },
-            modifier = Modifier.weight(1f),
-          )
-          SegmentedTabButton(
-            label = "Réponse",
-            selected = selectedOptionIndex == 0,
-            onClick = { selectedOptionIndex = 0 },
-            modifier = Modifier.weight(1f),
-          )
-        }
-      }
-
       Box(modifier = Modifier.weight(1f)) {
-        if (selectedOptionIndex == 1 && openedFile != null) {
-          // Code tab: editable preview of the opened file.
-          val pendingContent = pendingApply?.takeIf { it.first == openedFile.uri }?.second
-          var editedContent by
-            remember(openedFile.uri, pendingContent, openedFile.content) {
-              mutableStateOf(pendingContent ?: openedFile.content)
-            }
-          var lastSavedContent by
-            remember(openedFile.uri, pendingContent, openedFile.content) {
-              mutableStateOf(openedFile.content)
-            }
-          var saveError by remember(openedFile.uri) { mutableStateOf(false) }
-          val isDirty = editedContent != lastSavedContent
-
-          Box(contentAlignment = Alignment.BottomEnd, modifier = Modifier.fillMaxSize()) {
-            val codeTextStyle =
-              MaterialTheme.typography.bodySmall.copy(
-                fontFamily = codeFontFamily,
-                color = MaterialTheme.colorScheme.onSurface,
-              )
-            val lineCount = editedContent.count { it == '\n' } + 1
-            val horizontalScrollState = rememberScrollState()
-            Row(
-              modifier =
-                Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(codeScrollState)
-            ) {
-              Text(
-                text = (1..lineCount).joinToString("\n"),
-                style = codeTextStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                textAlign = TextAlign.End,
-                modifier = Modifier.padding(top = 8.dp, bottom = 56.dp, end = 8.dp),
-              )
-              Box(modifier = Modifier.weight(1f).horizontalScroll(horizontalScrollState)) {
-                BasicTextField(
-                  value = editedContent,
-                  onValueChange = {
-                    editedContent = it
-                    saveError = false
-                  },
-                  textStyle = codeTextStyle,
-                  cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                  modifier = Modifier.widthIn(min = 280.dp).padding(top = 8.dp, bottom = 56.dp),
-                )
-              }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 4.dp)) {
-              if (saveError) {
-                Text(
-                  text = "Save failed",
-                  style = MaterialTheme.typography.labelSmall,
-                  color = MaterialTheme.colorScheme.error,
-                  modifier = Modifier.align(Alignment.CenterVertically),
-                )
-              }
-              IconButton(
-                enabled = isDirty,
-                onClick = {
-                  val success =
-                    ProjectFolderManager.writeTextFile(context, openedFile.uri, editedContent)
-                  if (success) {
-                    lastSavedContent = editedContent
-                    saveError = false
-                    onFileContentSaved(editedContent)
-                    pendingApply = null
-                  } else {
-                    saveError = true
-                  }
-                },
-                colors =
-                  IconButtonDefaults.iconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    contentColor = MaterialTheme.colorScheme.primary,
-                    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                  ),
-              ) {
-                Icon(Icons.Outlined.Save, contentDescription = "Save", modifier = Modifier.size(20.dp))
-              }
-              IconButton(
-                onClick = {
-                  scope.launch {
-                    val clipData = ClipData.newPlainText("code", editedContent)
-                    val clipEntry = ClipEntry(clipData = clipData)
-                    clipboard.setClipEntry(clipEntry = clipEntry)
-                  }
-                },
-                colors =
-                  IconButtonDefaults.iconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    contentColor = MaterialTheme.colorScheme.primary,
-                  ),
-              ) {
-                Icon(
-                  Icons.Outlined.ContentCopy,
-                  contentDescription = stringResource(R.string.cd_copy_to_clipboard_icon),
-                  modifier = Modifier.size(20.dp),
-                )
-              }
-            }
-          }
-        } else if (initializing && response.isEmpty()) {
+        if (initializing && response.isEmpty()) {
           Box(
             contentAlignment = Alignment.TopStart,
             modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -344,15 +202,9 @@ fun ResponsePanel(
                     )
                   }
                 },
-                onApplyToEditor = { code ->
-                  openedFile?.let { pendingApply = Pair(it.uri, code) }
-                  selectedOptionIndex = 1
-                },
+                onApplyToEditor = onApplyToEditor,
                 onFileChanged = { uri, content ->
-                  if (uri == openedFile?.uri) {
-                    onFileContentSaved(content)
-                    pendingApply = null
-                  }
+                  if (uri == openedFile?.uri) onFileContentSaved(content)
                 },
               )
               Box(contentAlignment = Alignment.BottomEnd, modifier = Modifier.weight(1f)) {
@@ -396,39 +248,5 @@ fun ResponsePanel(
         }
       }
     }
-  }
-}
-
-@Composable
-private fun SegmentedTabButton(
-  label: String,
-  selected: Boolean,
-  onClick: () -> Unit,
-  modifier: Modifier = Modifier,
-) {
-  Box(
-    contentAlignment = Alignment.Center,
-    modifier =
-      modifier
-        .clip(RoundedCornerShape(50))
-        .background(
-          if (selected) MaterialTheme.colorScheme.secondaryContainer
-          else MaterialTheme.colorScheme.surfaceContainerLow
-        )
-        .border(
-          width = 1.dp,
-          color = MaterialTheme.colorScheme.surface,
-          shape = RoundedCornerShape(50),
-        )
-        .clickable(onClick = onClick)
-        .height(36.dp),
-  ) {
-    Text(
-      text = label,
-      style = MaterialTheme.typography.labelMedium,
-      color =
-        if (selected) MaterialTheme.colorScheme.onSecondaryContainer
-        else MaterialTheme.colorScheme.onSurfaceVariant,
-    )
   }
 }

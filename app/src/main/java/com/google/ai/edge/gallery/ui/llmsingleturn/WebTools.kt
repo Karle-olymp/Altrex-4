@@ -92,6 +92,16 @@ object WebTools {
           "⛔ ${call.name} bloqué : du contenu web a été lu. Redonne l'ordre d'écrire dans un nouveau message.",
           endTurn = true,
         )
+      // [ALTREX] The scan sends project code out (to SecurCode only, with consent): not after
+      // web content was read, which may carry injected instructions.
+      call.name == "securcode_scan" && webContentSeen ->
+        failEnd(
+          "scan bloqué par sécurité, car du contenu web a été lu pendant cette demande. Dis à " +
+            "l'utilisateur de relancer le scan dans un nouveau message.",
+          "⛔ securcode_scan bloqué : du contenu web a été lu. Relance le scan dans un nouveau message.",
+        )
+      call.name == "securcode_scan" ->
+        com.google.ai.edge.gallery.ui.security.SecurityTools.execute(context, call, readCap)
       call.name == "read_file" -> {
         projectFileRead = true
         CodeTools.execute(context, call, readCap)

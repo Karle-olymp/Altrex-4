@@ -75,6 +75,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
@@ -127,7 +128,8 @@ fun PromptTemplatesPanel(
   val selectedPromptTemplateType = uiState.selectedPromptTemplateType
   val inProgress = uiState.inProgress
   var selectedTabIndex by remember { mutableIntStateOf(0) }
-  var curTextInputContent by remember { mutableStateOf("") }
+  // Saveable: the typed request survives a switch to the Code or Aperçu view.
+  var curTextInputContent by rememberSaveable { mutableStateOf("") }
   val inputEditorValues: SnapshotStateMap<String, Any> = remember {
     mutableStateMapOf(FULL_PROMPT_SWITCH_KEY to false)
   }
