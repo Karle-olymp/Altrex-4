@@ -15,6 +15,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /** What the local memory is doing. */
@@ -22,6 +23,9 @@ sealed class MemoryStatus {
   data object NoFolder : MemoryStatus()
 
   data class Indexing(val done: Int, val total: Int, val current: String) : MemoryStatus()
+
+  /** Search by meaning: vectors being computed (the keyword search already works). */
+  data class Embedding(val done: Int, val total: Int) : MemoryStatus()
 
   data class Ready(val files: Int, val passages: Int, val indexedAt: Long, val truncated: Boolean) :
     MemoryStatus()
@@ -41,6 +45,9 @@ object LocalMemory {
   private const val KEY_FOLDER = "folder_uri"
   private const val KEY_ENABLED = "enabled"
   private const val KEY_INDEXED_AT = "indexed_at"
+  private const val KEY_SEMANTIC = "semantic"
+  /** Vectors are saved every so many pieces, so an interrupted computation resumes. */
+  private const val VECTOR_CHECKPOINT = 200
 
   private const val MAX_FILES = 2_000
   private const val MAX_TEXT_BYTES = 2L * 1024 * 1024
@@ -67,10 +74,51 @@ object LocalMemory {
   val status: StateFlow<MemoryStatus> = _status.asStateFlow()
 
   @Volatile private var index: MemoryIndex? = null
+  @Volatile private var vectors: VectorStore? = null
+
+  private val _download = MutableStateFlow<Long?>(null)
+  /** Bytes of the embedding model received so far, while it downloads. */
+  val download: StateFlow<Long?> = _download.asStateFlow()
 
   private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
   private fun indexFile(context: Context) = File(context.filesDir, "memory/index.jsonl")
+
+  private fun vectorsFile(context: Context) = File(context.filesDir, "memory/vectors.bin")
+
+  /** Search by meaning: on by choice, and possible once the embedding model is downloaded. */
+  fun isSemanticEnabled(context: Context): Boolean =
+    prefs(context).getBoolean(KEY_SEMANTIC, false) && Embedder.isDownloaded(context)
+
+  fun setSemanticEnabled(context: Context, enabled: Boolean) {
+    prefs(context).edit().putBoolean(KEY_SEMANTIC, enabled).apply()
+    if (enabled) reindex(context) else Embedder.release()
+  }
+
+  /** Downloads the embedding model, then computes the vectors of the memory. */
+  fun downloadSemanticModel(context: Context, onError: (String) -> Unit) {
+    val app = context.applicationContext
+    if (_download.value != null) return
+    _download.value = 0L
+    scope.launch {
+      val error = Embedder.download(app) { _download.value = it }
+      _download.value = null
+      if (error != null) {
+        kotlinx.coroutines.withContext(Dispatchers.Main) { onError(error) }
+      } else {
+        setSemanticEnabled(app, true)
+      }
+    }
+  }
+
+  /** Deletes the embedding model and the vectors (the keyword search stays). */
+  fun deleteSemanticModel(context: Context) {
+    val app = context.applicationContext
+    prefs(app).edit().putBoolean(KEY_SEMANTIC, false).apply()
+    Embedder.delete(app)
+    vectorsFile(app).delete()
+    vectors = null
+  }
 
   fun folderUri(context: Context): Uri? =
     prefs(context).getString(KEY_FOLDER, null)?.let(Uri::parse)?.takeIf { uri ->
@@ -102,7 +150,9 @@ object LocalMemory {
     app.contentResolver.takePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
     prefs(app).edit().putString(KEY_FOLDER, treeUri.toString()).putBoolean(KEY_ENABLED, true).apply()
     index = null
+    vectors = null
     indexFile(app).delete()
+    vectorsFile(app).delete()
     reindex(app)
   }
 
@@ -113,9 +163,12 @@ object LocalMemory {
     folderUri(app)?.let {
       runCatching { app.contentResolver.releasePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
     }
-    prefs(app).edit().clear().apply()
+    val semantic = prefs(app).getBoolean(KEY_SEMANTIC, false)
+    prefs(app).edit().clear().putBoolean(KEY_SEMANTIC, semantic).apply()
     indexFile(app).delete()
+    vectorsFile(app).delete()
     index = null
+    vectors = null
     _status.value = MemoryStatus.NoFolder
   }
 
@@ -129,7 +182,8 @@ object LocalMemory {
     scope.launch {
       if (index == null) loadFromDisk(app)
       val age = System.currentTimeMillis() - prefs(app).getLong(KEY_INDEXED_AT, 0L)
-      if (index == null || age > REFRESH_AFTER_MS) reindex(app)
+      val vectorsMissing = isSemanticEnabled(app) && vectors?.let { it.computed < it.count } != false
+      if (index == null || age > REFRESH_AFTER_MS || vectorsMissing) reindex(app)
     }
   }
 
@@ -153,11 +207,18 @@ object LocalMemory {
       }
   }
 
-  /** Passages for [question], within [budgetChars]; empty when the memory is off or has nothing. */
-  fun search(context: Context, question: String, budgetChars: Int): List<MemoryHit> {
+  /**
+   * Passages for [question], within [budgetChars]; empty when the memory is off or has nothing.
+   * With the search by meaning, the question's vector is computed first (about 0.1 s).
+   */
+  suspend fun search(context: Context, question: String, budgetChars: Int): List<MemoryHit> {
     if (!isEnabled(context)) return emptyList()
     val current = index ?: return emptyList()
-    return runCatching { current.search(question, budgetChars) }.getOrDefault(emptyList())
+    val semantic =
+      vectors
+        ?.takeIf { isSemanticEnabled(context) && it.count == current.chunks.size && it.model == Embedder.MODEL_NAME }
+        ?.let { store -> Embedder.embedQuery(context, question)?.let { MemoryIndex.Semantic(store, it, Embedder.MIN_COSINE) } }
+    return runCatching { current.search(question, budgetChars, semantic = semantic) }.getOrDefault(emptyList())
   }
 
   /** The request sent to the model: the passages (framed as data, with their source), then the question. */
@@ -192,7 +253,9 @@ object LocalMemory {
 
     val previous = index
     val previousFiles = previous?.files?.withIndex()?.associate { (i, f) -> f.uri to (i to f) }.orEmpty()
-    val previousChunks = previous?.chunks?.groupBy { it.file }.orEmpty()
+    // Old file -> global positions of its pieces, so that their vectors can be kept.
+    val previousChunks = previous?.chunks?.indices?.groupBy { previous.chunks[it].file }.orEmpty()
+    val oldPosition = ArrayList<Int>() // for each new piece, its position in the old index or -1
 
     val files = ArrayList<MemoryFile>()
     val chunks = ArrayList<MemoryChunk>()
@@ -206,15 +269,14 @@ object LocalMemory {
       _status.value = MemoryStatus.Indexing(n, minOf(entries.size, MAX_FILES), e.path)
       val fileIndex = files.size
       val old = previousFiles[e.uri.toString()]
+      val reused = old != null && old.second.modified == e.modified && old.second.size == e.size
+      val oldIds = if (reused) previousChunks[old!!.first].orEmpty() else emptyList()
       val pieces: List<MemoryChunk> =
-        if (old != null && old.second.modified == e.modified && old.second.size == e.size) {
-          previousChunks[old.first].orEmpty().map { it.copy(file = fileIndex) }
-        } else {
-          readFile(context, e, fileIndex)
-        }
+        if (reused) oldIds.map { previous!!.chunks[it].copy(file = fileIndex) } else readFile(context, e, fileIndex)
       if (pieces.isEmpty()) continue
       files.add(MemoryFile(e.uri.toString(), e.path, e.modified, e.size))
       chunks.addAll(pieces)
+      if (reused) oldPosition.addAll(oldIds) else repeat(pieces.size) { oldPosition.add(-1) }
       totalChars += pieces.sumOf { it.text.length }
     }
 
@@ -227,16 +289,64 @@ object LocalMemory {
       out.delete()
       tmp.renameTo(out)
     }
+    // Vectors of the pieces kept (same model), the others still to compute.
+    val oldVectors = vectors?.takeIf { it.model == Embedder.MODEL_NAME && it.dim == Embedder.DIM }
+    val newVectors = VectorStore(Embedder.DIM, chunks.size, Embedder.MODEL_NAME)
+    if (oldVectors != null) {
+      for ((i, from) in oldPosition.withIndex()) {
+        if (from >= 0 && from < oldVectors.count && oldVectors.has(from)) newVectors.copyFrom(oldVectors, from, i)
+      }
+    }
     index = built
+    vectors = newVectors
     val now = System.currentTimeMillis()
     prefs(context).edit().putLong(KEY_INDEXED_AT, now).apply()
     _status.value = MemoryStatus.Ready(files.size, chunks.size, now, truncated)
+    if (isSemanticEnabled(context)) {
+      computeVectors(context, built, newVectors)
+      _status.value = MemoryStatus.Ready(files.size, chunks.size, now, truncated)
+    } else {
+      saveVectors(context, newVectors)
+    }
+  }
+
+  /** Computes the missing vectors, pausing while the chat writes an answer (same CPU). */
+  private suspend fun computeVectors(context: Context, built: MemoryIndex, store: VectorStore) {
+    val missing = (0 until store.count).filter { !store.has(it) }
+    for ((n, i) in missing.withIndex()) {
+      if (com.google.ai.edge.gallery.runtime.SharedModelSession.chatGenerating.value) {
+        com.google.ai.edge.gallery.runtime.SharedModelSession.chatGenerating.first { !it }
+      }
+      _status.value = MemoryStatus.Embedding(n, missing.size)
+      val chunk = built.chunks[i]
+      val title = built.files[chunk.file].path.substringAfterLast('/')
+      Embedder.embedPassage(context, title, chunk.text)?.let { store.set(i, it) }
+      if ((n + 1) % VECTOR_CHECKPOINT == 0) saveVectors(context, store)
+    }
+    saveVectors(context, store)
+  }
+
+  private fun saveVectors(context: Context, store: VectorStore) {
+    val out = vectorsFile(context)
+    out.parentFile?.mkdirs()
+    val tmp = File(out.parentFile, "vectors.bin.tmp")
+    java.io.DataOutputStream(tmp.outputStream().buffered()).use { store.write(it) }
+    if (!tmp.renameTo(out)) {
+      out.delete()
+      tmp.renameTo(out)
+    }
   }
 
   private fun loadFromDisk(context: Context) {
     val file = indexFile(context)
     if (!file.exists()) return
     index = runCatching { file.bufferedReader().use { MemoryIndex.read(it) } }.getOrNull()
+    vectors =
+      runCatching {
+          java.io.DataInputStream(vectorsFile(context).inputStream().buffered()).use { VectorStore.read(it) }
+        }
+        .getOrNull()
+        ?.takeIf { it.count == index?.chunks?.size }
     index?.let {
       _status.value =
         MemoryStatus.Ready(it.files.size, it.chunks.size, prefs(context).getLong(KEY_INDEXED_AT, 0L), false)

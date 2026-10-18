@@ -41,7 +41,10 @@ import androidx.compose.material.icons.outlined.Psychology
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.collectAsState
+import com.google.ai.edge.gallery.search.Embedder
 import com.google.ai.edge.gallery.search.LocalMemory
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.runtime.LaunchedEffect
 import com.google.ai.edge.gallery.search.MemoryStatus
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -410,6 +413,7 @@ private fun MemorySettings() {
         "${st.files} fichiers · ${st.passages} passages" +
           (if (st.truncated) " · limite atteinte, une partie du dossier n'est pas indexée" else "") +
           (if (st.indexedAt > 0) " · mis à jour " + android.text.format.DateUtils.getRelativeTimeSpanString(st.indexedAt) else "")
+      is MemoryStatus.Embedding -> "Analyse du sens… ${st.done}/${st.total} passages (la recherche par mots-clés marche déjà)"
       is MemoryStatus.Failed -> "Erreur : ${st.message}"
       MemoryStatus.NoFolder -> "Pas encore indexé."
     }
@@ -436,6 +440,7 @@ private fun MemorySettings() {
       },
     )
   }
+  SemanticSearchRow()
   Row(
     horizontalArrangement = Arrangement.spacedBy(8.dp),
     modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
@@ -449,6 +454,72 @@ private fun MemorySettings() {
     }
     OutlinedButton(onClick = { LocalMemory.forget(context) }, modifier = Modifier.weight(1f)) {
       Text("Oublier ce dossier")
+    }
+  }
+}
+
+/**
+ * [ALTREX] Search by meaning: finds a note about "backup" for a question about "sauvegarde". Needs
+ * a 278 MB embedding model, downloaded on request and checked before use.
+ */
+@Composable
+private fun SemanticSearchRow() {
+  val context = LocalContext.current
+  val received by LocalMemory.download.collectAsState()
+  var downloaded by remember { mutableStateOf(Embedder.isDownloaded(context)) }
+  var semantic by remember { mutableStateOf(LocalMemory.isSemanticEnabled(context)) }
+  var error by remember { mutableStateOf<String?>(null) }
+  LaunchedEffect(received) {
+    if (received == null) {
+      downloaded = Embedder.isDownloaded(context)
+      semantic = LocalMemory.isSemanticEnabled(context)
+    }
+  }
+
+  Row(
+    verticalAlignment = Alignment.CenterVertically,
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+  ) {
+    Icon(
+      Icons.Outlined.AutoAwesome,
+      contentDescription = null,
+      tint = MaterialTheme.colorScheme.primary,
+      modifier = Modifier.size(22.dp),
+    )
+    Spacer(modifier = Modifier.width(16.dp))
+    Column(modifier = Modifier.weight(1f)) {
+      Text("Recherche par le sens", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
+      val sub =
+        when {
+          received != null ->
+            "Téléchargement… ${received!! * 100 / Embedder.SIZE_BYTES} % de ${Embedder.SIZE_BYTES / 1_000_000} Mo"
+          error != null -> "Échec : $error"
+          downloaded -> "Comprend les synonymes et les reformulations (modèle EmbeddingGemma installé)."
+          else ->
+            "Comprend les synonymes et les reformulations (« backup » pour « sauvegarde »). " +
+              "Télécharge un modèle de ${Embedder.SIZE_BYTES / 1_000_000} Mo, une seule fois ; tout reste sur le téléphone."
+        }
+      Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    when {
+      received != null -> {}
+      downloaded ->
+        Switch(
+          checked = semantic,
+          onCheckedChange = {
+            semantic = it
+            LocalMemory.setSemanticEnabled(context, it)
+          },
+        )
+      else ->
+        OutlinedButton(
+          onClick = {
+            error = null
+            LocalMemory.downloadSemanticModel(context) { error = it }
+          }
+        ) {
+          Text("Télécharger")
+        }
     }
   }
 }
