@@ -43,6 +43,7 @@ import androidx.compose.material.icons.outlined.Mms
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
@@ -56,6 +57,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -132,7 +134,11 @@ fun AltrexDrawer(
   onOpenTask: (String) -> Unit,
   onOpenModels: () -> Unit,
   onOpenSettings: () -> Unit,
+  onOpenAssistantGuide: () -> Unit,
 ) {
+  val context = LocalContext.current
+  // Checked each time the menu opens: the user may have changed it in the settings meanwhile.
+  val isAssistant = remember(isOpen) { AssistantSetup.isDefaultAssistant(context) }
   ModalDrawerSheet(
     drawerContainerColor = MaterialTheme.colorScheme.surface,
     drawerShape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp),
@@ -182,6 +188,10 @@ fun AltrexDrawer(
                 .height(1.dp)
                 .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
           )
+          if (!isAssistant) {
+            AssistantCard(onClick = onOpenAssistantGuide)
+            Spacer(Modifier.height(10.dp))
+          }
           Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             BottomButton(
               label = "Modèles",
@@ -410,6 +420,44 @@ private fun NavRow(
           Modifier.size(6.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)
       )
     }
+  }
+}
+
+/** Shortcut to the guide that makes Altrex the phone's assistant (hidden once it is). */
+@Composable
+private fun AssistantCard(onClick: () -> Unit) {
+  Row(
+    verticalAlignment = Alignment.CenterVertically,
+    modifier =
+      Modifier.fillMaxWidth()
+        .clip(RoundedCornerShape(14.dp))
+        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f))
+        .clickable(onClick = onClick)
+        .padding(horizontal = 14.dp, vertical = 12.dp),
+  ) {
+    Icon(
+      Icons.Rounded.TouchApp,
+      contentDescription = null,
+      tint = MaterialTheme.colorScheme.onPrimaryContainer,
+      modifier = Modifier.size(20.dp),
+    )
+    Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+      Text(
+        "Altrex comme assistant",
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onPrimaryContainer,
+      )
+      Text(
+        "Appelle-le depuis n'importe quelle app",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
+      )
+    }
+    Icon(
+      Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+      contentDescription = null,
+      tint = MaterialTheme.colorScheme.onPrimaryContainer,
+    )
   }
 }
 

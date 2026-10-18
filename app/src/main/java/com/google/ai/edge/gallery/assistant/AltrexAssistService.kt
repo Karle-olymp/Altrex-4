@@ -4,6 +4,8 @@ import android.app.assist.AssistStructure
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.service.voice.VoiceInteractionService
 import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
@@ -24,13 +26,24 @@ class AltrexAssistSessionService : VoiceInteractionSessionService() {
 
 class AltrexAssistSession(context: Context) : VoiceInteractionSession(context) {
   private var launched = false
+  private val handler = Handler(Looper.getMainLooper())
 
   override fun onShow(args: Bundle?, showFlags: Int) {
     super.onShow(args, showFlags)
     launched = false
     // Without screen context (not allowed in the assistant settings), open right away; otherwise
     // wait for onHandleAssist, which brings the screen text.
-    if (showFlags and SHOW_WITH_ASSIST == 0) launchSheet(screenText = "")
+    if (showFlags and SHOW_WITH_ASSIST == 0) {
+      launchSheet(screenText = "")
+    } else {
+      // Some phones never deliver the screen content (setting off, secure app): open anyway.
+      handler.postDelayed({ launchSheet(screenText = "") }, SCREEN_WAIT_MS)
+    }
+  }
+
+  override fun onHide() {
+    handler.removeCallbacksAndMessages(null)
+    super.onHide()
   }
 
   override fun onHandleAssist(state: AssistState) {
@@ -42,6 +55,7 @@ class AltrexAssistSession(context: Context) : VoiceInteractionSession(context) {
   private fun launchSheet(screenText: String) {
     if (launched) return
     launched = true
+    handler.removeCallbacksAndMessages(null)
     startAssistantActivity(
       Intent(context, AskAltrexActivity::class.java)
         .setAction(AskAltrexActivity.ACTION_ASSIST_SHEET)
@@ -65,6 +79,7 @@ class AltrexAssistSession(context: Context) : VoiceInteractionSession(context) {
 
   private companion object {
     const val MAX_SCREEN_CHARS = 8_000
+    const val SCREEN_WAIT_MS = 1_200L
   }
 }
 

@@ -108,6 +108,8 @@ import com.google.ai.edge.gallery.ui.benchmark.BenchmarkScreen
 import com.google.ai.edge.gallery.ui.common.ErrorDialog
 import com.google.ai.edge.gallery.ui.common.ModelPageAppBar
 import com.google.ai.edge.gallery.ui.common.chat.ModelDownloadStatusInfoPanel
+import com.google.ai.edge.gallery.ui.home.AssistantGuideDialog
+import com.google.ai.edge.gallery.ui.home.AssistantSetup
 import com.google.ai.edge.gallery.ui.home.HomeScreen
 import com.google.ai.edge.gallery.ui.home.PromoScreenGm4
 import com.google.ai.edge.gallery.ui.home.SettingsDialog
@@ -251,6 +253,20 @@ fun GalleryNavHost(
   // Tells the user, once, why the previous run ended abnormally (memory kill, crash...).
   LastExitDialog()
 
+  // [ALTREX] Once a model is loaded, offer (once) to make Altrex the phone's assistant.
+  val guideContext = LocalContext.current
+  var showAssistantGuide by remember { mutableStateOf(false) }
+  LaunchedEffect(loadedModelName != null) {
+    if (loadedModelName != null && AssistantSetup.shouldOfferGuide(guideContext)) {
+      delay(1500)
+      AssistantSetup.markGuideOffered(guideContext)
+      showAssistantGuide = true
+    }
+  }
+  if (showAssistantGuide) {
+    AssistantGuideDialog(onDismiss = { showAssistantGuide = false })
+  }
+
   ModalNavigationDrawer(
     drawerState = drawerState,
     drawerContent = {
@@ -271,6 +287,10 @@ fun GalleryNavHost(
         },
         onOpenSettings = {
           showSettingsDialog = true
+          scope.launch { drawerState.close() }
+        },
+        onOpenAssistantGuide = {
+          showAssistantGuide = true
           scope.launch { drawerState.close() }
         },
       )
