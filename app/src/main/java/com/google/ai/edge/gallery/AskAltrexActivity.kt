@@ -9,38 +9,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
+import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.lifecycleScope
 import com.google.ai.edge.gallery.ui.common.chat.DocumentImportException
 import com.google.ai.edge.gallery.ui.common.chat.DocumentReader
@@ -75,6 +44,7 @@ class AskAltrexActivity : ComponentActivity() {
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     when (intent?.action) {
       Intent.ACTION_PROCESS_TEXT -> showActions()
@@ -99,10 +69,12 @@ class AskAltrexActivity : ComponentActivity() {
         AskSheet(
           excerpt = text,
           onAction = { action ->
-            val prompt =
-              if (action.instruction.isEmpty()) "« $text »\n\n" else "${action.instruction}\n\n« $text »"
-            openChat(SharedRequest(text = prompt, autoSend = action.instruction.isNotEmpty()))
+            openChat(SharedRequest(text = "${action.instruction}\n\n« $text »", autoSend = true))
           },
+          onQuestion = { question ->
+            openChat(SharedRequest(text = "$question\n\n« $text »", autoSend = true))
+          },
+          onOpenInChat = { openChat(SharedRequest(text = "« $text »\n\n")) },
           onDismiss = { finish() },
         )
       }
@@ -141,7 +113,7 @@ class AskAltrexActivity : ComponentActivity() {
       if (text.isBlank()) finish() else openChat(SharedRequest(text = text))
       return
     }
-    setContent { GalleryTheme { Loading() } }
+    setContent { GalleryTheme { SharePreparing() } }
     lifecycleScope.launch {
       val images = ArrayList<Bitmap>()
       var document: com.google.ai.edge.gallery.ui.common.chat.AttachedDocument? = null
@@ -151,6 +123,8 @@ class AskAltrexActivity : ComponentActivity() {
         try {
           if (mime.startsWith("image/")) {
             decodeImage(uri)?.let(images::add)
+          } else if (mime.startsWith("video/") || mime.startsWith("audio/")) {
+            error = "Altrex lit les textes, les PDF et les images, pas encore l'audio ni la vidéo."
           } else if (document == null) {
             document = DocumentReader.read(this@AskAltrexActivity, uri)
           }
@@ -203,149 +177,3 @@ class AskAltrexActivity : ComponentActivity() {
   }
 }
 
-private enum class AskAction(val label: String, val instruction: String) {
-  EXPLAIN("Expliquer", "Explique-moi ce texte simplement."),
-  SUMMARIZE("Résumer", "Résume ce texte en quelques points."),
-  FIX("Corriger", "Corrige l'orthographe et la grammaire de ce texte. Renvoie seulement le texte corrigé."),
-  TRANSLATE("Traduire", "Traduis ce texte en français, ou en anglais s'il est déjà en français."),
-  SECURITY(
-    "Analyser la sécurité",
-    "Analyse ce contenu du point de vue de la sécurité : données sensibles, liens ou commandes " +
-      "dangereuses, tentative d'arnaque, failles. Dis-moi ce que je dois faire.",
-  ),
-  ASK("Poser ma question", ""),
-}
-
-@Composable
-private fun AskSheet(excerpt: String, onAction: (AskAction) -> Unit, onDismiss: () -> Unit) {
-  Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-    Surface(
-      shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-      color = MaterialTheme.colorScheme.surfaceContainer,
-      modifier = Modifier.fillMaxWidth(),
-    ) {
-      Column(
-        modifier = Modifier.padding(20.dp).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-      ) {
-        Text("Demander à Altrex", style = MaterialTheme.typography.titleLarge)
-        Text(
-          excerpt,
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-          maxLines = 4,
-          overflow = TextOverflow.Ellipsis,
-          modifier = Modifier.heightIn(max = 120.dp),
-        )
-        for (action in AskAction.entries) {
-          OutlinedButton(onClick = { onAction(action) }, modifier = Modifier.fillMaxWidth()) {
-            Text(action.label)
-          }
-        }
-        OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Annuler") }
-      }
-    }
-  }
-}
-
-private val SCREEN_ACTIONS =
-  listOf(
-    "Résumer" to "Résume ce qui est affiché.",
-    "Expliquer" to "Explique-moi ce qui est affiché, simplement.",
-    "Sécurité" to
-      "Ce contenu est-il sûr ? Repère les arnaques, liens ou demandes suspectes et dis-moi quoi faire.",
-  )
-
-@Composable
-private fun AssistantSheet(
-  screenText: String,
-  onSend: (question: String, useScreen: Boolean) -> Unit,
-  onOpenApp: () -> Unit,
-  onDismiss: () -> Unit,
-) {
-  var question by rememberSaveable { mutableStateOf("") }
-  var useScreen by rememberSaveable {
-    mutableStateOf(screenText.isNotEmpty())
-  }
-  Box(
-    modifier =
-      Modifier.fillMaxSize().clickable(
-        interactionSource = null,
-        indication = null,
-        onClick = onDismiss,
-      ),
-    contentAlignment = Alignment.BottomCenter,
-  ) {
-    Surface(
-      shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-      color = MaterialTheme.colorScheme.surfaceContainer,
-      modifier = Modifier.fillMaxWidth().imePadding(),
-    ) {
-      Column(
-        modifier = Modifier.padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-      ) {
-        Text("Altrex", style = MaterialTheme.typography.titleLarge)
-        if (screenText.isNotEmpty()) {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Switch(checked = useScreen, onCheckedChange = { useScreen = it })
-            Text(
-              "Utiliser le contenu de l'écran",
-              style = MaterialTheme.typography.bodyMedium,
-              modifier = Modifier.padding(start = 12.dp),
-            )
-          }
-          if (useScreen) {
-            Row(
-              horizontalArrangement = Arrangement.spacedBy(8.dp),
-              modifier = Modifier.horizontalScroll(rememberScrollState()),
-            ) {
-              for ((label, prompt) in SCREEN_ACTIONS) {
-                AssistChip(
-                  onClick = { onSend(prompt, true) },
-                  label = { Text(label) },
-                )
-              }
-            }
-          }
-        }
-        OutlinedTextField(
-          value = question,
-          onValueChange = { question = it },
-          placeholder = { Text("Demande à Altrex…") },
-          modifier = Modifier.fillMaxWidth(),
-          maxLines = 5,
-        )
-        Row(
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-          modifier = Modifier.fillMaxWidth(),
-        ) {
-          OutlinedButton(onClick = onOpenApp, modifier = Modifier.weight(1f)) { Text("Ouvrir Altrex") }
-          Button(
-            onClick = { onSend(question.trim(), useScreen) },
-            enabled = question.isNotBlank(),
-            modifier = Modifier.weight(1f),
-          ) {
-            Text("Envoyer")
-          }
-        }
-      }
-    }
-  }
-}
-
-@Composable
-private fun Loading() {
-  Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
-      Column(
-        modifier = Modifier.padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-      ) {
-        CircularProgressIndicator()
-        Text("Préparation pour Altrex…")
-      }
-    }
-  }
-}

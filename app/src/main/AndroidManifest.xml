@@ -117,14 +117,15 @@
             <intent-filter android:label="Altrex">
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/*" />
-                <data android:mimeType="application/pdf" />
-                <data android:mimeType="image/*" />
+                <!-- Any type: file managers often share .txt, .md, .log, .conf... as
+                     application/octet-stream. Altrex reads text, PDFs and images, and says so
+                     for anything else. -->
+                <data android:mimeType="*/*" />
             </intent-filter>
             <intent-filter android:label="Altrex">
                 <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="image/*" />
+                <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
 
