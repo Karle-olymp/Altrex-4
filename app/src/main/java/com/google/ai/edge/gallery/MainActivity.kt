@@ -27,7 +27,6 @@ import android.view.animation.DecelerateInterpolator
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
@@ -42,6 +41,7 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import com.google.ai.edge.gallery.ui.common.AltrexIntro
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
+import com.google.ai.edge.gallery.ui.modelmanager.sharedModelManager
 import com.google.ai.edge.gallery.ui.theme.GalleryTheme
 import com.google.ai.edge.litertlm.ExperimentalApi
 import com.google.ai.edge.litertlm.ExperimentalFlags
@@ -53,7 +53,8 @@ import kotlinx.coroutines.launch
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-  private val modelManagerViewModel: ModelManagerViewModel by viewModels()
+  // [ALTREX] Shared with the assistant panel (AskAltrexActivity).
+  private val modelManagerViewModel: ModelManagerViewModel by lazy { sharedModelManager(this) }
   private var splashScreenAboutToExit: Boolean = false
   private var contentSet: Boolean = false
 
@@ -109,7 +110,7 @@ class MainActivity : ComponentActivity() {
       contentSet = true
     }
 
-    modelManagerViewModel.loadModelAllowlist()
+    modelManagerViewModel.loadModelAllowlistIfNeeded()
 
     // Show splash screen.
     val splashScreen = installSplashScreen()

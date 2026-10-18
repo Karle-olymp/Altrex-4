@@ -103,7 +103,7 @@
             android:theme="@style/Theme.Altrex.Ask"
             android:excludeFromRecents="true"
             android:taskAffinity=""
-            android:launchMode="singleInstance"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.ASSIST" />

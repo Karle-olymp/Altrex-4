@@ -315,6 +315,7 @@ fun ChatViewWrapper(
         // [ALTREX] Attached document: its text goes before the question, cut to fit the context.
         val doc = chatMessageText?.data as? com.google.ai.edge.gallery.ui.common.chat.AttachedDocument
         var input = text
+        var longDocument: ((onError: (String) -> Unit) -> Unit)? = null
         // [ALTREX] An Argora model analyses an attached file in its "analyse" mode, with the
         // message form it was trained on.
         val argora = model.argoraManifest
@@ -327,43 +328,74 @@ fun ChatViewWrapper(
                 com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN,
               )
           // About 3 characters per token; a third of the context stays for the history and answer.
-          val (prompt, keptPages) =
-            com.google.ai.edge.gallery.ui.common.chat.DocumentReader.buildPrompt(
-              doc = doc,
-              question = text,
-              maxChars = contextTokens * 2,
-              argoraFormat = argora != null,
-            )
-          input = prompt
-          if (keptPages != null) {
-            android.widget.Toast.makeText(
-                context,
-                if (doc.isPdf) "Document trop long pour ce modèle : les $keptPages premières pages ont été gardées."
-                else "Document trop long pour ce modèle : seul le début a été gardé.",
-                android.widget.Toast.LENGTH_LONG,
+          val budgetChars = contextTokens * 2
+          when (
+            val plan =
+              com.google.ai.edge.gallery.ui.common.chat.DocumentPlanner.plan(
+                doc = doc,
+                question = text,
+                budgetChars = budgetChars,
+                argoraFormat = argora != null,
               )
-              .show()
+          ) {
+            is com.google.ai.edge.gallery.ui.common.chat.DocumentPlan.Direct -> input = plan.prompt
+            is com.google.ai.edge.gallery.ui.common.chat.DocumentPlan.Passages -> {
+              input = plan.prompt
+              android.widget.Toast.makeText(
+                  context,
+                  "Document long : Altrex a gardé les passages liés à ta question" +
+                    (if (plan.pages.isEmpty()) "." else " (pages ${plan.pages.joinToString(", ")})."),
+                  android.widget.Toast.LENGTH_LONG,
+                )
+                .show()
+            }
+            is com.google.ai.edge.gallery.ui.common.chat.DocumentPlan.Sections -> {
+              // A request about the whole document: read part by part, then answer from the notes.
+              longDocument = { onError ->
+                viewModel.generateResponseForLongDocument(
+                  model = model,
+                  doc = doc,
+                  plan = plan,
+                  question = text,
+                  budgetChars = budgetChars,
+                  systemPrompt =
+                    argora?.systemPrompt
+                      ?: curSystemPrompt.ifBlank { org.nehuatl.llamacpp.LlamaHelper.getDefaultSystemPrompt() },
+                  onFirstToken = onFirstToken,
+                  onDone = { onGenerateResponseDone(model) },
+                  onError = onError,
+                  allowThinking = task.allowCapability(ModelCapability.LLM_THINKING, model),
+                  argoraMode = argoraMode,
+                )
+              }
+            }
           }
         }
-        viewModel.generateResponse(
-          model = model,
-          input = input,
-          images = images,
-          audioMessages = audioMessages,
-          onFirstToken = onFirstToken,
-          onDone = { onGenerateResponseDone(model) },
-          onError = { errorMessage ->
-            viewModel.handleError(
-              context = context,
-              task = task,
-              model = model,
-              errorMessage = errorMessage,
-              modelManagerViewModel = modelManagerViewModel,
-            )
-          },
-          allowThinking = task.allowCapability(ModelCapability.LLM_THINKING, model),
-          argoraMode = argoraMode,
-        )
+        val onError: (String) -> Unit = { errorMessage ->
+          viewModel.handleError(
+            context = context,
+            task = task,
+            model = model,
+            errorMessage = errorMessage,
+            modelManagerViewModel = modelManagerViewModel,
+          )
+        }
+        val readLongDocument = longDocument
+        if (readLongDocument != null) {
+          readLongDocument(onError)
+        } else {
+          viewModel.generateResponse(
+            model = model,
+            input = input,
+            images = images,
+            audioMessages = audioMessages,
+            onFirstToken = onFirstToken,
+            onDone = { onGenerateResponseDone(model) },
+            onError = onError,
+            allowThinking = task.allowCapability(ModelCapability.LLM_THINKING, model),
+            argoraMode = argoraMode,
+          )
+        }
 
         val activeSkills = getActiveSkills()
         Log.d(

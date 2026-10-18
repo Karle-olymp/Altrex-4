@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -43,6 +44,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -52,12 +54,15 @@ import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.automirrored.rounded.ShortText
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
 import androidx.compose.material.icons.rounded.FormatQuote
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.automirrored.rounded.ScreenShare
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Spellcheck
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -93,6 +98,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.google.ai.edge.gallery.ui.common.AltrexAvatar
 import com.google.ai.edge.gallery.ui.common.AltrexLogoLoader
+import com.google.ai.edge.gallery.ui.common.MarkdownText
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -133,30 +139,53 @@ private val SCREEN_ACTIONS =
     Triple("Points clés", Icons.AutoMirrored.Rounded.FormatListBulleted, "Donne-moi les points clés de ce qui est affiché."),
   )
 
-/** Sheet shown after "Demander à Altrex" on a text selection. */
+/** Sheet shown after "Demander à Altrex" on a text selection: the answer appears right here. */
 @Composable
 internal fun AskSheet(
   excerpt: String,
+  session: AskAltrexPanelSession,
+  canReplace: Boolean,
   onAction: (AskAction) -> Unit,
   onQuestion: (String) -> Unit,
+  onCopy: (String) -> Unit,
+  onReplace: (String) -> Unit,
   onOpenInChat: () -> Unit,
   onDismiss: () -> Unit,
 ) {
   var question by rememberSaveable { mutableStateOf("") }
+  val started = session.turns.isNotEmpty()
   AltrexSheet(onDismiss = onDismiss) { close ->
-    SheetHeader(onClose = { close(onDismiss) })
-    ChipRow {
-      AskAction.entries.forEachIndexed { index, action ->
-        ActionChip(index, action.label, action.icon) { close { onAction(action) } }
+    SheetHeader(modelName = session.modelName, onClose = { close(onDismiss) })
+    AnimatedVisibility(
+      visible = !started,
+      enter = expandVertically() + fadeIn(),
+      exit = shrinkVertically(tween(220)) + fadeOut(tween(150)),
+    ) {
+      ChipRow {
+        AskAction.entries.forEachIndexed { index, action ->
+          ActionChip(index, action.label, action.icon) { onAction(action) }
+        }
       }
     }
-    QuoteCard(excerpt)
+    QuoteCard(excerpt, compact = started)
+    PanelAnswers(
+      session = session,
+      canReplace = canReplace,
+      onCopy = onCopy,
+      onReplace = { close { onReplace(it) } },
+      onOpenInChat = { close(onOpenInChat) },
+    )
     AskField(
       value = question,
       onValueChange = { question = it },
-      placeholder = "Demande n'importe quoi sur ce texte…",
-      onSend = { close { onQuestion(question.trim()) } },
-      onOpenInChat = { close(onOpenInChat) },
+      placeholder = if (started) "Pose une autre question…" else "Demande n'importe quoi sur ce texte…",
+      onSend = {
+        onQuestion(question.trim())
+        question = ""
+      },
+      onOpenInChat = if (started) null else ({ close(onOpenInChat) }),
+      writing = session.busy,
+      onStop = session::stop,
     )
   }
 }
@@ -165,15 +194,18 @@ internal fun AskSheet(
 @Composable
 internal fun AssistantSheet(
   screenText: String,
-  onSend: (question: String, useScreen: Boolean) -> Unit,
+  session: AskAltrexPanelSession,
+  onAsk: (label: String, question: String, useScreen: Boolean) -> Unit,
+  onCopy: (String) -> Unit,
   onOpenApp: () -> Unit,
   onDismiss: () -> Unit,
 ) {
   var question by rememberSaveable { mutableStateOf("") }
   var useScreen by rememberSaveable { mutableStateOf(screenText.isNotEmpty()) }
+  val started = session.turns.isNotEmpty()
   AltrexSheet(onDismiss = onDismiss) { close ->
-    SheetHeader(onClose = { close(onDismiss) }, onOpenApp = { close(onOpenApp) })
-    if (screenText.isNotEmpty()) {
+    SheetHeader(modelName = session.modelName, onClose = { close(onDismiss) }, onOpenApp = { close(onOpenApp) })
+    if (screenText.isNotEmpty() && !started) {
       ScreenToggle(checked = useScreen, onToggle = { useScreen = !useScreen })
       AnimatedVisibility(
         visible = useScreen,
@@ -182,19 +214,128 @@ internal fun AssistantSheet(
       ) {
         ChipRow {
           SCREEN_ACTIONS.forEachIndexed { index, (label, icon, prompt) ->
-            ActionChip(index, label, icon) { close { onSend(prompt, true) } }
+            ActionChip(index, label, icon) { onAsk(label, prompt, true) }
           }
         }
       }
     }
+    PanelAnswers(
+      session = session,
+      canReplace = false,
+      onCopy = onCopy,
+      onReplace = {},
+      onOpenInChat = { close(onOpenApp) },
+    )
     AskField(
       value = question,
       onValueChange = { question = it },
-      placeholder = if (useScreen && screenText.isNotEmpty()) "Demande à propos de cet écran…" else "Demande à Altrex…",
-      onSend = { close { onSend(question.trim(), useScreen) } },
+      placeholder =
+        when {
+          started -> "Pose une autre question…"
+          useScreen && screenText.isNotEmpty() -> "Demande à propos de cet écran…"
+          else -> "Demande à Altrex…"
+        },
+      onSend = {
+        val q = question.trim()
+        onAsk(q, q, useScreen && !started)
+        question = ""
+      },
       onOpenInChat = null,
       autoFocus = screenText.isEmpty(),
+      writing = session.busy,
+      onStop = session::stop,
     )
+  }
+}
+
+/**
+ * The panel's exchange: each question as a small bubble, its answer written live below, then the
+ * actions on the last answer (copy, replace the selected text, continue in the app).
+ */
+@Composable
+private fun PanelAnswers(
+  session: AskAltrexPanelSession,
+  canReplace: Boolean,
+  onCopy: (String) -> Unit,
+  onReplace: (String) -> Unit,
+  onOpenInChat: () -> Unit,
+) {
+  val phase = session.phase
+  if (session.turns.isEmpty() && phase !is PanelPhase.Failed) return
+  val scroll = rememberScrollState()
+  val last = session.turns.lastOrNull()
+  // Follows the answer while it is written.
+  LaunchedEffect(last?.answer?.length, session.turns.size) { scroll.animateScrollTo(scroll.maxValue) }
+  Column(
+    modifier =
+      Modifier.fillMaxWidth()
+        .heightIn(max = 360.dp)
+        .verticalScroll(scroll)
+        .animateContentSize(spring(stiffness = Spring.StiffnessMediumLow)),
+    verticalArrangement = Arrangement.spacedBy(10.dp),
+  ) {
+    for (turn in session.turns) {
+      Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+        Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+          Text(
+            turn.label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+          )
+        }
+      }
+      if (turn.answer.isNotEmpty()) {
+        MarkdownText(text = turn.answer, smallFontSize = true)
+      }
+    }
+    when {
+      phase is PanelPhase.Preparing -> StatusLine(phase.label)
+      phase == PanelPhase.Writing && last?.answer.isNullOrEmpty() -> StatusLine("Altrex réfléchit…")
+      phase is PanelPhase.Failed ->
+        Text(phase.message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+      else -> {}
+    }
+  }
+  AnimatedVisibility(
+    visible = phase == PanelPhase.Ready && !last?.answer.isNullOrBlank(),
+    enter = fadeIn() + expandVertically(),
+    exit = fadeOut() + shrinkVertically(),
+  ) {
+    val answer = last?.answer.orEmpty()
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+      SmallAction("Copier", Icons.Rounded.ContentCopy) { onCopy(answer) }
+      if (canReplace) SmallAction("Remplacer le texte", Icons.Rounded.SwapHoriz) { onReplace(answer) }
+      SmallAction("Continuer dans Altrex", Icons.AutoMirrored.Rounded.OpenInNew, onOpenInChat)
+    }
+  }
+}
+
+@Composable
+private fun StatusLine(label: String) {
+  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    AltrexLogoLoader(size = 26.dp)
+    Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+  }
+}
+
+@Composable
+private fun SmallAction(label: String, icon: ImageVector, onClick: () -> Unit) {
+  Surface(
+    shape = CircleShape,
+    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    modifier = Modifier.clip(CircleShape).clickable(onClick = onClick),
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+      Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+      Text(label, style = MaterialTheme.typography.labelMedium)
+    }
   }
 }
 
@@ -316,16 +457,22 @@ private fun AltrexSheet(
 }
 
 @Composable
-private fun SheetHeader(onClose: () -> Unit, onOpenApp: (() -> Unit)? = null) {
+private fun SheetHeader(modelName: String?, onClose: () -> Unit, onOpenApp: (() -> Unit)? = null) {
   Row(verticalAlignment = Alignment.CenterVertically) {
     AltrexAvatar(size = 28.dp)
     Spacer(Modifier.width(10.dp))
-    Text(
-      "Altrex",
-      style = MaterialTheme.typography.titleMedium,
-      fontWeight = FontWeight.SemiBold,
-      modifier = Modifier.weight(1f),
-    )
+    Column(modifier = Modifier.weight(1f)) {
+      Text("Altrex", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+      AnimatedVisibility(visible = modelName != null, enter = fadeIn()) {
+        Text(
+          modelName.orEmpty(),
+          style = MaterialTheme.typography.labelSmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
+    }
     if (onOpenApp != null) {
       IconButton(onClick = onOpenApp) {
         Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = "Ouvrir Altrex")
@@ -392,7 +539,7 @@ private fun ActionChip(index: Int, label: String, icon: ImageVector, onClick: ()
 
 /** The selected text, three lines by default; a tap shows more. Code keeps a monospace font. */
 @Composable
-private fun QuoteCard(text: String) {
+private fun QuoteCard(text: String, compact: Boolean = false) {
   var expanded by remember { mutableStateOf(false) }
   val looksLikeCode = remember(text) { text.count { it == ';' || it == '{' || it == '}' } >= 3 }
   Surface(
@@ -413,7 +560,7 @@ private fun QuoteCard(text: String) {
         style = MaterialTheme.typography.bodyMedium,
         fontFamily = if (looksLikeCode) FontFamily.Monospace else null,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = if (expanded) 12 else 3,
+        maxLines = if (expanded) 12 else if (compact) 1 else 3,
         overflow = TextOverflow.Ellipsis,
       )
     }
@@ -471,8 +618,10 @@ private fun AskField(
   onSend: () -> Unit,
   onOpenInChat: (() -> Unit)?,
   autoFocus: Boolean = false,
+  writing: Boolean = false,
+  onStop: () -> Unit = {},
 ) {
-  val canSend = value.isNotBlank()
+  val canSend = value.isNotBlank() && !writing
   val focus = remember { FocusRequester() }
   if (autoFocus) {
     LaunchedEffect(Unit) {
@@ -498,11 +647,11 @@ private fun AskField(
           ),
         modifier = Modifier.weight(1f).focusRequester(focus),
       )
-      val showButton = canSend || onOpenInChat != null
+      val showButton = canSend || writing || onOpenInChat != null
       AnimatedVisibility(visible = showButton, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut()) {
         val background by
           animateColorAsState(
-            if (canSend) MaterialTheme.colorScheme.primary else Color.Transparent,
+            if (canSend || writing) MaterialTheme.colorScheme.primary else Color.Transparent,
             label = "sendBackground",
           )
         Box(
@@ -510,15 +659,23 @@ private fun AskField(
             Modifier.size(44.dp)
               .clip(CircleShape)
               .background(background)
-              .clickable { if (canSend) onSend() else onOpenInChat?.invoke() },
+              .clickable {
+                when {
+                  writing -> onStop()
+                  canSend -> onSend()
+                  else -> onOpenInChat?.invoke()
+                }
+              },
           contentAlignment = Alignment.Center,
         ) {
           AnimatedContent(
-            targetState = canSend,
+            targetState = if (writing) 2 else if (canSend) 1 else 0,
             transitionSpec = { (scaleIn() + fadeIn()) togetherWith (scaleOut() + fadeOut()) },
             label = "sendIcon",
-          ) { send ->
-            if (send) {
+          ) { state ->
+            if (state == 2) {
+              Icon(Icons.Rounded.Stop, "Arrêter", tint = MaterialTheme.colorScheme.onPrimary)
+            } else if (state == 1) {
               Icon(Icons.Rounded.ArrowUpward, "Envoyer", tint = MaterialTheme.colorScheme.onPrimary)
             } else {
               Icon(

@@ -38,6 +38,9 @@ import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.data.awaitInitialization
 import com.google.ai.edge.gallery.proto.UserData
 import com.google.ai.edge.gallery.tools.ToolAction
+import com.google.ai.edge.gallery.runtime.QuietCompletion
+import com.google.ai.edge.gallery.runtime.SharedModelSession
+import com.google.ai.edge.gallery.ui.common.chat.AttachedDocument
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessageAudioClip
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessageError
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessageInfo
@@ -48,6 +51,8 @@ import com.google.ai.edge.gallery.ui.common.chat.ChatMessageType
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessageWarning
 import com.google.ai.edge.gallery.ui.common.chat.ChatSide
 import com.google.ai.edge.gallery.ui.common.chat.ChatViewModel
+import com.google.ai.edge.gallery.ui.common.chat.DocumentPlan
+import com.google.ai.edge.gallery.ui.common.chat.DocumentPlanner
 import com.google.ai.edge.gallery.ui.common.chat.convertToLitertMessage
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import com.google.ai.edge.litertlm.ExperimentalApi
@@ -213,7 +218,9 @@ open class LlmChatViewModelBase(
       var streamedChunks = 0
       var firstChunkMs = 0L
 
-      if (sessionStoppedByModel[model.name] == true) {
+      // [ALTREX] Also when a request made outside the chat replaced the model's conversation.
+      val replaced = SharedModelSession.consumeConversationReplaced(model.name)
+      if (sessionStoppedByModel[model.name] == true || replaced) {
         sessionStoppedByModel[model.name] = false
         val initialMessages =
           (uiState.value.messagesByModel[model.name] ?: emptyList())
@@ -405,8 +412,81 @@ open class LlmChatViewModelBase(
     }
   }
 
+  /** [ALTREX] Set by the stop button while a long document is read part by part. */
+  @Volatile private var documentReadingStopped = false
+
+  /**
+   * [ALTREX] A document too long for the context, with a request about all of it: each part is
+   * read on its own and summed up in notes (shown as progress), then the answer is written from
+   * the notes through the usual [generateResponse].
+   */
+  fun generateResponseForLongDocument(
+    model: Model,
+    doc: AttachedDocument,
+    plan: DocumentPlan.Sections,
+    question: String,
+    budgetChars: Int,
+    systemPrompt: String,
+    onFirstToken: (Model) -> Unit = {},
+    onDone: () -> Unit = {},
+    onError: (String) -> Unit,
+    allowThinking: Boolean = false,
+    argoraMode: String? = null,
+  ) {
+    val accelerator = model.getStringConfigValue(key = ConfigKeys.ACCELERATOR, defaultValue = "")
+    documentReadingStopped = false
+    viewModelScope.launch(Dispatchers.Default) {
+      setInProgress(true)
+      val count = plan.sections.size
+      fun progress(label: String) {
+        val last = getLastMessage(model = model)
+        if (last is ChatMessageLoading) removeLastMessage(model = model)
+        addMessage(model = model, message = ChatMessageLoading(extraProgressLabel = label, accelerator = accelerator))
+      }
+      val notes = ArrayList<String>()
+      for ((index, section) in plan.sections.withIndex()) {
+        if (documentReadingStopped) break
+        progress("Lecture du document : partie ${index + 1} sur $count…")
+        val result =
+          QuietCompletion.run(
+            model = model,
+            messages =
+              listOf(
+                "system" to systemPrompt,
+                "user" to DocumentPlanner.notesPrompt(doc, section, index, count, question),
+              ),
+          )
+        val note = result.getOrNull()
+        if (note == null) {
+          if (getLastMessage(model = model) is ChatMessageLoading) removeLastMessage(model = model)
+          setInProgress(false)
+          onError(result.exceptionOrNull()?.message ?: "Lecture du document interrompue.")
+          return@launch
+        }
+        notes.add(note)
+      }
+      if (getLastMessage(model = model) is ChatMessageLoading) removeLastMessage(model = model)
+      if (documentReadingStopped || notes.isEmpty()) {
+        setInProgress(false)
+        onDone()
+        return@launch
+      }
+      generateResponse(
+        model = model,
+        input = DocumentPlanner.finalPrompt(doc, plan, notes, question, budgetChars),
+        onFirstToken = onFirstToken,
+        onDone = onDone,
+        onError = onError,
+        allowThinking = allowThinking,
+        argoraMode = argoraMode,
+      )
+    }
+  }
+
   fun stopResponse(model: Model) {
     Log.d(TAG, "Stopping response for model ${model.name}...")
+    documentReadingStopped = true
+    QuietCompletion.stop(model)
     if (getLastMessage(model = model) is ChatMessageLoading) {
       removeLastMessage(model = model)
     } else {

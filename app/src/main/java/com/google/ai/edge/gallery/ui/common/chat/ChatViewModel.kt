@@ -378,6 +378,8 @@ abstract class ChatViewModel(val userDataDataStore: DataStore<UserData>? = null)
 
   fun setInProgress(inProgress: Boolean) {
     _uiState.update { it.copy(inProgress = inProgress) }
+    // [ALTREX] The assistant panel waits for the chat's answer before using the same model.
+    com.google.ai.edge.gallery.runtime.SharedModelSession.setChatGenerating(inProgress)
   }
 
   fun setIsResettingSession(isResettingSession: Boolean) {

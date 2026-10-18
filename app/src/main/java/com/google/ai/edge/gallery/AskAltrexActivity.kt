@@ -1,9 +1,12 @@
 package com.google.ai.edge.gallery
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -15,7 +18,9 @@ import com.google.ai.edge.gallery.ui.common.chat.DocumentImportException
 import com.google.ai.edge.gallery.ui.common.chat.DocumentReader
 import com.google.ai.edge.gallery.ui.common.chat.SharedInbox
 import com.google.ai.edge.gallery.ui.common.chat.SharedRequest
+import com.google.ai.edge.gallery.ui.modelmanager.sharedModelManager
 import com.google.ai.edge.gallery.ui.theme.GalleryTheme
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -25,16 +30,20 @@ private const val TAG = "AGAskAltrexActivity"
 /** Longest selected text kept (a small model's context is limited). */
 private const val MAX_SELECTED_CHARS = 12_000
 
+/** Longest selected or on-screen text sent with a question answered in the panel. */
+private const val MAX_PANEL_CHARS = 6_000
+
 /** Images shared to Altrex are scaled down to this size on their longest side. */
 private const val MAX_IMAGE_SIDE = 1024
 
 /**
  * [ALTREX] Entry point from other apps:
- * - "Demander à Altrex" in the text selection menu (ACTION_PROCESS_TEXT): a small sheet offers
- *   ready-made actions, then the chat opens and sends the request;
+ * - "Demander à Altrex" in the text selection menu (ACTION_PROCESS_TEXT) and the phone's assistant
+ *   gesture: a small sheet over the current app, where the loaded model answers;
  * - the share sheet (ACTION_SEND / ACTION_SEND_MULTIPLE): text, a PDF or text file, or images land
  *   in the chat input, ready for a question.
  */
+@AndroidEntryPoint
 class AskAltrexActivity : ComponentActivity() {
 
   companion object {
@@ -56,6 +65,15 @@ class AskAltrexActivity : ComponentActivity() {
     }
   }
 
+  /** The panel's conversation with the model; null for the share flow. */
+  private var session: AskAltrexPanelSession? = null
+
+  private fun newSession(): AskAltrexPanelSession =
+    AskAltrexPanelSession(applicationContext, lifecycleScope, sharedModelManager(this)).also {
+      session = it
+      it.peekModel()
+    }
+
   private fun showActions() {
     val selected =
       intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()?.trim().orEmpty()
@@ -64,15 +82,29 @@ class AskAltrexActivity : ComponentActivity() {
       return
     }
     val text = selected.take(MAX_SELECTED_CHARS)
+    // The text sent with the first question: what fits easily in a small model's context.
+    val quoted = "« ${text.take(MAX_PANEL_CHARS)}${if (text.length > MAX_PANEL_CHARS) " […]" else ""} »"
+    // Read-only selections (a web page…) cannot be replaced.
+    val canReplace = !intent.getBooleanExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, true)
+    val session = newSession()
+    fun ask(label: String, request: String, argoraMode: String? = null) {
+      val prompt = if (session.turns.isEmpty()) "$request\n\n$quoted" else request
+      session.ask(label = label, prompt = prompt, argoraMode = argoraMode)
+    }
     setContent {
       GalleryTheme {
         AskSheet(
           excerpt = text,
+          session = session,
+          canReplace = canReplace,
           onAction = { action ->
-            openChat(SharedRequest(text = "${action.instruction}\n\n« $text »", autoSend = true))
+            ask(action.label, action.instruction, if (action == AskAction.SECURITY) "analyse" else null)
           },
-          onQuestion = { question ->
-            openChat(SharedRequest(text = "$question\n\n« $text »", autoSend = true))
+          onQuestion = { question -> ask(question, question) },
+          onCopy = ::copy,
+          onReplace = { answer ->
+            setResult(RESULT_OK, Intent().putExtra(Intent.EXTRA_PROCESS_TEXT, cleanForReplace(answer)))
+            finish()
           },
           onOpenInChat = { openChat(SharedRequest(text = "« $text »\n\n")) },
           onDismiss = { finish() },
@@ -81,27 +113,54 @@ class AskAltrexActivity : ComponentActivity() {
     }
   }
 
-  /** The assistant sheet: a question, optionally about the text on screen. */
+  /** The assistant sheet: a question, optionally about the text on screen, answered in place. */
   private fun showAssistant() {
-    val screenText = intent.getStringExtra(EXTRA_SCREEN_TEXT).orEmpty().take(MAX_SELECTED_CHARS)
+    val screenText = intent.getStringExtra(EXTRA_SCREEN_TEXT).orEmpty().take(MAX_PANEL_CHARS)
+    val session = newSession()
     setContent {
       GalleryTheme {
         AssistantSheet(
           screenText = screenText,
-          onSend = { question, useScreen ->
+          session = session,
+          onAsk = { label, question, useScreen ->
             val prompt =
               if (useScreen && screenText.isNotEmpty()) {
                 "Voici le texte affiché sur mon écran :\n« $screenText »\n\n$question"
               } else {
                 question
               }
-            openChat(SharedRequest(text = prompt, autoSend = true))
+            session.ask(label = label, prompt = prompt, argoraMode = if (label == "Sécurité") "analyse" else null)
           },
+          onCopy = ::copy,
           onOpenApp = { openChat(SharedRequest(text = "")) },
           onDismiss = { finish() },
         )
       }
     }
+  }
+
+  private fun copy(text: String) {
+    val clipboard = getSystemService(ClipboardManager::class.java) ?: return
+    clipboard.setPrimaryClip(ClipData.newPlainText("Altrex", text))
+    // Android 13+ shows its own confirmation.
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+      Toast.makeText(this, "Copié", Toast.LENGTH_SHORT).show()
+    }
+  }
+
+  /** The answer as plain text for the source app: no code fence or quotes around it. */
+  private fun cleanForReplace(answer: String): String {
+    var out = answer.trim()
+    val fence = Regex("^```[\\w-]*\\n([\\s\\S]*?)\\n```$")
+    fence.find(out)?.let { out = it.groupValues[1].trim() }
+    if (out.startsWith("«") && out.endsWith("»")) out = out.removePrefix("«").removeSuffix("»").trim()
+    return out
+  }
+
+  override fun onDestroy() {
+    // A closed panel stops writing (the model stays loaded for the next time).
+    if (isFinishing) session?.takeIf { it.busy }?.stop()
+    super.onDestroy()
   }
 
   private fun receiveShare() {
