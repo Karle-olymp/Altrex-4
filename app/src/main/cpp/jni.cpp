@@ -1023,6 +1023,81 @@ Java_org_nehuatl_llamacpp_LlamaContext_isEmbeddingEnabled(
     return llama->params.embedding;
 }
 
+/**
+ * [ALTREX] Text embedding for the local memory's search by meaning. Works directly on the llama.cpp
+ * context (tokenize, decode, pool, L2-normalize), like llama.cpp's own llama-embedding example, on a
+ * context created with embedding = true. Returns null on failure.
+ */
+JNIEXPORT jfloatArray JNICALL
+Java_org_nehuatl_llamacpp_LlamaContext_embedText(
+        JNIEnv *env, jobject thiz, jlong context_ptr, jstring text) {
+    UNUSED(thiz);
+    rnllama::llama_rn_context* llama = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(context_mutex);
+        auto it = context_map.find((long) context_ptr);
+        if (it != context_map.end()) llama = it->second;
+    }
+    if (!llama || !llama->ctx || !llama->model || !llama->params.embedding) return nullptr;
+    llama_context *ctx = llama->ctx;
+    const llama_model *model = llama->model;
+
+    std::vector<llama_token> tokens = common_tokenize(ctx, jstringToUtf8(env, text), true, false);
+    // A non-causal model reads the whole input in one batch.
+    const int limit = (int) std::min(llama_n_ctx(ctx), llama_n_ubatch(ctx));
+    if (tokens.empty()) return nullptr;
+    if ((int) tokens.size() > limit) {
+        const llama_token last = tokens.back(); // keep the closing [SEP]/EOS token
+        tokens.resize(limit);
+        tokens[limit - 1] = last;
+    }
+    const int n = (int) tokens.size();
+
+    llama_memory_clear(llama_get_memory(ctx), true);
+    llama_batch batch = llama_batch_init(n, 0, 1);
+    for (int i = 0; i < n; i++) {
+        batch.token[i] = tokens[i];
+        batch.pos[i] = i;
+        batch.n_seq_id[i] = 1;
+        batch.seq_id[i][0] = 0;
+        batch.logits[i] = 1;
+    }
+    batch.n_tokens = n;
+
+    int rc;
+    if (llama_model_has_encoder(model) && !llama_model_has_decoder(model)) {
+        rc = llama_encode(ctx, batch);
+    } else {
+        rc = llama_decode(ctx, batch);
+    }
+    const int n_embd = llama_model_n_embd(model);
+    std::vector<float> pooled(n_embd, 0.0f);
+    bool ok = rc == 0;
+    if (ok) {
+        if (llama_pooling_type(ctx) == LLAMA_POOLING_TYPE_NONE) {
+            // No pooling in the model: average the token embeddings.
+            for (int i = 0; i < n; i++) {
+                const float *e = llama_get_embeddings_ith(ctx, i);
+                if (!e) { ok = false; break; }
+                for (int j = 0; j < n_embd; j++) pooled[j] += e[j] / n;
+            }
+        } else {
+            const float *e = llama_get_embeddings_seq(ctx, 0);
+            if (e) std::copy(e, e + n_embd, pooled.begin()); else ok = false;
+        }
+    }
+    llama_batch_free(batch);
+    if (!ok) {
+        LOGW("embedText failed (rc=%d)", rc);
+        return nullptr;
+    }
+    std::vector<float> out(n_embd);
+    common_embd_normalize(pooled.data(), out.data(), n_embd, 2);
+    jfloatArray result = env->NewFloatArray(n_embd);
+    env->SetFloatArrayRegion(result, 0, n_embd, out.data());
+    return result;
+}
+
 JNIEXPORT jobject JNICALL
 Java_org_nehuatl_llamacpp_LlamaContext_embedding(
         JNIEnv *env, jobject thiz, jlong context_ptr, jstring text) {

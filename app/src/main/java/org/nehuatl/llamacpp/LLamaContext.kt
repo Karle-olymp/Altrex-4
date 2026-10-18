@@ -279,6 +279,9 @@ class LlamaContext(
         return result
     }
 
+    /** [ALTREX] Embedding vector of [text] (L2-normalized), for search by meaning. */
+    fun embed(text: String): FloatArray? = embedText(context, text)
+
     fun bench(pp: Int, tg: Int, pl: Int, nr: Int): String {
         return bench(context, pp, tg, pl, nr)
     }
@@ -358,6 +361,9 @@ class LlamaContext(
     private external fun detokenize(contextPtr: Long, tokens: IntArray): String
 
     private external fun isEmbeddingEnabled(contextPtr: Long): Boolean
+
+    /** [ALTREX] Normalized embedding of [text], or null on failure (context created with embedding = true). */
+    private external fun embedText(contextPtr: Long, text: String): FloatArray?
 
     private external fun embedding(contextPtr: Long, text: String): Map<String, Any>
 

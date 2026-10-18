@@ -41,14 +41,49 @@ class MemoryIndex(val files: List<MemoryFile>, val chunks: List<MemoryChunk>) {
     avgLength = if (chunks.isEmpty()) 1.0 else lengths.average().coerceAtLeast(1.0)
   }
 
+  /** Search by meaning: the pieces' vectors and the question's vector (same embedding model). */
+  class Semantic(val vectors: VectorStore, val query: FloatArray, val minCosine: Float)
+
   /**
    * The passages that best match [query], each with the piece that follows it in the same file
    * (it often finishes the sentence or the list), within [budgetChars]. Empty when nothing is
    * relevant enough: small talk must not drag random notes into the prompt.
+   *
+   * With [semantic], the keyword ranking (BM25) and the meaning ranking are merged (reciprocal rank
+   * fusion): a note about "backup" answers a question about "sauvegarde", and an exact name or
+   * error code still counts.
    */
-  fun search(query: String, budgetChars: Int, maxPassages: Int = 6): List<MemoryHit> {
-    val terms = TextSearch.tokens(query).toSet()
-    if (terms.isEmpty() || chunks.isEmpty()) return emptyList()
+  fun search(query: String, budgetChars: Int, maxPassages: Int = 6, semantic: Semantic? = null): List<MemoryHit> {
+    if (chunks.isEmpty()) return emptyList()
+    val scores = bm25(TextSearch.tokens(query).toSet())
+    val best = scores.values.maxOrNull() ?: 0.0
+    val lexical =
+      if (best >= MIN_SCORE) {
+        scores.entries.filter { it.value >= best * RELATIVE_CUTOFF }.sortedByDescending { it.value }.map { it.key }
+      } else {
+        emptyList()
+      }
+    val meaning =
+      semantic
+        ?.takeIf { it.vectors.count == chunks.size }
+        ?.let { sem ->
+          val near = sem.vectors.nearest(sem.query, SEMANTIC_CANDIDATES)
+          val top = near.firstOrNull()?.second ?: 0f
+          if (top < sem.minCosine) emptyList()
+          else near.filter { it.second >= maxOf(sem.minCosine, top - SEMANTIC_MARGIN) }.map { it.first }
+        }
+        .orEmpty()
+    if (lexical.isEmpty() && meaning.isEmpty()) return emptyList()
+
+    val fused = HashMap<Int, Double>()
+    for ((rank, i) in lexical.withIndex()) fused[i] = (fused[i] ?: 0.0) + 1.0 / (RRF_K + rank)
+    for ((rank, i) in meaning.withIndex()) fused[i] = (fused[i] ?: 0.0) + 1.0 / (RRF_K + rank)
+    val ranked = fused.entries.sortedByDescending { it.value }
+    return assemble(ranked.map { it.key }, fused, budgetChars, maxPassages)
+  }
+
+  /** BM25 score of every piece that contains at least one of [terms]. */
+  private fun bm25(terms: Set<String>): Map<Int, Double> {
     val k1 = 1.2
     val b = 0.75
     val n = chunks.size.toDouble()
@@ -66,15 +101,15 @@ class MemoryIndex(val files: List<MemoryFile>, val chunks: List<MemoryChunk>) {
         p += 2
       }
     }
-    val best = scores.values.maxOrNull() ?: return emptyList()
-    if (best < MIN_SCORE) return emptyList()
+    return scores
+  }
 
-    val ranked =
-      scores.entries.filter { it.value >= best * RELATIVE_CUTOFF }.sortedByDescending { it.value }
+  /** Takes the [ranked] pieces (with their follower) within the budget and joins neighbours. */
+  private fun assemble(ranked: List<Int>, scores: Map<Int, Double>, budgetChars: Int, maxPassages: Int): List<MemoryHit> {
     val picked = sortedSetOf<Int>()
     var used = 0
     var passages = 0
-    for ((index, _) in ranked) {
+    for (index in ranked) {
       if (passages >= maxPassages || used >= budgetChars) break
       var added = false
       for (i in listOf(index, index + 1)) {
@@ -135,6 +170,11 @@ class MemoryIndex(val files: List<MemoryFile>, val chunks: List<MemoryChunk>) {
     private const val MIN_SCORE = 1.5
     /** Passages much weaker than the best one are left out. */
     private const val RELATIVE_CUTOFF = 0.35
+    private const val SEMANTIC_CANDIDATES = 24
+    /** Meaning matches clearly behind the best one are left out. */
+    private const val SEMANTIC_MARGIN = 0.06f
+    /** Reciprocal rank fusion constant (the usual value). */
+    private const val RRF_K = 60.0
 
     fun read(reader: BufferedReader): MemoryIndex? {
       val files = ArrayList<MemoryFile>()
