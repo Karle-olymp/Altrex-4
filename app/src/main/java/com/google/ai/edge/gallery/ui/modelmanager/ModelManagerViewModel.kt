@@ -813,7 +813,7 @@ constructor(
   fun addRemoteSpaceModel(spaceId: String) {
     val info =
       ImportedModel.newBuilder()
-        .setFileName(com.google.ai.edge.gallery.runtime.RemoteSpace.PREFIX + spaceId)
+        .setFileName(com.google.ai.edge.gallery.runtime.RemoteSpace.modelName(spaceId))
         .setFileSize(0L)
         .setLlmConfig(
           LlmConfig.newBuilder()
@@ -1265,6 +1265,27 @@ constructor(
           ModelInitializationStatus(status = ModelInitializationStatusType.NOT_INITIALIZED)
         checkedModelNames.add(model.name)
       }
+    }
+
+    // [ALTREX] Remote models saved as "space:owner/name" (first version): the "/" broke the chat's
+    // navigation route and crashed the app at every launch. Rename them to "space:owner:name".
+    run {
+      val stored = dataStoreRepository.readImportedModels()
+      val fixed =
+        stored.map { m ->
+          if (com.google.ai.edge.gallery.runtime.RemoteSpace.isRemote(m.fileName) && m.fileName.contains('/')) {
+            m.toBuilder()
+              .setFileName(
+                com.google.ai.edge.gallery.runtime.RemoteSpace.modelName(
+                  com.google.ai.edge.gallery.runtime.RemoteSpace.spaceId(m.fileName)
+                )
+              )
+              .build()
+          } else {
+            m
+          }
+        }
+      if (fixed != stored) dataStoreRepository.saveImportedModels(importedModels = fixed)
     }
 
     // Load imported models.
