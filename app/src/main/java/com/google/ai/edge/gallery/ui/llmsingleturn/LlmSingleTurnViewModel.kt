@@ -22,6 +22,7 @@ import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.gallery.common.processLlmResponse
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.RuntimeType
+import com.google.ai.edge.gallery.data.usesTextProtocol
 import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.data.awaitInitialization
 import com.google.ai.edge.gallery.runtime.runtimeHelper
@@ -183,7 +184,7 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
           // llama.cpp already returns real newlines: do not rewrite "\\n" sequences in code.
           val merged = "$response$partialResult"
           response =
-            if (model.runtimeType == RuntimeType.LLAMA_CPP) {
+            if (model.runtimeType.usesTextProtocol) {
               merged
             } else {
               processLlmResponse(response = merged)
@@ -195,7 +196,7 @@ class LlmSingleTurnViewModel @Inject constructor() : ViewModel() {
             promptTemplateType = uiState.value.selectedPromptTemplateType,
             response =
               responsePrefix +
-                if (model.runtimeType == RuntimeType.LLAMA_CPP) ToolCalling.displayText(response)
+                if (model.runtimeType.usesTextProtocol) ToolCalling.displayText(response)
                 else response,
           )
 

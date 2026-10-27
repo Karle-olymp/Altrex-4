@@ -64,6 +64,7 @@ import com.google.ai.edge.gallery.huggingface.HuggingFaceApiClient
 import com.google.ai.edge.gallery.proto.AccessTokenData
 import com.google.ai.edge.gallery.proto.HfModelItemProto
 import com.google.ai.edge.gallery.proto.ImportedModel
+import com.google.ai.edge.gallery.proto.LlmConfig
 import com.google.ai.edge.gallery.proto.Theme
 import com.google.ai.edge.gallery.runtime.aicore.AICoreModelHelper
 import com.google.ai.edge.litertlm.Contents
@@ -805,6 +806,29 @@ constructor(
     dataStoreRepository.saveImportedModels(importedModels = importedModels)
   }
 
+  /**
+   * [ALTREX] Adds a model served by a Hugging Face Space ([com.google.ai.edge.gallery.runtime.RemoteSpace])
+   * to the model list: nothing is downloaded, the model runs in the Space. [spaceId] is owner/name.
+   */
+  fun addRemoteSpaceModel(spaceId: String) {
+    val info =
+      ImportedModel.newBuilder()
+        .setFileName(com.google.ai.edge.gallery.runtime.RemoteSpace.PREFIX + spaceId)
+        .setFileSize(0L)
+        .setLlmConfig(
+          LlmConfig.newBuilder()
+            .addCompatibleAccelerators(Accelerator.CPU.label)
+            .setDefaultMaxTokens(2048)
+            .setDefaultTopk(40)
+            .setDefaultTopp(0.95f)
+            .setDefaultTemperature(0.3f)
+            .setSupportThinking(true)
+            .build()
+        )
+        .build()
+    addImportedLlmModel(info)
+  }
+
   fun getTokenStatusAndData(): TokenStatusAndData {
     // Try to load token data from DataStore.
     var tokenStatus = TokenStatus.NOT_STORED
@@ -1368,7 +1392,9 @@ constructor(
         // through the native llama.cpp engine, everything else (.task/.litertlm) through
         // LiteRT-LM.
         runtimeType =
-          if (info.fileName.endsWith(".gguf")) {
+          if (com.google.ai.edge.gallery.runtime.RemoteSpace.isRemote(info.fileName)) {
+            RuntimeType.REMOTE
+          } else if (info.fileName.endsWith(".gguf")) {
             RuntimeType.LLAMA_CPP
           } else {
             RuntimeType.LITERT_LM

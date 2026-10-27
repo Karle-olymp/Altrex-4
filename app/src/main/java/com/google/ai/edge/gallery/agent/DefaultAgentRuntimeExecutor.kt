@@ -23,6 +23,7 @@ import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.RuntimeType
+import com.google.ai.edge.gallery.data.usesTextProtocol
 import com.google.ai.edge.gallery.data.awaitInitialization
 import com.google.ai.edge.gallery.runtime.runtimeHelper
 import com.google.ai.edge.gallery.skills.SkillsProvider
@@ -209,7 +210,7 @@ open class DefaultAgentRuntimeExecutor(
     // Local llama.cpp models have no native tool calling: run the ReAct loop here, driving the
     // same tool definitions through the ChatML / Hermes protocol. LiteRT-LM models keep using the
     // engine's built-in automatic tool calling (single runInference call below).
-    if (curModel.runtimeType == RuntimeType.LLAMA_CPP) {
+    if (curModel.runtimeType.usesTextProtocol) {
       val producer = this
       val loopJob =
         launch(Dispatchers.IO) {
