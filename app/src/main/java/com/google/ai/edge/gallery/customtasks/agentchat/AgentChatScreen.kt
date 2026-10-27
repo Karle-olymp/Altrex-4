@@ -224,8 +224,9 @@ fun AgentChatScreen(
     selectedModel.name,
     initialQuery,
   ) {
-    // Send the optional initial query to the model if the model is initialized and the initial
-    // query is not consumed yet.
+    // [ALTREX] The optional initial query comes from a link (any web page can open one): it only
+    // fills the input field, the user reads it and sends it. It was sent on its own, so a page could
+    // drive the agent and its tools.
     if (
       !initialQuery.isNullOrEmpty() &&
         !initialQueryConsumed &&
@@ -233,11 +234,9 @@ fun AgentChatScreen(
         !llmChatUiState.isResettingSession
     ) {
       initialQueryConsumed = true
-      sendMessageTrigger =
-        SendMessageTrigger(
-          model = selectedModel,
-          messages = listOf(ChatMessageText(content = initialQuery, side = ChatSide.USER)),
-        )
+      com.google.ai.edge.gallery.ui.common.chat.SharedInbox.post(
+        com.google.ai.edge.gallery.ui.common.chat.SharedRequest(text = initialQuery, autoSend = false)
+      )
     }
   }
 
