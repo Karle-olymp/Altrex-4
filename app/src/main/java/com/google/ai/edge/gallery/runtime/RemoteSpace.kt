@@ -134,10 +134,16 @@ object RemoteSpace {
               "Accès refusé au Space ($code). S'il est privé, ajoute ton jeton Hugging Face dans " +
                 "Réglages → Clés d'API."
             )
+          // A private Space answers 404 to every request without a valid token: it hides itself.
+          code == 404 && token.isNullOrBlank() ->
+            throw SpaceException(
+              "Space introuvable. S'il est privé, Hugging Face le cache sans jeton : ajoute un jeton " +
+                "« Read » dans Réglages → Clés d'API → Hugging Face."
+            )
           code == 404 ->
             throw SpaceException(
-              "Point d'API « $API_NAME » introuvable sur le Space. Il doit exposer l'endpoint " +
-                "$API_NAME (voir la notice d'Altrex)."
+              "Space ou API « $API_NAME » introuvable. Vérifie que ton jeton Hugging Face donne accès " +
+                "à ce Space (jeton « Read » du même compte) et que le Space expose l'API $API_NAME."
             )
           (code == 503 || code == 502 || code == 504) && System.currentTimeMillis() < deadline -> {
             Log.d(TAG, "Space starting ($code), retrying in $waitMs ms")
