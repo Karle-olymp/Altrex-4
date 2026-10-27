@@ -41,6 +41,9 @@ object Embedder {
   private val mutex = Mutex()
   private var context: LlamaContext? = null
 
+  /** [ALTREX] Set by [release] while a vector is being computed: the running [embed] frees it. */
+  @Volatile private var releaseRequested = false
+
   fun modelFile(context: Context) = File(context.filesDir, "memory/$MODEL_NAME.gguf")
 
   fun isDownloaded(context: Context): Boolean = modelFile(context).length() == SIZE_BYTES
@@ -106,8 +109,12 @@ object Embedder {
   private suspend fun embed(context: Context, input: String): FloatArray? =
     withContext(Dispatchers.IO) {
       mutex.withLock {
-        val ctx = context(context) ?: return@withLock null
-        ctx.embed(input)?.takeIf { it.size == DIM }
+        try {
+          val ctx = context(context) ?: return@withLock null
+          ctx.embed(input)?.takeIf { it.size == DIM }
+        } finally {
+          if (releaseRequested) releaseLocked()
+        }
       }
     }
 
@@ -136,8 +143,25 @@ object Embedder {
     }
   }
 
-  /** Frees the model (when the memory is turned off or the phone is short of RAM). */
+  /**
+   * Frees the model (when the memory is turned off or the phone is short of RAM). [ALTREX] Never
+   * while a vector is being computed: freeing the native context under a running embedText was a
+   * use-after-free (native crash). If [embed] holds the lock, it frees the model when it is done.
+   */
   fun release() {
+    releaseRequested = true
+    if (mutex.tryLock()) {
+      try {
+        releaseLocked()
+      } finally {
+        mutex.unlock()
+      }
+    }
+  }
+
+  /** Frees the model; the caller holds [mutex]. */
+  private fun releaseLocked() {
+    releaseRequested = false
     val ctx = context ?: return
     context = null
     runCatching { ctx.release() }
