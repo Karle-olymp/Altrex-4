@@ -727,7 +727,7 @@ private fun RemoteSpaceDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
           "Ce modèle tourne dans un Space Hugging Face, pas sur ton téléphone : tes messages " +
             "(et les documents joints) sont envoyés au Space. Le Space doit exposer l'API " +
             "« ${com.google.ai.edge.gallery.runtime.RemoteSpace.API_NAME} ». S'il est privé, ajoute " +
-            "ton jeton dans Réglages → Clés d'API → Hugging Face.",
+            "ton jeton dans Réglages → Modèles → Jeton Hugging Face.",
           style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
         )
         androidx.compose.material3.OutlinedTextField(

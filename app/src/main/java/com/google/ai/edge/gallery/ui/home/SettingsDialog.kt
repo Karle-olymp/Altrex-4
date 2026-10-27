@@ -258,7 +258,7 @@ fun SettingsDialog(
                   "… · expire le " +
                   dateFormatter.format(Instant.ofEpochMilli(curHfToken.expiresAtMs))
               } else {
-                "Aucun jeton · récupéré au téléchargement d'un modèle à accès restreint"
+                "Aucun jeton · pour les modèles à accès restreint et les Spaces privés (modèles distants)"
               },
             trailing = if (showTokenEditor) "Fermer" else "Modifier",
             onClick = { showTokenEditor = !showTokenEditor },
@@ -431,15 +431,6 @@ private val API_KEYS =
           "qu'à api.github.com. Sans jeton, seuls les dépôts publics sont importables.",
       read = { com.google.ai.edge.gallery.ui.github.GitHubSettings.getToken(it) },
       save = { c, k -> com.google.ai.edge.gallery.ui.github.GitHubSettings.saveToken(c, k) },
-    ),
-    ApiKeySpec(
-      name = "Hugging Face",
-      purpose = "Modèles distants (Spaces privés)",
-      help =
-        "Colle un jeton Hugging Face « Read » (huggingface.co → Settings → Access Tokens). Il n'est " +
-          "envoyé qu'à ton Space (adresse *.hf.space). Inutile pour un Space public.",
-      read = { com.google.ai.edge.gallery.runtime.RemoteSpace.getToken(it) },
-      save = { c, k -> com.google.ai.edge.gallery.runtime.RemoteSpace.saveToken(c, k) },
     ),
   )
 
