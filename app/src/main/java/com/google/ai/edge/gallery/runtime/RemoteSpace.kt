@@ -40,7 +40,15 @@ object RemoteSpace {
 
   fun isRemote(modelName: String): Boolean = modelName.startsWith(PREFIX)
 
-  fun spaceId(modelName: String): String = modelName.removePrefix(PREFIX)
+  /**
+   * Model name of a Space: [PREFIX] + owner:name. Never a "/": the model name is a segment of the
+   * chat's navigation route (route_model/{taskId}/{modelName}), and a "/" in it matched no screen,
+   * which crashed the app, also at every launch since the last chat is reopened.
+   */
+  fun modelName(spaceId: String): String = PREFIX + spaceId.replace('/', ':')
+
+  /** Space id (owner/name) of a remote model name, old "space:owner/name" form included. */
+  fun spaceId(modelName: String): String = modelName.removePrefix(PREFIX).replaceFirst(':', '/')
 
   /**
    * Normalizes what the user typed: "owner/name", or a huggingface.co/spaces/... or *.hf.space
