@@ -202,6 +202,9 @@ fun CodeEditorPanel(
             saveError = false
             onSaved(text)
           } else {
+            // [ALTREX] The failed write may have emptied the file: put the version on disk back
+            // (the edited text stays in the editor for another try).
+            ProjectFolderManager.writeTextFile(context, openedFile.uri, openedFile.content)
             saveError = true
           }
         },
