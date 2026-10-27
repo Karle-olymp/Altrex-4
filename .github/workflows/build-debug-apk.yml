@@ -2,6 +2,8 @@ name: Build Altrex APK
 
 on:
   workflow_dispatch:
+  # [ALTREX] Pull requests: tests and build only, nothing is published.
+  pull_request:
 
 concurrency:
   group: build
@@ -26,16 +28,29 @@ jobs:
         with:
           gradle-version: 9.8.1
 
-      - name: Generate debug keystore
+      # [ALTREX] The same signing key for every build, so that a new APK installs over the old one
+      # (a new key each time forced an uninstall: models, chats and memory lost). The key comes from
+      # the ALTREX_DEBUG_KEYSTORE_B64 secret (base64 of debug.keystore, passwords "android"). Without
+      # the secret a throwaway key is generated, as before, with a warning.
+      - name: Debug keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ALTREX_DEBUG_KEYSTORE_B64 }}
         run: |
-          if [ ! -f debug.keystore ]; then
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > debug.keystore
+          elif [ ! -f debug.keystore ]; then
+            echo "::warning::ALTREX_DEBUG_KEYSTORE_B64 is not set: this APK gets a new key and will not install over the previous one."
             keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
+
+      - name: Unit tests
+        run: gradle testDebugUnitTest
 
       - name: Build Debug APK
         run: gradle assembleDebug
 
       - name: Publish APK as a GitHub Release (avoids Actions artifact storage quota)
+        if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1
         with:
           tag: debug-latest

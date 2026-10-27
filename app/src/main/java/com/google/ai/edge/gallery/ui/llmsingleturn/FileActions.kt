@@ -227,8 +227,17 @@ object FileActions {
           ?: dir.createFile("application/octet-stream", name)
           ?: return fail("Création impossible : $name")
       if (!ProjectFolderManager.writeTextFile(context, target.uri, content)) {
-        if (existing == null) target.delete()
-        return fail("Écriture impossible : $name")
+        if (existing == null) {
+          target.delete()
+          return fail("Écriture impossible : $name")
+        }
+        // [ALTREX] The file was opened in truncate mode: put the old content back, or it stays
+        // empty or half written.
+        val restored = previous != null && ProjectFolderManager.writeTextFile(context, target.uri, previous)
+        return fail(
+          if (restored) "Écriture impossible : $name (ancien contenu remis en place)"
+          else "Écriture impossible : $name (le fichier peut être incomplet)"
+        )
       }
       if (record) addBackup(Backup(path, target.uri, previous, false))
       ProjectContextBuilder.invalidateCache()

@@ -124,6 +124,7 @@ fun GlobalModelManager(
   var showTaskSelectorBottomSheet by remember { mutableStateOf(false) }
   var showImportModelSheet by remember { mutableStateOf(false) }
   var showHuggingFaceUrlDialog by remember { mutableStateOf(false) }
+  var showRemoteSpaceDialog by remember { mutableStateOf(false) }
   var huggingFaceUrlInput by remember { mutableStateOf("") }
   var showUnsupportedModelDialog by remember { mutableStateOf(false) }
   var unsupportedModelErrorMessage by remember { mutableStateOf("") }
@@ -493,7 +494,42 @@ fun GlobalModelManager(
           )
         }
       }
+      // [ALTREX] A model that runs in a Hugging Face Space (nothing downloaded).
+      Box(
+        modifier =
+          Modifier.clickable {
+            scope.launch {
+              delay(200)
+              showImportModelSheet = false
+              showRemoteSpaceDialog = true
+            }
+          }
+      ) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+          modifier = Modifier.fillMaxWidth().padding(16.dp),
+        ) {
+          Icon(Icons.AutoMirrored.Outlined.NoteAdd, contentDescription = null)
+          Text("Modèle distant (Space Hugging Face)")
+        }
+      }
     }
+  }
+
+  if (showRemoteSpaceDialog) {
+    RemoteSpaceDialog(
+      onDismiss = { showRemoteSpaceDialog = false },
+      onAdd = { spaceId ->
+        showRemoteSpaceDialog = false
+        viewModel.addRemoteSpaceModel(spaceId)
+        scope.launch {
+          snackbarHostState.showSnackbar(
+            "« $spaceId » ajouté. Il tourne dans le Space, pas sur le téléphone : tes messages y sont envoyés."
+          )
+        }
+      },
+    )
   }
 
   // Import dialog
@@ -670,4 +706,48 @@ private fun getFileName(context: Context, uri: Uri): String? {
     return uri.lastPathSegment
   }
   return null
+}
+
+/**
+ * [ALTREX] Asks for the Hugging Face Space that serves a model. States plainly that this model is
+ * not local: the conversation is sent to the Space.
+ */
+@Composable
+private fun RemoteSpaceDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
+  var input by remember { mutableStateOf("") }
+  val spaceId = com.google.ai.edge.gallery.runtime.RemoteSpace.parseSpaceId(input)
+  androidx.compose.material3.AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("Modèle distant") },
+    text = {
+      androidx.compose.foundation.layout.Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+      ) {
+        Text(
+          "Ce modèle tourne dans un Space Hugging Face, pas sur ton téléphone : tes messages " +
+            "(et les documents joints) sont envoyés au Space. Le Space doit exposer l'API " +
+            "« ${com.google.ai.edge.gallery.runtime.RemoteSpace.API_NAME} ». S'il est privé, ajoute " +
+            "ton jeton dans Réglages → Clés d'API → Hugging Face.",
+          style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+        )
+        androidx.compose.material3.OutlinedTextField(
+          value = input,
+          onValueChange = { input = it },
+          singleLine = true,
+          label = { Text("Space (propriétaire/nom)") },
+          placeholder = { Text("Autaris/argora-api") },
+          isError = input.isNotBlank() && spaceId == null,
+        )
+      }
+    },
+    confirmButton = {
+      androidx.compose.material3.TextButton(
+        enabled = spaceId != null,
+        onClick = { spaceId?.let(onAdd) },
+      ) {
+        Text("Ajouter")
+      }
+    },
+    dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Annuler") } },
+  )
 }

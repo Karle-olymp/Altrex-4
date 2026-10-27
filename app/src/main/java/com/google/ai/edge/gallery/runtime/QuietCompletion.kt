@@ -3,6 +3,7 @@ package com.google.ai.edge.gallery.runtime
 import com.google.ai.edge.gallery.data.ARGORA_MODE_KEY
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.RuntimeType
+import com.google.ai.edge.gallery.data.usesTextProtocol
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Message
 import java.util.Collections
@@ -54,8 +55,8 @@ object QuietCompletion {
     if (model.instance == null) return Result.failure(IllegalStateException("Le modèle n'est pas chargé."))
     val helper = model.runtimeHelper
     val input: String
-    if (model.runtimeType == RuntimeType.LLAMA_CPP) {
-      // llama.cpp is stateless between requests: the whole exchange is sent each time.
+    if (model.runtimeType.usesTextProtocol) {
+      // llama.cpp (and a remote Space) is stateless between requests: the whole exchange is sent each time.
       input = LlamaHelper.chatRequest(messages)
     } else {
       val system = messages.firstOrNull { it.first == "system" }?.second

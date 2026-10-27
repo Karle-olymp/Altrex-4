@@ -75,16 +75,34 @@ object DocumentReader {
   private const val MAX_PAGES = 400
   private const val MAX_CHARS = 600_000
 
+  /**
+   * [ALTREX] Largest PDF accepted: PDFBox loads the whole file in RAM and a huge one crashed the
+   * app (out of memory). Same limit as the local memory.
+   */
+  private const val MAX_PDF_BYTES = 40L * 1024 * 1024
+
   /** Extracts the text of a PDF or text file. Runs on a background thread. */
   suspend fun read(context: Context, uri: Uri): AttachedDocument =
     withContext(Dispatchers.IO) {
       val name = displayName(context, uri) ?: "document"
       val mime = context.contentResolver.getType(uri).orEmpty()
       val isPdf = mime == "application/pdf" || name.lowercase().endsWith(".pdf")
-      if (isPdf) readPdf(context, uri, name) else readText(context, uri, name)
+      // [ALTREX] Out of memory (huge document): an error message rather than a crash.
+      try {
+        if (isPdf) readPdf(context, uri, name) else readText(context, uri, name)
+      } catch (e: OutOfMemoryError) {
+        throw DocumentImportException("Ce document est trop lourd pour la mémoire du téléphone.")
+      }
     }
 
   private fun readPdf(context: Context, uri: Uri, name: String): AttachedDocument {
+    val size = fileSize(context, uri)
+    if (size != null && size > MAX_PDF_BYTES) {
+      throw DocumentImportException(
+        "Ce PDF est trop lourd (${size / (1024 * 1024)} Mo). Altrex accepte jusqu'à " +
+          "${MAX_PDF_BYTES / (1024 * 1024)} Mo : découpe-le ou exporte seulement les pages utiles."
+      )
+    }
     PDFBoxResourceLoader.init(context.applicationContext)
     val input =
       context.contentResolver.openInputStream(uri)
@@ -94,6 +112,8 @@ object DocumentReader {
         input.use { PDDocument.load(it) }
       } catch (e: InvalidPasswordException) {
         throw DocumentImportException("Ce PDF est protégé par un mot de passe.")
+      } catch (e: OutOfMemoryError) {
+        throw DocumentImportException("Ce PDF est trop lourd pour la mémoire du téléphone.")
       } catch (e: Exception) {
         throw DocumentImportException("Ce PDF est illisible ou endommagé.")
       }
@@ -165,6 +185,16 @@ object DocumentReader {
       else -> ""
     }
   }
+
+  /** Size of the file in bytes, when the provider knows it. */
+  private fun fileSize(context: Context, uri: Uri): Long? =
+    try {
+      context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use {
+        if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null
+      }
+    } catch (e: Exception) {
+      null
+    }
 
   private fun displayName(context: Context, uri: Uri): String? =
     try {

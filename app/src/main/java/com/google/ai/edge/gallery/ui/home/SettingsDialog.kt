@@ -416,6 +416,15 @@ private val API_KEYS =
       read = { com.google.ai.edge.gallery.ui.github.GitHubSettings.getToken(it) },
       save = { c, k -> com.google.ai.edge.gallery.ui.github.GitHubSettings.saveToken(c, k) },
     ),
+    ApiKeySpec(
+      name = "Hugging Face",
+      purpose = "Modèles distants (Spaces privés)",
+      help =
+        "Colle un jeton Hugging Face « Read » (huggingface.co → Settings → Access Tokens). Il n'est " +
+          "envoyé qu'à ton Space (adresse *.hf.space). Inutile pour un Space public.",
+      read = { com.google.ai.edge.gallery.runtime.RemoteSpace.getToken(it) },
+      save = { c, k -> com.google.ai.edge.gallery.runtime.RemoteSpace.saveToken(c, k) },
+    ),
   )
 
 /**

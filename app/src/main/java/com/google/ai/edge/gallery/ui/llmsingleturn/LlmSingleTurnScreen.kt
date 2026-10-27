@@ -252,11 +252,32 @@ fun LlmSingleTurnScreen(
         onScan = { startScan(scanTarget ?: ".") },
       )
 
-      val openFile = { file: androidx.documentfile.provider.DocumentFile ->
-        val text = ProjectFolderManager.readTextFile(context, file.uri)
-        if (text != null) {
-          openedFile = OpenedFile(fileName = file.name ?: "file", uri = file.uri, content = text)
-          view = CodeView.CODE
+      // [ALTREX] Read off the main thread (a big file froze the app), with a size limit and binary
+      // files refused.
+      val openFile: (androidx.documentfile.provider.DocumentFile) -> Unit = { file ->
+        scope.launch {
+          val read =
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+              ProjectFolderManager.readTextFile(context, file.uri)
+            }
+          val problem =
+            when (read) {
+              is ProjectFolderManager.TextRead.Ok -> {
+                openedFile =
+                  OpenedFile(fileName = file.name ?: "file", uri = file.uri, content = read.text)
+                view = CodeView.CODE
+                null
+              }
+              ProjectFolderManager.TextRead.TooBig ->
+                "Fichier trop gros pour l'éditeur (plus de " +
+                  "${ProjectFolderManager.MAX_EDITOR_BYTES / (1024 * 1024)} Mo)."
+              ProjectFolderManager.TextRead.Binary ->
+                "Ce fichier n'est pas un fichier texte : il ne s'ouvre pas dans l'éditeur."
+              ProjectFolderManager.TextRead.Failed -> "Impossible de lire ce fichier."
+            }
+          if (problem != null) {
+            android.widget.Toast.makeText(context, problem, android.widget.Toast.LENGTH_LONG).show()
+          }
         }
       }
       val editorText = draft ?: openedFile?.content.orEmpty()

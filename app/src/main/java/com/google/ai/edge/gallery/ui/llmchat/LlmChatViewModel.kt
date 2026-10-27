@@ -236,49 +236,130 @@ open class LlmChatViewModelBase(
             systemInstruction = _uiSystemPrompt.value.ifEmpty { null },
             initialMessages = initialMessages,
           )
-        runtimeExecutor.resetSession(config = config)
+        runtimeExecutor.restartConversation(fallback = config)
       }
 
       // Run inference.
-      runtimeExecutor.executeStream(context = context, request = request).collect { event ->
-        when (event) {
-          is AgentEvent.LoopInitiated -> {}
-          is AgentEvent.StreamToken -> {
-            val lastMessage = getLastMessage(model = model)
-            val wasLoading = lastMessage?.type == ChatMessageType.LOADING
-            // Remove the last message if it is a "loading" message.
-            // This will only be done once.
-            if (wasLoading) {
-              removeLastMessage(model = model)
-            }
-
-            val thinkingText = event.thinking
-            val isThinking = !thinkingText.isNullOrEmpty()
-            var currentLastMessage = getLastMessage(model = model)
-
-            // If thinking is enabled, add a thinking message.
-            if (isThinking) {
-              if (currentLastMessage?.type != ChatMessageType.THINKING) {
-                addMessage(
-                  model = model,
-                  message =
-                    ChatMessageThinking(
-                      content = "",
-                      inProgress = true,
-                      side = ChatSide.AGENT,
-                      accelerator = accelerator,
-                      hideSenderLabel =
-                        currentLastMessage?.type == ChatMessageType.COLLAPSABLE_PROGRESS_PANEL,
-                    ),
-                )
+      // [ALTREX] An exception from the engine ends the request with an error message instead of
+      // crashing the app (the collector runs in viewModelScope).
+      try {
+        runtimeExecutor.executeStream(context = context, request = request).collect { event ->
+          when (event) {
+            is AgentEvent.LoopInitiated -> {}
+            is AgentEvent.StreamToken -> {
+              val lastMessage = getLastMessage(model = model)
+              val wasLoading = lastMessage?.type == ChatMessageType.LOADING
+              // Remove the last message if it is a "loading" message.
+              // This will only be done once.
+              if (wasLoading) {
+                removeLastMessage(model = model)
               }
-              updateLastThinkingMessageContentIncrementally(
-                model = model,
-                partialContent = thinkingText!!,
-              )
-            } else {
-              if (currentLastMessage?.type == ChatMessageType.THINKING) {
-                val thinkingMsg = currentLastMessage as ChatMessageThinking
+
+              val thinkingText = event.thinking
+              val isThinking = !thinkingText.isNullOrEmpty()
+              var currentLastMessage = getLastMessage(model = model)
+
+              // If thinking is enabled, add a thinking message.
+              if (isThinking) {
+                if (currentLastMessage?.type != ChatMessageType.THINKING) {
+                  addMessage(
+                    model = model,
+                    message =
+                      ChatMessageThinking(
+                        content = "",
+                        inProgress = true,
+                        side = ChatSide.AGENT,
+                        accelerator = accelerator,
+                        hideSenderLabel =
+                          currentLastMessage?.type == ChatMessageType.COLLAPSABLE_PROGRESS_PANEL,
+                      ),
+                  )
+                }
+                updateLastThinkingMessageContentIncrementally(
+                  model = model,
+                  partialContent = thinkingText!!,
+                )
+              } else {
+                if (currentLastMessage?.type == ChatMessageType.THINKING) {
+                  val thinkingMsg = currentLastMessage as ChatMessageThinking
+                  if (thinkingMsg.inProgress) {
+                    replaceLastMessage(
+                      model = model,
+                      message =
+                        ChatMessageThinking(
+                          content = thinkingMsg.content,
+                          inProgress = false,
+                          side = thinkingMsg.side,
+                          accelerator = thinkingMsg.accelerator,
+                          hideSenderLabel = thinkingMsg.hideSenderLabel,
+                        ),
+                      type = ChatMessageType.THINKING,
+                    )
+                  }
+                }
+                currentLastMessage = getLastMessage(model = model)
+                if (
+                  currentLastMessage?.type != ChatMessageType.TEXT ||
+                    currentLastMessage.side != ChatSide.AGENT
+                ) {
+                  // Add an empty message that will receive streaming results.
+                  addMessage(
+                    model = model,
+                    message =
+                      ChatMessageText(
+                        content = "",
+                        side = ChatSide.AGENT,
+                        accelerator = accelerator,
+                        hideSenderLabel =
+                          currentLastMessage?.type == ChatMessageType.COLLAPSABLE_PROGRESS_PANEL ||
+                            currentLastMessage?.type == ChatMessageType.THINKING,
+                      ),
+                  )
+                }
+
+                // Incrementally update the streamed partial results.
+                val latencyMs: Long = if (event.done) System.currentTimeMillis() - start else -1
+                if (event.token.isNotEmpty()) {
+                  if (streamedChunks == 0) firstChunkMs = System.currentTimeMillis()
+                  streamedChunks++
+                }
+                val genMs = System.currentTimeMillis() - firstChunkMs
+                // [ALTREX] llama.cpp: the engine's own token count and generation time (stream events
+                // are merged chunks, not tokens).
+                val llamaHelper =
+                  (model.instance as? com.google.ai.edge.gallery.runtime.LlamaCppModelInstance)?.llamaHelper
+                val tokensPerSecond =
+                  if (event.done && llamaHelper != null) {
+                    if (llamaHelper.lastGenMs > 0 && llamaHelper.lastTokens > 1) {
+                      (llamaHelper.lastTokens - 1) * 1000f / llamaHelper.lastGenMs
+                    } else {
+                      -1f
+                    }
+                  } else if (event.done && streamedChunks > 1 && genMs > 0) {
+                    (streamedChunks - 1) * 1000f / genMs
+                  } else {
+                    -1f
+                  }
+                if (event.token.isNotEmpty() || wasLoading || event.done) {
+                  updateLastTextMessageContentIncrementally(
+                    model = model,
+                    partialContent = event.token,
+                    latencyMs = latencyMs.toFloat(),
+                    tokensPerSecond = tokensPerSecond,
+                  )
+                }
+              }
+
+              if (firstRun) {
+                firstRun = false
+                setPreparing(false)
+                onFirstToken(model)
+              }
+            }
+            is AgentEvent.LoopTerminated -> {
+              val finalLastMessage = getLastMessage(model = model)
+              if (finalLastMessage?.type == ChatMessageType.THINKING) {
+                val thinkingMsg = finalLastMessage as ChatMessageThinking
                 if (thinkingMsg.inProgress) {
                   replaceLastMessage(
                     model = model,
@@ -294,101 +375,32 @@ open class LlmChatViewModelBase(
                   )
                 }
               }
-              currentLastMessage = getLastMessage(model = model)
-              if (
-                currentLastMessage?.type != ChatMessageType.TEXT ||
-                  currentLastMessage.side != ChatSide.AGENT
-              ) {
-                // Add an empty message that will receive streaming results.
-                addMessage(
-                  model = model,
-                  message =
-                    ChatMessageText(
-                      content = "",
-                      side = ChatSide.AGENT,
-                      accelerator = accelerator,
-                      hideSenderLabel =
-                        currentLastMessage?.type == ChatMessageType.COLLAPSABLE_PROGRESS_PANEL ||
-                          currentLastMessage?.type == ChatMessageType.THINKING,
-                    ),
-                )
-              }
-
-              // Incrementally update the streamed partial results.
-              val latencyMs: Long = if (event.done) System.currentTimeMillis() - start else -1
-              if (event.token.isNotEmpty()) {
-                if (streamedChunks == 0) firstChunkMs = System.currentTimeMillis()
-                streamedChunks++
-              }
-              val genMs = System.currentTimeMillis() - firstChunkMs
-              // [ALTREX] llama.cpp: the engine's own token count and generation time (stream events
-              // are merged chunks, not tokens).
-              val llamaHelper =
-                (model.instance as? com.google.ai.edge.gallery.runtime.LlamaCppModelInstance)?.llamaHelper
-              val tokensPerSecond =
-                if (event.done && llamaHelper != null) {
-                  if (llamaHelper.lastGenMs > 0 && llamaHelper.lastTokens > 1) {
-                    (llamaHelper.lastTokens - 1) * 1000f / llamaHelper.lastGenMs
-                  } else {
-                    -1f
-                  }
-                } else if (event.done && streamedChunks > 1 && genMs > 0) {
-                  (streamedChunks - 1) * 1000f / genMs
-                } else {
-                  -1f
-                }
-              if (event.token.isNotEmpty() || wasLoading || event.done) {
-                updateLastTextMessageContentIncrementally(
-                  model = model,
-                  partialContent = event.token,
-                  latencyMs = latencyMs.toFloat(),
-                  tokensPerSecond = tokensPerSecond,
-                )
-              }
-            }
-
-            if (firstRun) {
-              firstRun = false
+              setInProgress(false)
               setPreparing(false)
-              onFirstToken(model)
+              onDone()
             }
-          }
-          is AgentEvent.LoopTerminated -> {
-            val finalLastMessage = getLastMessage(model = model)
-            if (finalLastMessage?.type == ChatMessageType.THINKING) {
-              val thinkingMsg = finalLastMessage as ChatMessageThinking
-              if (thinkingMsg.inProgress) {
-                replaceLastMessage(
-                  model = model,
-                  message =
-                    ChatMessageThinking(
-                      content = thinkingMsg.content,
-                      inProgress = false,
-                      side = thinkingMsg.side,
-                      accelerator = thinkingMsg.accelerator,
-                      hideSenderLabel = thinkingMsg.hideSenderLabel,
-                    ),
-                  type = ChatMessageType.THINKING,
-                )
-              }
+            is AgentEvent.Error -> {
+              Log.e(TAG, "Error occurred while running inference: ${event.errorMessage}")
+              finishThinkingMessage(model)
+              setInProgress(false)
+              setPreparing(false)
+              onError(event.errorMessage)
             }
-            setInProgress(false)
-            setPreparing(false)
-            onDone()
-          }
-          is AgentEvent.Error -> {
-            Log.e(TAG, "Error occurred while running inference: ${event.errorMessage}")
-            finishThinkingMessage(model)
-            setInProgress(false)
-            setPreparing(false)
-            onError(event.errorMessage)
-          }
-          is AgentEvent.LoopCancelled -> {
-            finishThinkingMessage(model)
-            setInProgress(false)
-            setPreparing(false)
+            is AgentEvent.LoopCancelled -> {
+              finishThinkingMessage(model)
+              setInProgress(false)
+              setPreparing(false)
+            }
           }
         }
+      } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        Log.e(TAG, "Inference failed", e)
+        finishThinkingMessage(model)
+        setInProgress(false)
+        setPreparing(false)
+        onError(e.message ?: e.toString())
       }
     }
   }

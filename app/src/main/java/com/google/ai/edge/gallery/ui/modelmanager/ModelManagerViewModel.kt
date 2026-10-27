@@ -64,6 +64,7 @@ import com.google.ai.edge.gallery.huggingface.HuggingFaceApiClient
 import com.google.ai.edge.gallery.proto.AccessTokenData
 import com.google.ai.edge.gallery.proto.HfModelItemProto
 import com.google.ai.edge.gallery.proto.ImportedModel
+import com.google.ai.edge.gallery.proto.LlmConfig
 import com.google.ai.edge.gallery.proto.Theme
 import com.google.ai.edge.gallery.runtime.aicore.AICoreModelHelper
 import com.google.ai.edge.litertlm.Contents
@@ -377,6 +378,14 @@ constructor(
   }
 
   fun deleteModel(model: Model, removeImportedFromModelList: Boolean = true) {
+    // [ALTREX] A loaded model is unloaded too: deleting only its file left it in RAM, still shown as
+    // loaded.
+    if (model.instance != null) {
+      uiState.value.tasks.firstOrNull { model in it.models }?.let { task ->
+        cleanupModel(context = context, task = task, model = model)
+      }
+    }
+
     // If the currently downloaded model is an updatable version, reset the model to its latest
     // version and mark it as not updatable upon deletion.
     if (model.updatable) {
@@ -715,6 +724,21 @@ constructor(
       importsDir.mkdirs()
     }
 
+    // [ALTREX] Re-importing a model that is loaded: unload the old instance first. It was only removed
+    // from the lists below, so the "one GGUF in memory" guard no longer saw it and it stayed in RAM
+    // next to the next model loaded.
+    val previous =
+      uiState.value.tasks
+        .flatMap { it.models }
+        .firstOrNull { it.imported && it.name == info.fileName && it.instance != null }
+    if (previous != null) {
+      val previousTask = uiState.value.tasks.firstOrNull { previous in it.models }
+      if (previousTask != null) {
+        Log.d(TAG, "Unloading '${previous.name}' before re-importing it.")
+        cleanupModel(context = context, task = previousTask, model = previous)
+      }
+    }
+
     // Create model.
     val model = createModelFromImportedModelInfo(info = info)
 
@@ -780,6 +804,29 @@ constructor(
     }
     importedModels.add(info)
     dataStoreRepository.saveImportedModels(importedModels = importedModels)
+  }
+
+  /**
+   * [ALTREX] Adds a model served by a Hugging Face Space ([com.google.ai.edge.gallery.runtime.RemoteSpace])
+   * to the model list: nothing is downloaded, the model runs in the Space. [spaceId] is owner/name.
+   */
+  fun addRemoteSpaceModel(spaceId: String) {
+    val info =
+      ImportedModel.newBuilder()
+        .setFileName(com.google.ai.edge.gallery.runtime.RemoteSpace.PREFIX + spaceId)
+        .setFileSize(0L)
+        .setLlmConfig(
+          LlmConfig.newBuilder()
+            .addCompatibleAccelerators(Accelerator.CPU.label)
+            .setDefaultMaxTokens(2048)
+            .setDefaultTopk(40)
+            .setDefaultTopp(0.95f)
+            .setDefaultTemperature(0.3f)
+            .setSupportThinking(true)
+            .build()
+        )
+        .build()
+    addImportedLlmModel(info)
   }
 
   fun getTokenStatusAndData(): TokenStatusAndData {
@@ -1345,7 +1392,9 @@ constructor(
         // through the native llama.cpp engine, everything else (.task/.litertlm) through
         // LiteRT-LM.
         runtimeType =
-          if (info.fileName.endsWith(".gguf")) {
+          if (com.google.ai.edge.gallery.runtime.RemoteSpace.isRemote(info.fileName)) {
+            RuntimeType.REMOTE
+          } else if (info.fileName.endsWith(".gguf")) {
             RuntimeType.LLAMA_CPP
           } else {
             RuntimeType.LITERT_LM

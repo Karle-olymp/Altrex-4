@@ -82,20 +82,76 @@ object ProjectFolderManager {
       compareBy({ !it.isDirectory }, { (it.name ?: "").lowercase() })
     )
   }
-  /** Reads a text file's content. Returns null if it can't be read. */
-  fun readTextFile(context: Context, uri: Uri): String? {
+  /** [ALTREX] Largest file opened in the editor. */
+  const val MAX_EDITOR_BYTES = 2 * 1024 * 1024
+
+  /** Result of [readTextFile]. */
+  sealed class TextRead {
+    data class Ok(val text: String) : TextRead()
+
+    data object TooBig : TextRead()
+
+    data object Binary : TextRead()
+
+    data object Failed : TextRead()
+  }
+
+  /**
+   * Reads a text file's content. [ALTREX] At most [MAX_EDITOR_BYTES]; a binary file (APK, video,
+   * image…) is refused, since editing and saving it as text would corrupt it. Call it off the main
+   * thread.
+   */
+  fun readTextFile(context: Context, uri: Uri): TextRead {
     return try {
-      context.contentResolver.openInputStream(uri)?.use { input -> input.bufferedReader().readText() }
+      val bytes =
+        context.contentResolver.openInputStream(uri)?.use { input ->
+          val buffer = java.io.ByteArrayOutputStream()
+          val chunk = ByteArray(64 * 1024)
+          while (buffer.size() <= MAX_EDITOR_BYTES) {
+            val n = input.read(chunk)
+            if (n < 0) break
+            buffer.write(chunk, 0, n)
+          }
+          buffer.toByteArray()
+        } ?: return TextRead.Failed
+      when {
+        bytes.size > MAX_EDITOR_BYTES -> TextRead.TooBig
+        looksBinary(bytes) -> TextRead.Binary
+        else -> TextRead.Ok(String(bytes, Charsets.UTF_8))
+      }
     } catch (e: Exception) {
-      null
+      TextRead.Failed
+    } catch (e: OutOfMemoryError) {
+      TextRead.TooBig
     }
   }
+
+  /** A NUL byte, or bytes that are not valid UTF-8, in the first 8 KB. */
+  internal fun looksBinary(bytes: ByteArray): Boolean {
+    val n = minOf(bytes.size, 8 * 1024)
+    for (i in 0 until n) if (bytes[i] == 0.toByte()) return true
+    // A cut inside a multi-byte character is not an error: when cut, also try without the last
+    // 1 to 3 bytes.
+    val drops = if (n < bytes.size) 0..3 else 0..0
+    return drops.none { drop -> isUtf8(bytes, n - drop) }
+  }
+
+  private fun isUtf8(bytes: ByteArray, length: Int): Boolean =
+    try {
+      Charsets.UTF_8.newDecoder()
+        .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+        .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+        .decode(java.nio.ByteBuffer.wrap(bytes, 0, length))
+      true
+    } catch (e: java.nio.charset.CharacterCodingException) {
+      false
+    }
   /** Overwrites a text file's content. Returns true on success. */
   fun writeTextFile(context: Context, uri: Uri, content: String): Boolean {
     return try {
-      context.contentResolver.openOutputStream(uri, "wt")?.use { output ->
-        output.write(content.toByteArray())
-      }
+      // [ALTREX] No stream means nothing was written: report it (it was shown as saved).
+      val output = context.contentResolver.openOutputStream(uri, "wt") ?: return false
+      output.use { it.write(content.toByteArray()) }
       true
     } catch (e: Exception) {
       false

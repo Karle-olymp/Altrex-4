@@ -20,6 +20,12 @@ import com.squareup.moshi.JsonClass
 import kotlinx.coroutines.CompletableDeferred
 
 /** Enumerates the types of action events produced by running tool definitions. */
+/**
+ * [ALTREX] Longest wait for the user's answer to a dialog opened by a tool (permission, secret).
+ * Past it the tool gives up as if refused, so a dialog left open never blocks the agent forever.
+ */
+const val USER_REPLY_TIMEOUT_MS = 5 * 60_000L
+
 enum class ToolActionName() {
   CALL_JS_SKILL,
   SKILL_PROGRESS,

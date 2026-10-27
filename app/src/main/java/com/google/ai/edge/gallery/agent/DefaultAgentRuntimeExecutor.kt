@@ -23,6 +23,7 @@ import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.RuntimeType
+import com.google.ai.edge.gallery.data.usesTextProtocol
 import com.google.ai.edge.gallery.data.awaitInitialization
 import com.google.ai.edge.gallery.runtime.runtimeHelper
 import com.google.ai.edge.gallery.skills.SkillsProvider
@@ -86,6 +87,9 @@ open class DefaultAgentRuntimeExecutor(
   /** Atomic reference to the active session. */
   private val activeSession = AtomicReference<ActiveSession?>(null)
 
+  /** [ALTREX] The configuration of the last initialize / resetSession, for [restartConversation]. */
+  private val lastConfig = AtomicReference<AgentRuntimeConfig?>(null)
+
   /** Set when the user interrupts an in-flight generation; reset at the start of each request. */
   private val interrupted = AtomicBoolean(false)
 
@@ -107,6 +111,7 @@ open class DefaultAgentRuntimeExecutor(
     onDone: (String) -> Unit,
   ) {
     val systemInstruction = Contents.of(config.systemInstruction ?: "")
+    lastConfig.set(config)
     val executionContext =
       ToolExecutionContext(taskId = config.taskId, actionChannel = config.actionChannel)
 
@@ -161,8 +166,14 @@ open class DefaultAgentRuntimeExecutor(
   ): Flow<AgentEvent> = callbackFlow {
     emitEvent(AgentEvent.LoopInitiated(request = request))
 
-    val session =
-      activeSession.get() ?: error("Model not initialized in DefaultAgentRuntimeExecutor")
+    // [ALTREX] No session (the model was unloaded): an error event, not an exception that crashed
+    // the collecting screen.
+    val session = activeSession.get()
+    if (session == null) {
+      emitEvent(AgentEvent.Error("Le modèle n'est pas chargé. Recharge-le puis renvoie ta demande."))
+      close()
+      return@callbackFlow
+    }
     val curModel = session.model
 
     toolDispatcher.setupExecutionContext(
@@ -199,7 +210,7 @@ open class DefaultAgentRuntimeExecutor(
     // Local llama.cpp models have no native tool calling: run the ReAct loop here, driving the
     // same tool definitions through the ChatML / Hermes protocol. LiteRT-LM models keep using the
     // engine's built-in automatic tool calling (single runInference call below).
-    if (curModel.runtimeType == RuntimeType.LLAMA_CPP) {
+    if (curModel.runtimeType.usesTextProtocol) {
       val producer = this
       val loopJob =
         launch(Dispatchers.IO) {
@@ -303,6 +314,7 @@ open class DefaultAgentRuntimeExecutor(
 
   override suspend fun resetSession(config: AgentRuntimeConfig) {
     val systemInstruction = Contents.of(config.systemInstruction ?: "")
+    lastConfig.set(config)
     val executionContext =
       ToolExecutionContext(taskId = config.taskId, actionChannel = config.actionChannel)
 
@@ -365,6 +377,15 @@ open class DefaultAgentRuntimeExecutor(
         )
         delay(retryDelayMs)
       }
+    }
+  }
+
+  override suspend fun restartConversation(fallback: AgentRuntimeConfig) {
+    val last = lastConfig.get()
+    if (last != null && last.model.name == fallback.model.name) {
+      resetSession(last.copy(model = fallback.model, initialMessages = fallback.initialMessages))
+    } else {
+      resetSession(fallback)
     }
   }
 

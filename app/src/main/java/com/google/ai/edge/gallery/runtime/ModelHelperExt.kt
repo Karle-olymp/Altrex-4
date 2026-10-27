@@ -34,5 +34,8 @@ val Model.runtimeHelper: LlmModelHelper
     if (this.runtimeType == RuntimeType.LLAMA_CPP) {
       return LlamaCppModelHelper
     }
+    if (this.runtimeType == RuntimeType.REMOTE) {
+      return RemoteModelHelper
+    }
     return LlmChatModelHelper
   }

@@ -52,7 +52,17 @@ enum class RuntimeType {
   @SerializedName("litert_lm") LITERT_LM,
   @SerializedName("aicore") AICORE,
   @SerializedName("llama_cpp") LLAMA_CPP,
+  /** [ALTREX] A model served by a Hugging Face Space (Gradio API), not on the phone. */
+  @SerializedName("remote") REMOTE,
 }
+
+/**
+ * [ALTREX] Engines driven with Altrex's own text protocol: the whole conversation is sent as a chat
+ * request each turn, with tool calls in Hermes / ChatML text (llama.cpp on the phone, or a remote
+ * Space running the same model).
+ */
+val RuntimeType.usesTextProtocol: Boolean
+  get() = this == RuntimeType.LLAMA_CPP || this == RuntimeType.REMOTE
 
 enum class AICoreModelReleaseStage {
   @SerializedName("stable") STABLE,
