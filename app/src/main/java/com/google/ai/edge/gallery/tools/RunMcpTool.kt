@@ -33,6 +33,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val TAG = "AGRunMcpTool"
 
@@ -76,8 +77,20 @@ class RunMcpTool(
 
       if (!isAlwaysAllow) {
         val permissionAction = AskMcpToolCallPermissionAction(toolName = toolName, argument = input)
-        executionContext?.actionChannel?.send(permissionAction)
-        val permissionResult = permissionAction.result.await()
+        // [ALTREX] No screen to ask on: refuse instead of waiting forever. An unanswered dialog
+        // counts as a refusal too.
+        val channel = executionContext?.actionChannel
+        if (channel == null) {
+          logMcpExecution(success = false, errorType = "no_permission_channel")
+          return@runBlocking mapOf(
+            "error" to "The user cannot be asked for permission here, so the tool was not run.",
+            "status" to "failed",
+          )
+        }
+        channel.send(permissionAction)
+        val permissionResult =
+          withTimeoutOrNull(USER_REPLY_TIMEOUT_MS) { permissionAction.result.await() }
+            ?: PermissionResult.DENY
         if (permissionResult == PermissionResult.DENY) {
           executionContext
             ?.actionChannel

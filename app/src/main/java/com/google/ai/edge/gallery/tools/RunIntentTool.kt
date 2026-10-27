@@ -23,6 +23,7 @@ import com.google.ai.edge.gallery.intents.IntentHandler
 import com.google.ai.edge.gallery.skills.SkillsProvider
 import com.google.ai.edge.litertlm.Tool
 import com.google.ai.edge.litertlm.ToolParam
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val TAG = "AGRunIntentTool"
 
@@ -64,10 +65,19 @@ class RunIntentTool(private val context: Context, private val skillsProvider: Sk
     val action = IntentAction.from(intent)
     val label = SILENT_ACTIONS[action]
     val channel = executionContext?.actionChannel
-    if (label != null && channel != null && !isAlwaysAllowed(intent)) {
+    if (label != null && !isAlwaysAllowed(intent)) {
+      // No screen to ask on (e.g. a session reset without its action channel): never run the
+      // action unapproved.
+      if (channel == null) {
+        return mapOf(
+          "action" to intent,
+          "result" to "refused: the user could not be asked to allow this action. Do not try again; tell the user.",
+        )
+      }
       val ask = AskActionPermissionAction(label = label, parameters = parameters)
       channel.send(ask)
-      when (ask.result.await()) {
+      // An unanswered dialog counts as a refusal.
+      when (withTimeoutOrNull(USER_REPLY_TIMEOUT_MS) { ask.result.await() } ?: PermissionResult.DENY) {
         PermissionResult.DENY ->
           return mapOf(
             "action" to intent,

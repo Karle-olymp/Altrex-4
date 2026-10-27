@@ -28,8 +28,12 @@ import com.squareup.moshi.JsonAdapter
 import com.squareup.moshi.Moshi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val TAG = "AGRunJsTool"
+
+/** [ALTREX] Longest wait for a skill script running in the chat WebView. */
+private const val JS_RESULT_TIMEOUT_MS = 90_000L
 
 fun getSkillSecretKey(skillName: String): String {
   return "skill___${skillName}"
@@ -60,7 +64,7 @@ class RunJsTool(
       Log.d(
         TAG,
         "runJS tool called with:" +
-          "\n- skillName: ${skillName}\n- scriptName: ${scriptName}\n- data: ${data}\n",
+          "\n- skillName: ${skillName}\n- scriptName: ${scriptName}\n- data: ${com.google.ai.edge.gallery.security.SecretRedactor.redact(data)}\n",
       )
 
       val skill = skillsProvider.loadSkill(skillName)
@@ -94,14 +98,21 @@ class RunJsTool(
                   "The JS script needs a secret (API key / token) to proceed:"
                 },
             )
-          executionContext?.actionChannel?.send(action)
-          secret = action.result.await()
+          // [ALTREX] No screen to ask on (no action channel): fail instead of waiting forever.
+          val channel =
+            executionContext?.actionChannel
+              ?: return@runBlocking mapOf(
+                "error" to "This skill needs a secret and it cannot be asked here.",
+                "status" to "failed",
+              )
+          channel.send(action)
+          secret = withTimeoutOrNull(USER_REPLY_TIMEOUT_MS) { action.result.await() } ?: ""
           if (secret.isNotEmpty()) {
             dataStoreRepository.saveSecret(
               key = getSkillSecretKey(skillName = skillName),
               value = secret,
             )
-            Log.d(TAG, "Got Secret from ask info dialog: ${secret.substring(0, 3)}")
+            Log.d(TAG, "Got the secret from the ask info dialog.")
           } else {
             Log.d(TAG, "The ask info dialog got cancelled. No secret.")
           }
@@ -133,8 +144,21 @@ class RunJsTool(
 
       // Actually run it and wait for the result.
       val action = CallJsToolAction(url = url, data = data.trim().ifEmpty { "{}" }, secret = secret)
-      executionContext?.actionChannel?.send(action)
-      val result = action.result.await()
+      // [ALTREX] The script runs in the chat screen's WebView: without a channel to it, or if it
+      // never answers, report a failure instead of blocking the agent loop forever.
+      val channel =
+        executionContext?.actionChannel
+          ?: return@runBlocking mapOf(
+            "error" to "Skills cannot run here (no chat screen).",
+            "status" to "failed",
+          )
+      channel.send(action)
+      val result =
+        withTimeoutOrNull(JS_RESULT_TIMEOUT_MS) { action.result.await() }
+          ?: return@runBlocking mapOf(
+            "error" to "The skill script did not answer in time.",
+            "status" to "failed",
+          )
 
       // Try to parse result to CallJsSkillResult.
       val moshi: Moshi = Moshi.Builder().build()

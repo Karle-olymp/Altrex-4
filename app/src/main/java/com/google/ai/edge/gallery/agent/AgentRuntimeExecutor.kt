@@ -116,6 +116,15 @@ interface AgentRuntimeExecutor {
   suspend fun resetSession(config: AgentRuntimeConfig)
 
   /**
+   * [ALTREX] Restarts the conversation (after a Stop, or once another screen used the model) with
+   * the history of [fallback], keeping the rest of the configuration the session was last set up
+   * with: tool action channel, agent system prompt, constrained decoding. A reset built from scratch
+   * dropped the action channel, so phone actions ran without asking and skills waited forever.
+   * [fallback] is used as is when no session was set up for this model.
+   */
+  suspend fun restartConversation(fallback: AgentRuntimeConfig) = resetSession(fallback)
+
+  /**
    * Releases resources associated with the initialized model engine and execution context.
    *
    * Should be invoked when the executor is being destroyed or reset to ensure model weights, native
