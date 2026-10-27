@@ -377,6 +377,14 @@ constructor(
   }
 
   fun deleteModel(model: Model, removeImportedFromModelList: Boolean = true) {
+    // [ALTREX] A loaded model is unloaded too: deleting only its file left it in RAM, still shown as
+    // loaded.
+    if (model.instance != null) {
+      uiState.value.tasks.firstOrNull { model in it.models }?.let { task ->
+        cleanupModel(context = context, task = task, model = model)
+      }
+    }
+
     // If the currently downloaded model is an updatable version, reset the model to its latest
     // version and mark it as not updatable upon deletion.
     if (model.updatable) {
@@ -713,6 +721,21 @@ constructor(
     val importsDir = File(context.getExternalFilesDir(null), IMPORTS_DIR)
     if (!importsDir.exists()) {
       importsDir.mkdirs()
+    }
+
+    // [ALTREX] Re-importing a model that is loaded: unload the old instance first. It was only removed
+    // from the lists below, so the "one GGUF in memory" guard no longer saw it and it stayed in RAM
+    // next to the next model loaded.
+    val previous =
+      uiState.value.tasks
+        .flatMap { it.models }
+        .firstOrNull { it.imported && it.name == info.fileName && it.instance != null }
+    if (previous != null) {
+      val previousTask = uiState.value.tasks.firstOrNull { previous in it.models }
+      if (previousTask != null) {
+        Log.d(TAG, "Unloading '${previous.name}' before re-importing it.")
+        cleanupModel(context = context, task = previousTask, model = previous)
+      }
     }
 
     // Create model.
