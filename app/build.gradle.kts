@@ -90,6 +90,13 @@ externalNativeBuild {
     compose = true
     buildConfig = true
   }
+  // [ALTREX] Native libraries extracted on install: PRoot (libproot.so) and its loader are executed
+  // as programs by the Linux terminal, which needs real files in the native library folder.
+  packaging {
+    jniLibs {
+      useLegacyPackaging = true
+    }
+  }
 }
 
 dependencies {

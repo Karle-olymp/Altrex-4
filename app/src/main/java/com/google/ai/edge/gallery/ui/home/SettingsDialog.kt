@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
@@ -344,6 +345,21 @@ fun SettingsDialog(
 
         // [ALTREX] Local memory: a folder the model draws on.
         SettingsSection("Mémoire locale") { MemorySettings() }
+
+        // [ALTREX] Linux terminal, first step (test screen).
+        var showLinux by remember { mutableStateOf(false) }
+        SettingsSection("Linux") {
+          SettingsRow(
+            icon = Icons.Outlined.Terminal,
+            title = "Linux (test)",
+            subtitle = "Alpine Linux dans Altrex : installer, lancer une commande",
+            showChevron = true,
+            onClick = { showLinux = true },
+          )
+        }
+        if (showLinux) {
+          com.google.ai.edge.gallery.terminal.LinuxTestDialog(onDismiss = { showLinux = false })
+        }
 
         // Privacy.
         SettingsSection("Confidentialité") {
