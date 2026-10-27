@@ -231,7 +231,17 @@ fun ModelImportDialog(
       val text =
         try {
           context.contentResolver.openInputStream(picked)?.use { stream ->
-            stream.readBytes().takeIf { it.size <= 512 * 1024 }?.toString(Charsets.UTF_8)
+            // [ALTREX] Never more than the limit + 1 byte: picking the multi-GB GGUF here by mistake
+            // read it whole on the main thread (out of memory).
+            val limit = 512 * 1024
+            val buffer = java.io.ByteArrayOutputStream()
+            val chunk = ByteArray(16 * 1024)
+            while (buffer.size() <= limit) {
+              val n = stream.read(chunk)
+              if (n < 0) break
+              buffer.write(chunk, 0, n)
+            }
+            buffer.toByteArray().takeIf { it.size <= limit }?.toString(Charsets.UTF_8)
           }
         } catch (e: Exception) {
           Log.e(TAG, "Cannot read manifest $picked", e)
