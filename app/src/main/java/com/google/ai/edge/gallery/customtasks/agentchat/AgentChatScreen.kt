@@ -540,53 +540,8 @@ fun AgentChatScreen(
       val modelManagerUiState by modelManagerViewModel.uiState.collectAsState()
       val modelInitializationStatus = modelManagerUiState.modelInitializationStatus[model.name]
       Box(modifier = Modifier.fillMaxSize()) {
-        AnimatedVisibility(
-          !WindowInsets.isImeVisible,
-          enter = fadeIn(animationSpec = tween(200)),
-          exit = fadeOut(animationSpec = tween(200)),
-        ) {
-          Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(
-              modifier =
-                Modifier.align(Alignment.Center)
-                  .padding(horizontal = 48.dp)
-                  .padding(bottom = 48.dp),
-              horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-              Text(
-                stringResource(R.string.introducing),
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center,
-              )
-              Text(
-                stringResource(R.string.agent_skills),
-                style =
-                  MaterialTheme.typography.headlineLarge.copy(
-                    fontWeight = FontWeight.Medium,
-                    brush =
-                      Brush.linearGradient(colors = listOf(Color(0xFF85B1F8), Color(0xFF3174F1))),
-                  ),
-                modifier = Modifier.padding(top = 12.dp, bottom = 16.dp),
-                textAlign = TextAlign.Center,
-              )
-              Text(
-                AnnotatedString.fromHtml(
-                  stringResource(
-                    R.string.agent_skills_intro,
-                    AgentSkillsURLs.REPOSITORY,
-                    AgentSkillsURLs.DISCUSSIONS,
-                    stringResource(R.string.agent_skills),
-                  )
-                ),
-                style =
-                  MaterialTheme.typography.headlineSmall.copy(fontSize = 16.sp, lineHeight = 22.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-              )
-            }
-          }
-        }
-
+        // [ALTREX] No "Discover Agent Skills" text since chat and agent are one screen: only the
+        // example chips.
         Row(
           modifier =
             Modifier.align(Alignment.BottomCenter)
