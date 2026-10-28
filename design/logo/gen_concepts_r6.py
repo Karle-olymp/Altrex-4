@@ -112,7 +112,46 @@ def n5(argora):
     return g
 
 
-for k, fn in [("n1", n1), ("n2", n2), ("n3", n3), ("n4", n4), ("n5", n5)]:
+# N1 retravaillé — variantes de l'étoile d'accolades.
+def brace2(W, h, p, dist, inward=False):
+    """Accolade au-dessus du centre ; pointe vers l'extérieur ou (inward) vers le centre."""
+    y = C - dist
+    sgn = 1 if inward else -1          # sens de la pointe (SVG : y vers le bas)
+    d = (f"M{C - W} {y - sgn * h} Q{C - W} {y} {C - W + h} {y} L{C - h} {y} Q{C} {y} {C} {y + sgn * p} "
+         f"Q{C} {y} {C + h} {y} L{C + W - h} {y} Q{C + W} {y} {C + W} {y - sgn * h}")
+    return (f'<path d="{d}" fill="none" stroke="{INK}" stroke-width="{SW1}" '
+            f'stroke-linecap="round" stroke-linejoin="round"/>')
+
+
+def brace_star(argora, W, h, p, dist, inward=False, count=4, core_r=15):
+    b = brace2(W, h, p, dist, inward)
+    step = 360 // count
+    start = 90 if count == 2 else 0
+    body = "".join(f'<g transform="rotate({start + step * k} {C} {C})">{b}</g>' for k in range(count))
+    core = (f'<rect x="{C - core_r + 2}" y="{C - core_r + 2}" width="{2 * core_r - 4}" height="{2 * core_r - 4}"/>'
+            if argora else f'<circle cx="{C}" cy="{C}" r="{core_r}"/>')
+    g = f'<g fill="{INK}">{body}{core}</g>'
+    return turn45(g) if argora else g
+
+
+def n1a(argora):   # v1 puce : accolades qui se rejoignent en cadre
+    return brace_star(argora, 66, 18, 26, 50)
+
+
+def n1b(argora):   # v2 étoile : pointes vers l'extérieur
+    return brace_star(argora, 40, 16, 34, 44)
+
+
+def n1c(argora):   # v3 fleur : pointes vers le noyau, extrémités ouvertes
+    return brace_star(argora, 56, 22, 22, 78, inward=True, core_r=17)
+
+
+def n1d(argora):   # v4 duo : { • }
+    return brace_star(argora, 76, 20, 28, 76, inward=False, count=2, core_r=19)
+
+
+for k, fn in [("n1", n1), ("n2", n2), ("n3", n3), ("n4", n4), ("n5", n5),
+              ("n1a", n1a), ("n1b", n1b), ("n1c", n1c), ("n1d", n1d)]:
     alt, arg = fn(False), fn(True)
     open(f"{OUT}/{k}-altrex.svg", "w").write(svg(alt))
     open(f"{OUT}/{k}-argora.svg", "w").write(svg(arg))
