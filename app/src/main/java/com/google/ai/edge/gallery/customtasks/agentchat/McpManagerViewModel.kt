@@ -80,6 +80,9 @@ constructor(
 
   private val httpClient = HttpClient(Android) { install(SSE) }
 
+  /** [ALTREX] Whether [loadMcpServers] has completed once (see [refreshFromStore]). */
+  @Volatile private var loadedOnce = false
+
   /**
    * Loads the persisted MCP servers from the DataStore and initializes their client connections.
    */
@@ -97,6 +100,7 @@ constructor(
           savedServers.map { serverProto -> async { loadOne(serverProto) } }.map { it.await() }
         }
         _uiState.update { it.copy(mcpServers = loadedStates, loadingMcpServer = false) }
+        loadedOnce = true
         mcpServersDataStore.updateData {
           McpServers.newBuilder()
             .addAllMcpServer(
@@ -179,6 +183,7 @@ constructor(
     authType: McpAuth.AuthMethodCase,
     headerName: String,
     headerValue: String,
+    connectorId: String = "",
   ) {
     // Immediately display a loading spinner to the user while connecting, and clear any prior
     // error.
@@ -208,14 +213,24 @@ constructor(
         }
         val currentAuth = currentAuthBuilder.build()
 
+        // [ALTREX] Reconnecting an existing connector keeps its settings (tools, approvals, policy).
+        val previous = mcpServersDataStore.data.first().mcpServerList.find { it.url == url }
         // 1. Connect to the remote MCP server and fetch its list of exported tools.
-        val (client, mcpTools) = initializeClientAndLoadTools(url, mcpAuth = currentAuth)
+        val (client, mcpTools) =
+          initializeClientAndLoadTools(
+            url,
+            savedToolsMap = previous?.toolsList?.associate { it.name to it.enabled },
+            savedAlwaysAllowMap = previous?.toolsList?.associate { it.name to it.alwaysAllow },
+            mcpAuth = currentAuth,
+          )
         val serverVersion = client.serverVersion
         val mcpServerProto =
           McpServer.newBuilder()
             .setUrl(url)
             .addAllTools(mcpTools)
             .setEnabled(true)
+            .setConnectorId(connectorId.ifEmpty { previous?.connectorId.orEmpty() })
+            .apply { previous?.let { setPermissionPolicy(it.permissionPolicy) } }
             .apply {
               serverVersion?.name?.let { setName(it) }
               serverVersion?.version?.let { setVersion(it) }
@@ -271,6 +286,59 @@ constructor(
           },
         )
       }
+    }
+  }
+
+  /** [ALTREX] Which calls of this connector need approval (see [McpPermissionPolicy]). */
+  fun setMcpServerPolicy(url: String, policy: com.google.ai.edge.gallery.proto.McpPermissionPolicy) {
+    val updated =
+      _uiState.value.mcpServers.map { state ->
+        if (state.mcpServer.url == url) {
+          state.copy(mcpServer = state.mcpServer.toBuilder().setPermissionPolicy(policy).build())
+        } else {
+          state
+        }
+      }
+    _uiState.update { it.copy(mcpServers = updated) }
+    persistServers(updated)
+  }
+
+  /**
+   * [ALTREX] Catches up with changes made by another screen (the Connectors screen has its own
+   * instance): reconnects when servers were added or removed, else only copies their settings.
+   */
+  suspend fun refreshFromStore() {
+    // Not loaded yet (the model load does it), or being loaded: nothing to catch up with.
+    if (!loadedOnce || _uiState.value.loadingMcpServer) return
+    val saved = withContext(Dispatchers.IO) { mcpServersDataStore.data.first().mcpServerList }
+    val current = _uiState.value.mcpServers
+    if (saved.map { it.url }.toSet() != current.map { it.mcpServer.url }.toSet()) {
+      loadMcpServers()
+      return
+    }
+    val byUrl = saved.associateBy { it.url }
+    _uiState.update { state ->
+      state.copy(
+        mcpServers =
+          state.mcpServers.map { st ->
+            val s = byUrl[st.mcpServer.url] ?: return@map st
+            val tools = s.toolsList.associateBy { it.name }
+            st.copy(
+              mcpServer =
+                st.mcpServer
+                  .toBuilder()
+                  .setEnabled(if (st.error != null) false else s.enabled)
+                  .setPermissionPolicy(s.permissionPolicy)
+                  .clearTools()
+                  .addAllTools(
+                    st.mcpServer.toolsList.map { t ->
+                      tools[t.name]?.let { t.toBuilder().setEnabled(it.enabled).setAlwaysAllow(it.alwaysAllow).build() } ?: t
+                    }
+                  )
+                  .build()
+            )
+          }
+      )
     }
   }
 
@@ -497,6 +565,10 @@ constructor(
           .setInputSchema(schemaJson)
           .setEnabled(isEnabled)
           .setAlwaysAllow(isAlwaysAllow)
+          // [ALTREX] What the server says the tool does: reads only, or may destroy data.
+          .setReadOnly(tool.annotations?.readOnlyHint == true)
+          .setDestructive(tool.annotations?.destructiveHint == true && tool.annotations?.readOnlyHint != true)
+          .setTitle((tool.title ?: tool.annotations?.title).orEmpty().take(MAX_TOOL_NAME_CHARS))
           .build()
       }
     Log.d(TAG, "Loaded ${mcpTools.size} tools from $url: ${mcpTools.joinToString { it.name }}")

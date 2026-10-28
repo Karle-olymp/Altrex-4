@@ -137,6 +137,7 @@ private const val ROUTE_MODEL_MANAGER = "model_manager"
 private const val ROUTE_NOTIFICATIONS = "notifications"
 private const val ROUTE_LLAMA_CPP_TEST = "llama_cpp_test"
 private const val ROUTE_TERMINAL = "terminal"
+private const val ROUTE_CONNECTORS = "connectors"
 private const val ENTER_ANIMATION_DURATION_MS = 500
 private val ENTER_ANIMATION_EASING = EaseOutExpo
 private const val ENTER_ANIMATION_DELAY_MS = 100
@@ -211,6 +212,9 @@ fun GalleryNavHost(
       ?: com.google.ai.edge.gallery.terminal.TERMINAL_ENTRY_ID.takeIf {
         navBackStackEntry?.destination?.route == ROUTE_TERMINAL
       }
+      ?: com.google.ai.edge.gallery.connectors.CONNECTORS_ENTRY_ID.takeIf {
+        navBackStackEntry?.destination?.route == ROUTE_CONNECTORS
+      }
   val loadedModelName =
     modelManagerUiState.tasks
       .flatMap { it.models }
@@ -283,6 +287,8 @@ fun GalleryNavHost(
           scope.launch { drawerState.close() }
           if (taskId == com.google.ai.edge.gallery.terminal.TERMINAL_ENTRY_ID) {
             navController.navigate(ROUTE_TERMINAL) { launchSingleTop = true }
+          } else if (taskId == com.google.ai.edge.gallery.connectors.CONNECTORS_ENTRY_ID) {
+            navController.navigate(ROUTE_CONNECTORS) { launchSingleTop = true }
           } else {
             modelManagerUiState.tasks.find { it.id == taskId }?.let { navigateToTaskScreen(it) }
           }
@@ -590,6 +596,15 @@ fun GalleryNavHost(
       exitTransition = { slideExit() },
     ) {
       com.google.ai.edge.gallery.terminal.TerminalScreen(navigateUp = { navController.navigateUp() })
+    }
+
+    // [ALTREX] Connectors (remote MCP servers).
+    composable(
+      route = ROUTE_CONNECTORS,
+      enterTransition = { slideEnter() },
+      exitTransition = { slideExit() },
+    ) {
+      com.google.ai.edge.gallery.connectors.ConnectorsScreen(navigateUp = { navController.navigateUp() })
     }
 
     // Notifications page.

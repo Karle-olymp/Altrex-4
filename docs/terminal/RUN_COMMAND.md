@@ -44,7 +44,8 @@ Les clés apparaissent dans cet ordre :
 
 - Alpine 3.24.3 aarch64 via PRoot, gestionnaire de paquets `apk`.
 - Shell `/bin/sh` (busybox ash), lancé avec `sh -lc` depuis `/root`, en root simulé.
-- `apk add python3` installe Python 3.14. Les raccourcis `pkg` (comme dans Termux), `apt` et `apt-get` traduisent vers `apk` (`pkg install x` = `apk add x`).
+- `apk add python3` installe Python 3.14.
+- `altrex-setup` (terminal de l'utilisateur, mais aussi utilisable par le modèle) installe d'un coup bash, git, curl, python/pip, node/npm, gh, nano, vim… ; `--dev` ajoute gcc, make, cmake, go et rust. Les raccourcis `pkg` (comme dans Termux), `apt` et `apt-get` traduisent vers `apk` (`pkg install x` = `apk add x`).
 - Accès réseau identique à celui de l'appli.
 - Délai de 120 s par commande.
 - Pas de pseudo-terminal pour l'outil : les commandes interactives (`vi`, `top`, `python` sans `-c`) ne marchent pas.
@@ -64,3 +65,10 @@ Quand « Skills et outils » est activé, le prompt (`AgentChatTaskModule.kt`) l
 5. `runMcpTool` (seulement si un outil MCP est actif).
 
 L'ancien prompt ne connaissait que les skills et le MCP : les modèles inventaient des noms de skill (« yum ») au lieu d'utiliser le terminal.
+
+Le prompt contient aussi une règle (« fais-le toi-même avec `run_command`, ne dis pas à l'utilisateur de taper la commande, n'invente pas de résultat ») et trois exemples :
+- « install python 3 » → `apk add python3` ;
+- « quelle version de Linux ? » → `uname -a` ;
+- « clone … » → `apk add git && git clone …`.
+
+Le texte exact se trouve dans `AGENT_PROMPT_HEAD` (`AgentChatTaskModule.kt`).

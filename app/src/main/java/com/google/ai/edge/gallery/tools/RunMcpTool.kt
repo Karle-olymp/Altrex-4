@@ -26,6 +26,8 @@ import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.common.convertStringToJsonObject
 import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.mcp.McpServersProvider
+import com.google.ai.edge.gallery.proto.McpPermissionPolicy
+import com.google.ai.edge.gallery.proto.McpTool
 import com.google.ai.edge.gallery.skills.SkillsProvider
 import com.google.ai.edge.litertlm.Tool
 import com.google.ai.edge.litertlm.ToolParam
@@ -51,6 +53,23 @@ class RunMcpTool(
   /** [ALTREX] Whether at least one enabled tool of an enabled server exists (else runMcpTool is not offered). */
   fun hasActiveTools(): Boolean =
     mcpServersProvider.mcpServers.any { s -> s.mcpServer.enabled && s.mcpServer.toolsList.any { it.enabled } }
+
+  companion object {
+    /**
+     * [ALTREX] Whether a call must be approved by the user, given the connector's policy and what
+     * the server says of the tool. "Always allow" on a tool wins; a destructive tool is otherwise
+     * always confirmed; reads run freely under the default policy.
+     */
+    fun needsApproval(policy: McpPermissionPolicy, tool: McpTool?): Boolean =
+      when {
+        tool == null -> true
+        tool.alwaysAllow -> false
+        tool.destructive -> true
+        policy == McpPermissionPolicy.MCP_PERMISSION_ALLOW_ALL -> false
+        policy == McpPermissionPolicy.MCP_PERMISSION_ASK_ALL -> true
+        else -> !tool.readOnly
+      }
+  }
 
   /** Runs MCP tool */
   @Tool(description = "Run a MCP tool")
@@ -81,9 +100,8 @@ class RunMcpTool(
       // Check if the MCP tool requires user permission. If not always allowed,
       // send an action to ask for permission and wait for the result.
       val mcpTool = serverState.mcpServer.toolsList.find { it.name == toolName }
-      val isAlwaysAllow = mcpTool?.alwaysAllow ?: false
 
-      if (!isAlwaysAllow) {
+      if (needsApproval(serverState.mcpServer.permissionPolicy, mcpTool)) {
         val permissionAction = AskMcpToolCallPermissionAction(toolName = toolName, argument = input)
         // [ALTREX] No screen to ask on: refuse instead of waiting forever. An unanswered dialog
         // counts as a refusal too.

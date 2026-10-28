@@ -143,6 +143,11 @@ fun AgentChatScreen(
   val context = LocalContext.current
   val toolsPref by ChatTools.enabled(context).collectAsState()
   val toolsOn = !optionalTools || toolsPref == true
+  // [ALTREX] Back from the Connectors screen (its own view model): pick up what changed there.
+  val mcpRefreshScope = androidx.compose.runtime.rememberCoroutineScope()
+  androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+    mcpRefreshScope.launch { mcpManagerViewModel.refreshFromStore() }
+  }
   agentTools.toolsEnabled = toolsOn
   val scope = rememberCoroutineScope()
   agentTools.context = context
