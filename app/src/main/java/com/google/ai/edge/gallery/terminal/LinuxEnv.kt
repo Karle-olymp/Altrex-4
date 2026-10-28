@@ -142,12 +142,14 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
       )
     }
 
-  /** Starts [argv] inside the environment (stdin/stdout/stderr pipes, stderr merged). */
-  fun start(argv: List<String>): Process {
+  /** How to launch a program inside the environment: PRoot, its arguments, the environment. */
+  data class Launch(val executable: String, val args: List<String>, val env: Map<String, String>)
+
+  /** [argv] run by PRoot with the Alpine files as its root, from /root. */
+  fun launch(argv: List<String>): Launch {
     val tmp = File(context.cacheDir, "proot-tmp-$name").apply { mkdirs() }
-    val cmd =
+    val args =
       listOf(
-        proot.absolutePath,
         "--kill-on-exit",
         "--link2symlink",
         "-0",
@@ -157,17 +159,27 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
         "-b", "/sys",
         "-w", "/root",
       ) + argv
-    val pb = ProcessBuilder(cmd).redirectErrorStream(true).directory(rootfs)
+    val env =
+      linkedMapOf(
+        "PROOT_LOADER" to loader.absolutePath,
+        "PROOT_TMP_DIR" to tmp.absolutePath,
+        "HOME" to "/root",
+        "USER" to "root",
+        "PATH" to "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "TERM" to "xterm-256color",
+        "LANG" to "C.UTF-8",
+        "TMPDIR" to "/tmp",
+      )
+    return Launch(proot.absolutePath, args, env)
+  }
+
+  /** Starts [argv] inside the environment (stdin/stdout/stderr pipes, stderr merged). */
+  fun start(argv: List<String>): Process {
+    val l = launch(argv)
+    val pb = ProcessBuilder(listOf(l.executable) + l.args).redirectErrorStream(true).directory(rootfs)
     pb.environment().apply {
       clear()
-      put("PROOT_LOADER", loader.absolutePath)
-      put("PROOT_TMP_DIR", tmp.absolutePath)
-      put("HOME", "/root")
-      put("USER", "root")
-      put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
-      put("TERM", "xterm-256color")
-      put("LANG", "C.UTF-8")
-      put("TMPDIR", "/tmp")
+      putAll(l.env)
     }
     Log.d(TAG, "[$name] start ${argv.firstOrNull()}")
     return pb.start()

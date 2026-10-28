@@ -6,6 +6,7 @@ Le terminal Linux d'Altrex lance un Alpine Linux sans root grâce à **PRoot**.
 |---|---|---|---|
 | PRoot (`libproot.so`, `libproot-loader.so`) | GPL-2.0 | https://github.com/termux/proot (commit `b27d81a68d765f3462e807f4a14e01a03f8e89ea`) + `tools/proot/proot-android.patch` | Programme séparé, exécuté par l'appli |
 | talloc 2.4.2 | LGPL-3.0 | https://www.samba.org/ftp/talloc/talloc-2.4.2.tar.gz | Lié statiquement dans PRoot |
+| Termux `terminal-emulator` / `terminal-view` v0.118.3 (dont `libtermux.so`, pseudo-terminal) | Apache-2.0 (exception à la GPLv3 de termux-app, voir son LICENSE.md) | https://github.com/termux/termux-app (via JitPack) | Bibliothèques de l'écran Terminal |
 | Alpine Linux minirootfs 3.24.3 (aarch64) | Licences de chaque paquet (MIT, GPL…) | https://alpinelinux.org | Téléchargé au premier usage, empreinte SHA-256 vérifiée |
 
 Altrex reste sous Apache-2.0. PRoot n'est pas lié au code d'Altrex : c'est un programme distinct, placé dans l'APK et lancé comme un processus. Son code source est disponible à l'adresse ci-dessus. Pour reconstruire exactement les binaires livrés, il suffit d'avoir le NDK Android :

@@ -100,6 +100,9 @@ externalNativeBuild {
 }
 
 dependencies {
+  // [ALTREX] Terminal screen: Termux's terminal emulator and view (Apache-2.0 exception of
+  // termux-app, see its LICENSE.md), PTY included (libtermux.so).
+  implementation("com.github.termux.termux-app:terminal-view:v0.118.3")
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.documentfile)
   implementation(libs.androidx.lifecycle.runtime.ktx)

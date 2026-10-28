@@ -41,6 +41,12 @@ dependencyResolutionManagement {
     //        mavenLocal()
     google()
     mavenCentral()
+    // [ALTREX] Termux terminal-emulator / terminal-view (Apache-2.0), built by JitPack from the
+    // termux-app tag pinned in app/build.gradle.kts. Only this group is taken from JitPack.
+    maven {
+      url = uri("https://jitpack.io")
+      content { includeGroup("com.github.termux.termux-app") }
+    }
   }
 }
 

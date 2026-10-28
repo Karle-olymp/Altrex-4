@@ -36,6 +36,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.ListAlt
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Mic
@@ -87,6 +88,14 @@ private val SPACES =
       "Chat, éditeur, aperçu et scan SecurCode",
       Icons.Outlined.Code,
       3,
+    ),
+    // [ALTREX] Alpine Linux in the app (PRoot): the user's terminal.
+    DrawerEntry(
+      com.google.ai.edge.gallery.terminal.TERMINAL_ENTRY_ID,
+      "Terminal",
+      "Linux (Alpine) : paquets, Python, git…",
+      Icons.Outlined.Terminal,
+      1,
     ),
   )
 
