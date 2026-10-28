@@ -109,7 +109,7 @@ class RunMcpTool(
         if (channel == null) {
           logMcpExecution(success = false, errorType = "no_permission_channel")
           return@runBlocking mapOf(
-            "error" to "The user cannot be asked for permission here, so the tool was not run.",
+            "result" to "refused: the user could not be asked to allow this action. Do not try again; tell the user.",
             "status" to "failed",
           )
         }
@@ -128,7 +128,10 @@ class RunMcpTool(
               )
             )
           logMcpExecution(success = false, errorType = "permission_denied")
-          return@runBlocking mapOf("error" to "Permission denied by user", "status" to "failed")
+          return@runBlocking mapOf(
+            "result" to "refused: the user did not allow this action. Do not try again; tell the user.",
+            "status" to "failed",
+          )
         }
       }
 
