@@ -67,13 +67,34 @@ object RemoteSpace {
   fun baseUrl(spaceId: String): String =
     "https://" + spaceId.lowercase().replace('/', '-').replace('_', '-').replace('.', '-') + ".hf.space"
 
-  // ---- Token (needed for a private Space), encrypted with the Keystore like the other secrets.
+  // ---- Token (needed for a private Space): the one of Réglages → Modèles → Jeton Hugging Face,
+  // the same as for model downloads. A second Hugging Face entry among the API keys was confusing.
 
+  @dagger.hilt.EntryPoint
+  @dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+  interface DataStoreEntryPoint {
+    fun dataStoreRepository(): com.google.ai.edge.gallery.data.DataStoreRepository
+  }
+
+  /** Token saved by the first version in its own place, still used when the main one is empty. */
   private const val PREFS = "altrex_remote_space"
   private const val KEY_TOKEN = "hf_token"
 
-  fun getToken(context: Context): String? =
-    try {
+  fun getToken(context: Context): String? {
+    val main =
+      try {
+        dagger.hilt.android.EntryPointAccessors.fromApplication(
+            context.applicationContext,
+            DataStoreEntryPoint::class.java,
+          )
+          .dataStoreRepository()
+          .readAccessTokenData()
+          ?.accessToken
+      } catch (e: Exception) {
+        null
+      }
+    if (!main.isNullOrBlank()) return main.trim()
+    return try {
       context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_TOKEN, null)
         ?.let { SecretCipher.decrypt(it) }
         ?.trim()
@@ -81,15 +102,7 @@ object RemoteSpace {
     } catch (e: Exception) {
       null
     }
-
-  fun saveToken(context: Context, token: String): Boolean =
-    try {
-      val edit = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-      if (token.isBlank()) edit.remove(KEY_TOKEN) else edit.putString(KEY_TOKEN, SecretCipher.encrypt(token.trim()))
-      edit.commit()
-    } catch (e: Exception) {
-      false
-    }
+  }
 
   // ---- Gradio API (POST /gradio_api/call/<api>, then the result as server-sent events).
 
@@ -131,13 +144,19 @@ object RemoteSpace {
           }
           code == 401 || code == 403 ->
             throw SpaceException(
-              "Accès refusé au Space ($code). S'il est privé, ajoute ton jeton Hugging Face dans " +
-                "Réglages → Clés d'API."
+              "Accès refusé au Space ($code). S'il est privé, renseigne ton jeton Hugging Face dans " +
+                "Réglages → Modèles → Jeton Hugging Face."
+            )
+          // A private Space answers 404 to every request without a valid token: it hides itself.
+          code == 404 && token.isNullOrBlank() ->
+            throw SpaceException(
+              "Space introuvable. S'il est privé, Hugging Face le cache sans jeton : ajoute un jeton " +
+                "« Read » dans Réglages → Modèles → Jeton Hugging Face."
             )
           code == 404 ->
             throw SpaceException(
-              "Point d'API « $API_NAME » introuvable sur le Space. Il doit exposer l'endpoint " +
-                "$API_NAME (voir la notice d'Altrex)."
+              "Space ou API « $API_NAME » introuvable. Vérifie que ton jeton Hugging Face donne accès " +
+                "à ce Space (jeton « Read » du même compte) et que le Space expose l'API $API_NAME."
             )
           (code == 503 || code == 502 || code == 504) && System.currentTimeMillis() < deadline -> {
             Log.d(TAG, "Space starting ($code), retrying in $waitMs ms")

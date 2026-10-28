@@ -136,6 +136,7 @@ private const val ROUTE_BENCHMARK = "benchmark"
 private const val ROUTE_MODEL_MANAGER = "model_manager"
 private const val ROUTE_NOTIFICATIONS = "notifications"
 private const val ROUTE_LLAMA_CPP_TEST = "llama_cpp_test"
+private const val ROUTE_TERMINAL = "terminal"
 private const val ENTER_ANIMATION_DURATION_MS = 500
 private val ENTER_ANIMATION_EASING = EaseOutExpo
 private const val ENTER_ANIMATION_DELAY_MS = 100
@@ -205,7 +206,11 @@ fun GalleryNavHost(
 
   // For the side menu: which space is open, and which model is currently loaded in memory.
   val navBackStackEntry by navController.currentBackStackEntryAsState()
-  val currentTaskId = navBackStackEntry?.arguments?.getString("taskId")
+  val currentTaskId =
+    navBackStackEntry?.arguments?.getString("taskId")
+      ?: com.google.ai.edge.gallery.terminal.TERMINAL_ENTRY_ID.takeIf {
+        navBackStackEntry?.destination?.route == ROUTE_TERMINAL
+      }
   val loadedModelName =
     modelManagerUiState.tasks
       .flatMap { it.models }
@@ -276,7 +281,11 @@ fun GalleryNavHost(
         loadedModelName = loadedModelName,
         onOpenTask = { taskId ->
           scope.launch { drawerState.close() }
-          modelManagerUiState.tasks.find { it.id == taskId }?.let { navigateToTaskScreen(it) }
+          if (taskId == com.google.ai.edge.gallery.terminal.TERMINAL_ENTRY_ID) {
+            navController.navigate(ROUTE_TERMINAL) { launchSingleTop = true }
+          } else {
+            modelManagerUiState.tasks.find { it.id == taskId }?.let { navigateToTaskScreen(it) }
+          }
         },
         onOpenModels = {
           scope.launch { drawerState.close() }
@@ -572,6 +581,15 @@ fun GalleryNavHost(
           navController.navigate("$ROUTE_BENCHMARK/${model.name}")
         },
       )
+    }
+
+    // [ALTREX] Linux terminal (Alpine through PRoot).
+    composable(
+      route = ROUTE_TERMINAL,
+      enterTransition = { slideEnter() },
+      exitTransition = { slideExit() },
+    ) {
+      com.google.ai.edge.gallery.terminal.TerminalScreen(navigateUp = { navController.navigateUp() })
     }
 
     // Notifications page.
