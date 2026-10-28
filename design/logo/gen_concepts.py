@@ -3,8 +3,6 @@ import math
 import os
 import sys
 
-OUT = sys.argv[1]
-os.makedirs(OUT, exist_ok=True)
 SLOPE = 0.5  # pente 1:2 (26,57° de la verticale)
 SIN = math.sin(math.atan(SLOPE))
 T30 = SLOPE
@@ -88,9 +86,12 @@ def lockup(symbol_body, text):
     return svg(f'<g transform="translate(0 6)">{symbol_body}</g>{wm}', w=round(total))
 
 
-for key, alt, arg in [("a", A_alt, A_arg), ("b", B_alt, B_arg), ("c", C_alt, C_arg)]:
-    open(f"{OUT}/{key}-altrex.svg", "w").write(svg(alt))
-    open(f"{OUT}/{key}-argora.svg", "w").write(svg(arg))
-    open(f"{OUT}/{key}-altrex-lockup.svg", "w").write(lockup(alt, "ALTREX"))
-    open(f"{OUT}/{key}-argora-lockup.svg", "w").write(lockup(arg, "ARGORA"))
-print("ok", sorted(os.listdir(OUT)))
+if __name__ == "__main__":
+    OUT = sys.argv[1]
+    os.makedirs(OUT, exist_ok=True)
+    for key, alt, arg in [("a", A_alt, A_arg), ("b", B_alt, B_arg), ("c", C_alt, C_arg)]:
+        open(f"{OUT}/{key}-altrex.svg", "w").write(svg(alt))
+        open(f"{OUT}/{key}-argora.svg", "w").write(svg(arg))
+        open(f"{OUT}/{key}-altrex-lockup.svg", "w").write(lockup(alt, "ALTREX"))
+        open(f"{OUT}/{key}-argora-lockup.svg", "w").write(lockup(arg, "ARGORA"))
+    print("ok", sorted(os.listdir(OUT)))
