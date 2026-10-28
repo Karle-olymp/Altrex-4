@@ -230,7 +230,20 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
 internal object Tar {
   private const val BLOCK = 512
 
-  fun extract(input: InputStream, target: File) {
+  /** Platform calls, replaced in unit tests (android.system.Os does not exist on the JVM). */
+  interface Fs {
+    fun symlink(target: String, path: String)
+
+    fun chmod(path: String, mode: Int)
+  }
+
+  private object AndroidFs : Fs {
+    override fun symlink(target: String, path: String) = Os.symlink(target, path)
+
+    override fun chmod(path: String, mode: Int) = Os.chmod(path, mode)
+  }
+
+  fun extract(input: InputStream, target: File, fs: Fs = AndroidFs) {
     val root = target.canonicalFile
     val header = ByteArray(BLOCK)
     var paxPath: String? = null
@@ -277,23 +290,23 @@ internal object Tar {
       when (type) {
         '5' -> {
           out.mkdirs()
-          chmod(out, mode)
+          chmod(fs, out, mode)
         }
         '2' -> {
           out.parentFile?.mkdirs()
           out.delete()
-          Os.symlink(link, out.path)
+          fs.symlink(link, out.path)
         }
         '1' -> {
           out.parentFile?.mkdirs()
           safeFile(root, link).copyTo(out, overwrite = true)
-          chmod(out, mode)
+          chmod(fs, out, mode)
         }
         '0', '\u0000', '7' -> {
           out.parentFile?.mkdirs()
           out.outputStream().use { o -> copy(input, o, size) }
           skip(input, padded(size) - size)
-          chmod(out, mode)
+          chmod(fs, out, mode)
           continue
         }
         else -> Unit
@@ -302,16 +315,26 @@ internal object Tar {
     }
   }
 
-  private fun safeFile(root: File, name: String): File {
-    val clean = name.removePrefix("./").trimEnd('/')
+  /**
+   * The file [name] stands for inside [root]. "./" (the archive's own root, first entry of the
+   * Alpine archive) is [root] itself; a path that would land outside [root] is refused.
+   */
+  internal fun safeFile(root: File, name: String): File {
+    var clean = name.trimEnd('/')
+    while (clean.startsWith("./")) clean = clean.removePrefix("./")
+    if (clean.isEmpty() || clean == ".") return root
+    if (clean.startsWith("/")) throw IOException("Chemin absolu dans l'archive : $name")
     val f = File(root, clean)
     val parent = (f.parentFile ?: root).canonicalFile
-    if (!parent.path.startsWith(root.path)) throw IOException("Chemin hors de l'archive : $name")
+    if (parent != root && !parent.path.startsWith(root.path + File.separator)) {
+      throw IOException("Chemin hors de l'archive : $name")
+    }
+    if (f.name == "..") throw IOException("Chemin hors de l'archive : $name")
     return File(parent, f.name)
   }
 
-  private fun chmod(f: File, mode: Int) {
-    runCatching { Os.chmod(f.path, mode and 0x1ff) }
+  private fun chmod(fs: Fs, f: File, mode: Int) {
+    runCatching { fs.chmod(f.path, mode and 0x1ff) }
   }
 
   internal fun parsePax(text: String): Map<String, String> {
