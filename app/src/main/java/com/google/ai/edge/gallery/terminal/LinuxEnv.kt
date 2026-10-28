@@ -44,6 +44,52 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
     /** Output kept from one command (the rest is cut). */
     const val MAX_OUTPUT_CHARS = 200_000
 
+    /** `pkg` as in Termux, run by `apk` (Alpine's package manager). */
+    internal val PKG_SCRIPT =
+      """
+      #!/bin/sh
+      # Altrex : la commande pkg de Termux, traduite pour apk (le gestionnaire de paquets d'Alpine).
+      cmd="${'$'}1"
+      [ ${'$'}# -gt 0 ] && shift
+      case "${'$'}cmd" in
+        install|in|add) exec apk add "${'$'}@" ;;
+        uninstall|remove|rm|del|purge) exec apk del "${'$'}@" ;;
+        update|up) exec apk update ;;
+        upgrade|ug|full-upgrade) apk update && exec apk upgrade "${'$'}@" ;;
+        search|se) exec apk search "${'$'}@" ;;
+        list-installed|list|li) exec apk list --installed "${'$'}@" ;;
+        list-all|la) exec apk list "${'$'}@" ;;
+        show|sh|info) exec apk info -a "${'$'}@" ;;
+        files) exec apk info -L "${'$'}@" ;;
+        ""|help|-h|--help)
+          echo "pkg (Altrex) : raccourci vers apk, le gestionnaire de paquets d'Alpine."
+          echo "  pkg install <paquet>    = apk add <paquet>"
+          echo "  pkg uninstall <paquet>  = apk del <paquet>"
+          echo "  pkg update / upgrade    = apk update / apk upgrade"
+          echo "  pkg search <mot>        = apk search <mot>"
+          echo "  pkg list-installed      = apk list --installed"
+          echo "  pkg show <paquet>       = apk info -a <paquet>"
+          [ -z "${'$'}cmd" ] && exit 1 || exit 0 ;;
+        *) echo "pkg : commande inconnue « ${'$'}cmd ». Tape pkg help." >&2; exit 1 ;;
+      esac
+      """.trimIndent() + "\n"
+
+    /** `apt` / `apt-get` habits, same translation. */
+    internal val APT_SCRIPT =
+      """
+      #!/bin/sh
+      # Altrex : apt n'existe pas sous Alpine, on passe par pkg (donc apk).
+      exec pkg "${'$'}@"
+      """.trimIndent() + "\n"
+
+    /** Shown once per interactive shell of the user's terminal (the model's commands are not). */
+    internal val PROFILE_HINT =
+      """
+      case ${'$'}- in *i*)
+        echo "Alpine Linux (Altrex). Paquets : pkg install <nom> ou apk add <nom>. Aide : pkg help"
+      ;; esac
+      """.trimIndent() + "\n"
+
     fun of(context: Context, name: String): LinuxEnv = LinuxEnv(context.applicationContext, name)
   }
 
@@ -87,6 +133,7 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
         File(tmp, "etc/hosts").writeText("127.0.0.1 localhost\n::1 localhost\n")
         File(tmp, "root").mkdirs()
         File(tmp, "tmp").mkdirs()
+        writeHelpers(tmp)
         rootfs.deleteRecursively()
         if (!tmp.renameTo(rootfs)) throw IOException("Installation impossible (renommage).")
         baseDir.listFiles { f -> f.name.startsWith(".installed-") }?.forEach { it.delete() }
@@ -94,6 +141,21 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
         progress("Prêt.")
       }
     }
+
+  /**
+   * Termux habits in Alpine: `pkg` (and `apt`) translated to `apk`, and a one-line hint when the
+   * user's terminal opens. Rewritten when missing or outdated, so older installs get them too.
+   */
+  private fun writeHelpers(root: File) {
+    val bin = File(root, "usr/local/bin").apply { mkdirs() }
+    for ((file, text) in listOf("pkg" to PKG_SCRIPT, "apt" to APT_SCRIPT, "apt-get" to APT_SCRIPT).map { (n, t) -> File(bin, n) to t }) {
+      if (!file.exists() || file.readText() != text) file.writeText(text)
+      file.setExecutable(true, false)
+    }
+    val profile = File(root, "etc/profile.d").apply { mkdirs() }
+    val hint = File(profile, "altrex.sh")
+    if (!hint.exists() || hint.readText() != PROFILE_HINT) hint.writeText(PROFILE_HINT)
+  }
 
   /** Removes the environment (everything installed in it). */
   suspend fun uninstall() = withContext(Dispatchers.IO) { baseDir.deleteRecursively() }
@@ -147,6 +209,7 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
 
   /** [argv] run by PRoot with the Alpine files as its root, from /root. */
   fun launch(argv: List<String>): Launch {
+    if (isInstalled) runCatching { writeHelpers(rootfs) }
     val tmp = File(context.cacheDir, "proot-tmp-$name").apply { mkdirs() }
     val args =
       listOf(

@@ -108,7 +108,10 @@ object RemoteSpace {
 
   class SpaceException(message: String) : IOException(message)
 
-  /** Calls [API_NAME] and returns the answer. Blocking: call it on a background thread. */
+  /**
+   * Calls [API_NAME] and returns the answer. Blocking: call it on a background thread. When the
+   * Space streams (its function yields the text so far), [onText] gets that text as it grows.
+   */
   fun generate(
     spaceId: String,
     token: String?,
@@ -116,11 +119,12 @@ object RemoteSpace {
     thinking: Boolean,
     maxTokens: Int,
     isCancelled: () -> Boolean,
+    onText: (String) -> Unit = {},
   ): String {
     val base = baseUrl(spaceId)
     val body = JSONObject().put("data", JSONArray().put(messagesJson).put(thinking).put(maxTokens))
     val eventId = postWithRetry("$base/gradio_api/call/$API_NAME", token, body.toString(), isCancelled)
-    return readResult("$base/gradio_api/call/$API_NAME/$eventId", token, isCancelled)
+    return readResult("$base/gradio_api/call/$API_NAME/$eventId", token, isCancelled, onText)
   }
 
   /** A sleeping Space answers 503 while it starts: retry for up to about 3 minutes. */
@@ -171,13 +175,19 @@ object RemoteSpace {
     }
   }
 
-  private fun readResult(url: String, token: String?, isCancelled: () -> Boolean): String {
+  private fun readResult(
+    url: String,
+    token: String?,
+    isCancelled: () -> Boolean,
+    onText: (String) -> Unit,
+  ): String {
     val conn = open(url, token, readTimeoutMs = 330_000)
     try {
       val code = conn.responseCode
       if (code != 200) throw SpaceException("Le Space a répondu $code au résultat.")
       conn.inputStream.bufferedReader().use { reader ->
         var event = ""
+        var text = ""
         while (true) {
           if (isCancelled()) throw SpaceException("Annulé.")
           val line = reader.readLine() ?: break
@@ -186,6 +196,13 @@ object RemoteSpace {
             line.startsWith("data:") -> {
               val data = line.removePrefix("data:").trim()
               when (event) {
+                "generating" ->
+                  try {
+                    text = parseGenerating(data, text)
+                    onText(text)
+                  } catch (e: Exception) {
+                    Log.d(TAG, "Unreadable partial output", e)
+                  }
                 "complete" -> return parseOutput(data)
                 "error" ->
                   throw SpaceException(
@@ -207,6 +224,28 @@ object RemoteSpace {
     val arr = JSONArray(data)
     if (arr.length() == 0 || arr.isNull(0)) throw SpaceException("Le Space n'a renvoyé aucun texte.")
     return arr.getString(0)
+  }
+
+  /**
+   * A partial output of a streaming function: the whole text so far (["text"]), or, depending on
+   * the Gradio version, a diff of it ([[["append", [], "more"]]]) applied to [current].
+   */
+  internal fun parseGenerating(data: String, current: String): String {
+    val first = JSONArray(data).opt(0)
+    if (first is String) return first
+    if (first !is JSONArray) return current
+    var text = current
+    for (i in 0 until first.length()) {
+      val op = first.optJSONArray(i) ?: continue
+      val path = op.optJSONArray(1)
+      if (path != null && path.length() > 0) continue
+      val value = op.opt(2) as? String ?: continue
+      when (op.optString(0)) {
+        "replace" -> text = value
+        "append" -> text += value
+      }
+    }
+    return text
   }
 
   private fun open(url: String, token: String?, readTimeoutMs: Int): HttpURLConnection {
@@ -310,6 +349,13 @@ object RemoteModelHelper : LlmModelHelper {
     val token = RemoteSpace.getToken(appContext) ?: instance.token
     val myGen = stopGen.get()
     scope.launch {
+      // Text already shown: a streaming Space sends the whole text so far, the chat wants pieces.
+      var shown = ""
+      fun show(text: String) {
+        if (stopGen.get() != myGen || !text.startsWith(shown) || text.length == shown.length) return
+        resultListener(text.substring(shown.length), false, null)
+        shown = text
+      }
       try {
         val answer =
           RemoteSpace.generate(
@@ -319,12 +365,13 @@ object RemoteModelHelper : LlmModelHelper {
             thinking = thinking,
             maxTokens = maxTokens,
             isCancelled = { stopGen.get() != myGen },
+            onText = ::show,
           )
         if (stopGen.get() != myGen) {
           cleanUpListener()
           return@launch
         }
-        resultListener(answer, false, null)
+        if (shown.isEmpty()) resultListener(answer, false, null) else show(answer)
         resultListener("", true, null)
       } catch (e: Exception) {
         if (stopGen.get() != myGen) {

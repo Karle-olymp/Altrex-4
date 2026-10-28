@@ -44,7 +44,7 @@ Les clés apparaissent dans cet ordre :
 
 - Alpine 3.24.3 aarch64 via PRoot, gestionnaire de paquets `apk`.
 - Shell `/bin/sh` (busybox ash), lancé avec `sh -lc` depuis `/root`, en root simulé.
-- `apk add python3` installe Python 3.14.
+- `apk add python3` installe Python 3.14. Les raccourcis `pkg` (comme dans Termux), `apt` et `apt-get` traduisent vers `apk` (`pkg install x` = `apk add x`).
 - Accès réseau identique à celui de l'appli.
 - Délai de 120 s par commande.
 - Pas de pseudo-terminal pour l'outil : les commandes interactives (`vi`, `top`, `python` sans `-c`) ne marchent pas.
@@ -53,3 +53,14 @@ Les clés apparaissent dans cet ordre :
   - installer un outil avant de s'en servir ;
   - lire le code de sortie ;
   - après un refus, ne pas relancer la commande mais expliquer la situation à l'utilisateur.
+
+## Prompt système de l'agent
+
+Quand « Skills et outils » est activé, le prompt (`AgentChatTaskModule.kt`) liste tous les chemins possibles, dans cet ordre :
+1. répondre directement, sans outil (question, explication, code) ;
+2. `run_command` (commande, paquet, exécution de code) ;
+3. `webSearch` (information récente) ;
+4. `load_skill` (skill de la liste) ;
+5. `runMcpTool` (seulement si un outil MCP est actif).
+
+L'ancien prompt ne connaissait que les skills et le MCP : les modèles inventaient des noms de skill (« yum ») au lieu d'utiliser le terminal.
