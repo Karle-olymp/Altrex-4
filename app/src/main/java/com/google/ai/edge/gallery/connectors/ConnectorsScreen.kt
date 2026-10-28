@@ -168,8 +168,7 @@ fun ConnectorsScreen(
     ) {
       item {
         Text(
-          "Relie Altrex à tes services. Le modèle s'en sert quand « Skills et outils » est activé dans " +
-            "Discuter. Par défaut, les lectures passent librement et les actions te sont demandées.",
+          "Relie Altrex à tes services : le modèle s'en sert dans Discuter. Par défaut, les lectures passent librement et les actions te sont demandées.",
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

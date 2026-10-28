@@ -679,7 +679,7 @@ private fun AgentLinuxSettings() {
   var resetting by remember { mutableStateOf(false) }
   Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
     Text(
-      "Avec « Skills et outils », le modèle peut lancer des commandes dans son propre Linux, séparé " +
+      "Dans Discuter, le modèle peut lancer des commandes dans son propre Linux, séparé " +
         "de ton terminal. Il a accès à Internet comme l'appli.",
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurfaceVariant,

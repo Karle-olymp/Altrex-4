@@ -27,6 +27,8 @@ plugins {
 }
 
 android {
+  // [ALTREX] Robolectric tests need the merged resources (themes, drawables).
+  testOptions { unitTests.isIncludeAndroidResources = true }
   namespace = "com.google.ai.edge.gallery"
   compileSdk = 37
 
@@ -148,6 +150,10 @@ dependencies {
   ksp(libs.hilt.android.compiler)
   testImplementation(libs.junit)
   testImplementation("org.json:json:20240303")
+  // [ALTREX] Composables run on the JVM (Robolectric, native graphics) to catch drawing crashes.
+  testImplementation("org.robolectric:robolectric:4.16")
+  testImplementation(platform(libs.androidx.compose.bom))
+  testImplementation(libs.androidx.ui.test.junit4)
   androidTestImplementation(libs.androidx.junit)
   androidTestImplementation(libs.androidx.espresso.core)
   androidTestImplementation(platform(libs.androidx.compose.bom))

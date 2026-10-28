@@ -63,6 +63,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -137,7 +138,7 @@ fun AgentChatScreen(
   skillManagerViewModel: SkillManagerViewModel = hiltViewModel(),
   mcpManagerViewModel: McpManagerViewModel = hiltViewModel(),
   initialQuery: String? = null,
-  /** [ALTREX] Main chat: skills and tools only when "Skills et outils" is on (ChatTools). */
+  /** [ALTREX] Main chat (Discuter): its own prompt when tools are off (never, since the merge). */
   optionalTools: Boolean = false,
 ) {
   val context = LocalContext.current
@@ -256,31 +257,9 @@ fun AgentChatScreen(
     mcpCount = mcpCount,
     mcpToolsCount = mcpToolsCount,
     topContent = {
-      Column {
-        if (optionalTools) {
-          ToolsToggleRow(
-            checked = toolsOn,
-            onCheckedChange = { on ->
-              ChatTools.setEnabled(context, on)
-              agentTools.toolsEnabled = on
-              if (!on) viewModel.setAutonomousMode(false)
-              // The model starts again with the new prompt, and keeps the conversation so far.
-              val model = modelManagerViewModel.uiState.value.selectedModel
-              resetSessionWithCurrentSkillsAndMcps(
-                viewModel,
-                modelManagerViewModel,
-                skillManagerViewModel,
-                task,
-                promptFor(on),
-                agentTools,
-                initialMessages = viewModel.uiState.value.messagesByModel[model.name].orEmpty(),
-                clearHistory = false,
-              )
-            },
-          )
-        }
-        if (toolsOn) AutonomousModeToggleRow(viewModel = viewModel)
-      }
+      // [ALTREX] Chat and agent are one screen: skills and tools are always there, only the
+      // autonomous mode is a choice.
+      if (toolsOn) AutonomousModeToggleRow(viewModel = viewModel)
     },
     onFirstToken = { model ->
       scope.launch(Dispatchers.Main) {
@@ -792,43 +771,30 @@ fun AgentChatScreen(
 
 /** [ALTREX] Main chat: turns skills, MCP tools and phone actions on or off. */
 @Composable
-private fun ToolsToggleRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-  Row(
-    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-    horizontalArrangement = Arrangement.SpaceBetween,
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-      Text("Skills et outils", style = MaterialTheme.typography.bodyMedium)
-      Text(
-        if (checked) "Skills, serveurs MCP, actions du téléphone et recherche web"
-        else "Désactivés : réponses plus rapides, idéal pour un petit modèle",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-    }
-    Switch(checked = checked, onCheckedChange = onCheckedChange)
-  }
-}
-
-@Composable
 private fun AutonomousModeToggleRow(viewModel: AgentChatViewModel) {
   val enabled by viewModel.autonomousModeEnabled.collectAsState()
+  // [ALTREX] One compact line: it stays at the top of the chat, it must not eat the screen.
   Row(
-    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
     horizontalArrangement = Arrangement.SpaceBetween,
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    // [ALTREX] Weighted column: the switch keeps its room and the text wraps instead of being cut.
-    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-      Text("Mode autonome", style = MaterialTheme.typography.bodyMedium)
-      Text(
-        "Le modèle vérifie son travail et réessaie tout seul",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-    }
-    Switch(checked = enabled, onCheckedChange = { viewModel.setAutonomousMode(it) })
+    Text(
+      if (enabled) "Mode autonome : le modèle vérifie et réessaie seul" else "Mode autonome",
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier = Modifier.weight(1f).padding(end = 8.dp),
+      maxLines = 1,
+      overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+    )
+    Switch(
+      checked = enabled,
+      onCheckedChange = { viewModel.setAutonomousMode(it) },
+      modifier = Modifier.graphicsLayer {
+        scaleX = 0.8f
+        scaleY = 0.8f
+      },
+    )
   }
 }
 
