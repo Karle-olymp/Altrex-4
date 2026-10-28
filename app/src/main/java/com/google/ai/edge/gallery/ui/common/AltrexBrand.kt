@@ -17,6 +17,7 @@
 package com.google.ai.edge.gallery.ui.common
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -55,7 +56,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -76,35 +76,72 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
-// The Altrex "A", in the 108x108 viewport of ic_launcher_foreground.xml. The two contours are kept
-// apart because PathMeasure only walks one contour at a time.
-private const val A_OUTER = "M54,28L76,78L65,78L60.5,67L47.5,67L43,78L32,78Z"
-private const val A_INNER = "M54,41L49.5,59L58.5,59Z"
-private const val A_LEFT = 32f
-private const val A_TOP = 28f
-private const val A_WIDTH = 44f
-private const val A_HEIGHT = 50f
+// [ALTREX] The brace shield (Argora core), in the 256x256 viewport of the logo files
+// (design/logo/final). The braces are drawn from their centre lines, stroked at the logo's
+// thickness, so they can be traced; once drawn, the exact filled shapes take over.
+private const val LEFT_BRACE =
+  "M111,37 L72.36,47.36 A16,16 0 0 0 60.5,62.81 L60.5,84.81 C60.5,96 49.2,98 49.2,104.4 " +
+    "C49.2,110.8 60.5,113 60.5,123.95 L60.5,135.95 A62,62 0 0 0 86.06,186.1 L128,216.6"
+private const val RIGHT_BRACE =
+  "M145,37 L183.64,47.36 A16,16 0 0 1 195.5,62.81 L195.5,84.81 C195.5,96 206.8,98 206.8,104.4 " +
+    "C206.8,110.8 195.5,113 195.5,123.95 L195.5,135.95 A62,62 0 0 1 169.94,186.1 L128,216.6"
+private const val LEFT_FILL =
+  "M108.54 27.82 L69.9 38.18 A25.5 25.5 0 0 0 51 62.81 L51 84.81 A3.5 3.5 0 0 1 49.25 87.84 " +
+    "A19.1 19.1 0 0 0 49.25 120.92 A3.5 3.5 0 0 1 51 123.95 L51 135.95 A71.5 71.5 0 0 0 80.48 193.8 " +
+    "L122.42 224.27 A9.5 9.5 0 0 0 133.58 208.9 L91.65 178.43 A52.5 52.5 0 0 1 70 135.95 L70 123.95 " +
+    "A22.5 22.5 0 0 0 58.75 104.47 A0.1 0.1 0 0 1 58.75 104.29 A22.5 22.5 0 0 0 70 84.81 L70 62.81 " +
+    "A6.5 6.5 0 0 1 74.82 56.53 L113.46 46.18 A9.5 9.5 0 0 0 108.54 27.82 Z"
+private const val RIGHT_FILL =
+  "M147.46 27.82 L186.1 38.18 A25.5 25.5 0 0 1 205 62.81 L205 84.81 A3.5 3.5 0 0 0 206.75 87.84 " +
+    "A19.1 19.1 0 0 1 206.75 120.92 A3.5 3.5 0 0 0 205 123.95 L205 135.95 A71.5 71.5 0 0 1 175.52 193.8 " +
+    "L133.58 224.27 A9.5 9.5 0 0 1 122.42 208.9 L164.35 178.43 A52.5 52.5 0 0 0 186 135.95 L186 123.95 " +
+    "A22.5 22.5 0 0 1 197.25 104.47 A0.1 0.1 0 0 0 197.25 104.29 A22.5 22.5 0 0 1 186 84.81 L186 62.81 " +
+    "A6.5 6.5 0 0 0 181.18 56.53 L142.54 46.18 A9.5 9.5 0 0 1 147.46 27.82 Z"
+private const val CORE = "M128 90.94 L156.06 119 L128 147.06 L99.94 119 Z"
+private const val BRACE_WIDTH = 19f
+private val CORE_CENTER = Offset(128f, 119f)
 
-private class AltrexLogoPaths {
-  val outer: Path = PathParser().parsePathString(A_OUTER).toPath()
-  val inner: Path = PathParser().parsePathString(A_INNER).toPath()
-  val filled: Path =
+// Bounding box of the mark (strokes included).
+private const val MARK_LEFT = 39.7f
+private const val MARK_TOP = 27.8f
+private const val MARK_WIDTH = 176.6f
+private const val MARK_HEIGHT = 196.5f
+
+/** Brand gradient of Argora (design/logo/final/GUIDE.md). */
+val BrandCyan = Color(0xFF72D6DB)
+val BrandGreen = Color(0xFF5FD4A0)
+
+private fun brandBrush(): Brush =
+  Brush.linearGradient(
+    colors = listOf(BrandCyan, BrandGreen),
+    start = Offset(MARK_LEFT, MARK_TOP),
+    end = Offset(MARK_LEFT + MARK_WIDTH, MARK_TOP + MARK_HEIGHT),
+  )
+
+private class ShieldPaths {
+  private fun parse(d: String): Path = PathParser().parsePathString(d).toPath()
+
+  val left: Path = parse(LEFT_BRACE)
+  val right: Path = parse(RIGHT_BRACE)
+  val braceLength: Float = PathMeasure().apply { setPath(left, false) }.length
+  val leftFill: Path = parse(LEFT_FILL)
+  val rightFill: Path = parse(RIGHT_FILL)
+  val core: Path = parse(CORE)
+  val all: Path =
     Path().apply {
-      fillType = PathFillType.EvenOdd
-      addPath(outer)
-      addPath(inner)
+      addPath(leftFill)
+      addPath(rightFill)
+      addPath(core)
     }
-  val outerLength: Float = PathMeasure().apply { setPath(outer, false) }.length
-  val innerLength: Float = PathMeasure().apply { setPath(inner, false) }.length
 }
 
-/** Draws [block] in the logo's viewport units, the "A" centered and [fraction] of the height. */
+/** Draws [block] in the logo's viewport units, the mark centred and [fraction] of the height. */
 private fun DrawScope.inLogoSpace(fraction: Float, block: DrawScope.() -> Unit) {
-  val scale = size.minDimension * fraction / A_HEIGHT
+  val scale = size.minDimension * fraction / MARK_HEIGHT
   withTransform({
     translate(
-      left = size.width / 2f - (A_LEFT + A_WIDTH / 2f) * scale,
-      top = size.height / 2f - (A_TOP + A_HEIGHT / 2f) * scale,
+      left = size.width / 2f - (MARK_LEFT + MARK_WIDTH / 2f) * scale,
+      top = size.height / 2f - (MARK_TOP + MARK_HEIGHT / 2f) * scale,
     )
     scale(scaleX = scale, scaleY = scale, pivot = Offset.Zero)
   }) {
@@ -117,7 +154,7 @@ private fun segment(path: Path, start: Float, stop: Float): Path {
   val out = Path()
   PathMeasure().apply {
     setPath(path, false)
-    getSegment(start, stop, out, true)
+    getSegment(start.coerceAtLeast(0f), stop, out, true)
   }
   return out
 }
@@ -126,15 +163,19 @@ private fun segment(path: Path, start: Float, stop: Float): Path {
 private fun step(t: Float, start: Float, end: Float): Float =
   FastOutSlowInEasing.transform(((t - start) / (end - start)).coerceIn(0f, 1f))
 
+// Ease-out without overshoot, for the braces closing in.
+private val CloseEasing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
+
 private const val INTRO_MS = 3000
 
 /**
- * Altrex opening animation: the "A" is traced, filled, crossed by a light sweep, then the name
+ * Opening animation (GUIDE.md, "Mouvement"): the two braces come in from each side, tracing
+ * themselves, and close into the shield; the core lights up, a light sweeps across, then the name
  * appears and everything fades into the app. Tapping skips it.
  */
 @Composable
 fun AltrexIntro(onFinished: () -> Unit) {
-  val paths = remember { AltrexLogoPaths() }
+  val paths = remember { ShieldPaths() }
   val progress = remember { Animatable(0f) }
   val finish by rememberUpdatedState(onFinished)
   LaunchedEffect(Unit) {
@@ -143,16 +184,18 @@ fun AltrexIntro(onFinished: () -> Unit) {
   }
 
   val t = progress.value
-  val primary = MaterialTheme.colorScheme.primary
-  val tertiary = MaterialTheme.colorScheme.tertiary
   val background = MaterialTheme.colorScheme.background
   val onBackground = MaterialTheme.colorScheme.onBackground
 
-  // About 1.1 s of tracing, then fill, light sweep and name, a short hold, and the fade-out.
-  val trace = step(t, 0.00f, 0.38f)
-  val fill = step(t, 0.30f, 0.52f)
-  val sweep = step(t, 0.46f, 0.68f)
-  val name = step(t, 0.50f, 0.70f)
+  // About 1.1 s for the braces, then the core, the sweep and the name, a hold, and the fade-out.
+  val close = CloseEasing.transform((t / 0.36f).coerceIn(0f, 1f))
+  // The traced braces and the filled shapes coincide: swap them at once, a crossfade of two
+  // half-transparent layers looked dimmer and showed the overlapping caps.
+  val solid = if (t >= 0.36f) 1f else 0f
+  val core = step(t, 0.34f, 0.52f)
+  val flash = step(t, 0.40f, 0.62f)
+  val sweep = step(t, 0.50f, 0.70f)
+  val name = step(t, 0.54f, 0.72f)
   val exit = step(t, 0.86f, 1.00f)
 
   Box(
@@ -171,40 +214,54 @@ fun AltrexIntro(onFinished: () -> Unit) {
   ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
       Canvas(modifier = Modifier.size(150.dp)) {
-        // Soft halo behind the letter.
+        // Halo, brighter for a moment when the core lights up.
+        val glow = 0.22f * core + 0.25f * (1f - flash) * core
         drawCircle(
           brush =
             Brush.radialGradient(
-              colors = listOf(primary.copy(alpha = 0.28f * fill), Color.Transparent),
+              colors = listOf(BrandGreen.copy(alpha = glow), Color.Transparent),
               center = center,
-              radius = size.minDimension * 0.6f,
+              // At most half the canvas, else the glow is cut square at its edges.
+              radius = size.minDimension * (0.42f + 0.08f * flash),
             )
         )
-        inLogoSpace(fraction = 0.72f) {
-          val gradient =
-            Brush.linearGradient(
-              colors = listOf(tertiary, primary),
-              start = Offset(A_LEFT, A_TOP),
-              end = Offset(A_LEFT + A_WIDTH, A_TOP + A_HEIGHT),
-            )
-          val stroke = Stroke(width = 1.4f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-          if (trace > 0f) {
-            drawPath(segment(paths.outer, 0f, paths.outerLength * trace), gradient, style = stroke)
-            drawPath(segment(paths.inner, 0f, paths.innerLength * trace), gradient, style = stroke)
+        inLogoSpace(fraction = 0.78f) {
+          val brush = brandBrush()
+          // Braces: each slides in from its side while it is traced from the top to the point.
+          if (solid < 1f) {
+            val shift = 46f * (1f - close)
+            val stroke = Stroke(width = BRACE_WIDTH, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            val drawn = paths.braceLength * close
+            withTransform({ translate(left = -shift) }) {
+              drawPath(segment(paths.left, 0f, drawn), brush, style = stroke)
+            }
+            withTransform({ translate(left = shift) }) {
+              drawPath(segment(paths.right, 0f, drawn), brush, style = stroke)
+            }
           }
-          if (fill > 0f) {
-            drawPath(paths.filled, gradient, alpha = fill)
+          if (solid > 0f) {
+            drawPath(paths.leftFill, brush)
+            drawPath(paths.rightFill, brush)
           }
+          // Core: grows from the centre with a short rotation, then stays lit.
+          if (core > 0f) {
+            withTransform({
+              rotate(degrees = -45f * (1f - core), pivot = CORE_CENTER)
+              scale(scaleX = 0.3f + 0.7f * core, scaleY = 0.3f + 0.7f * core, pivot = CORE_CENTER)
+            }) {
+              drawPath(paths.core, brush, alpha = core)
+            }
+          }
+          // Light sweep across the whole mark.
           if (sweep > 0f && sweep < 1f) {
-            clipPath(paths.filled) {
-              val x = A_LEFT - 20f + (A_WIDTH + 40f) * sweep
+            clipPath(paths.all) {
+              val x = MARK_LEFT - 40f + (MARK_WIDTH + 80f) * sweep
               drawRect(
                 brush =
                   Brush.linearGradient(
-                    colors =
-                      listOf(Color.Transparent, Color.White.copy(alpha = 0.55f), Color.Transparent),
-                    start = Offset(x - 10f, A_TOP),
-                    end = Offset(x + 10f, A_TOP + A_HEIGHT),
+                    colors = listOf(Color.Transparent, Color.White.copy(alpha = 0.6f), Color.Transparent),
+                    start = Offset(x - 30f, MARK_TOP),
+                    end = Offset(x + 30f, MARK_TOP + MARK_HEIGHT),
                   )
               )
             }
@@ -224,67 +281,68 @@ fun AltrexIntro(onFinished: () -> Unit) {
   }
 }
 
-/** The "A" outline with a light running along it, for model loading. */
+/**
+ * Loading: the shield stays faint while two lights run down the braces, side by side, to meet at
+ * the point; the core pulses (1.2 s cycle, GUIDE.md "Argora en analyse").
+ */
 @Composable
 fun AltrexLogoLoader(size: Dp) {
-  val paths = remember { AltrexLogoPaths() }
+  val paths = remember { ShieldPaths() }
   val transition = rememberInfiniteTransition(label = "altrexLogoLoader")
   val run by
     transition.animateFloat(
       initialValue = 0f,
       targetValue = 1f,
-      animationSpec = infiniteRepeatable(tween(2600, easing = LinearEasing)),
+      animationSpec = infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing)),
       label = "run",
     )
-  val breath by
+  val pulse by
     transition.animateFloat(
-      initialValue = 0.10f,
-      targetValue = 0.26f,
-      animationSpec = infiniteRepeatable(tween(1400), repeatMode = RepeatMode.Reverse),
-      label = "breath",
+      initialValue = 0f,
+      targetValue = 1f,
+      animationSpec = infiniteRepeatable(tween(600, easing = FastOutSlowInEasing), repeatMode = RepeatMode.Reverse),
+      label = "pulse",
     )
-  val primary = MaterialTheme.colorScheme.primary
-  val tertiary = MaterialTheme.colorScheme.tertiary
 
   Canvas(modifier = Modifier.size(size).clearAndSetSemantics {}) {
     drawCircle(
       brush =
         Brush.radialGradient(
-          colors = listOf(primary.copy(alpha = breath), Color.Transparent),
+          colors = listOf(BrandGreen.copy(alpha = 0.10f + 0.14f * pulse), Color.Transparent),
           center = center,
-          radius = this.size.minDimension * 0.55f,
+          radius = this.size.minDimension * 0.5f,
         )
     )
-    inLogoSpace(fraction = 0.7f) {
-      val faint = Stroke(width = 1.3f, join = StrokeJoin.Round)
-      drawPath(paths.outer, primary.copy(alpha = 0.18f), style = faint)
-      drawPath(paths.inner, primary.copy(alpha = 0.18f), style = faint)
+    inLogoSpace(fraction = 0.74f) {
+      val brush = brandBrush()
+      drawPath(paths.leftFill, brush, alpha = 0.18f)
+      drawPath(paths.rightFill, brush, alpha = 0.18f)
 
-      // Comet: a head followed by a fading tail, wrapping around the closed outline. Butt caps on
-      // the tail pieces so that their overlaps do not show up as dots; only the head is rounded.
-      val length = paths.outerLength
-      val tail = length * 0.30f
+      // Comets: a rounded head followed by a fading tail; butt caps on the tail pieces so that their
+      // overlaps do not show up as dots. They fade out as they reach the point.
+      val length = paths.braceLength
       val head = length * run
-      val pieces = 24
-      for (i in 0 until pieces) {
-        val a = head - tail * (i + 1) / pieces
-        val b = head - tail * i / pieces
-        val alpha = 1f - i.toFloat() / pieces
-        val color = if (i < pieces / 2) primary else tertiary
-        val style =
-          Stroke(
-            width = 2.2f,
-            cap = if (i == 0) StrokeCap.Round else StrokeCap.Butt,
-            join = StrokeJoin.Round,
-          )
-        if (a >= 0f) {
-          drawPath(segment(paths.outer, a, b), color, alpha = alpha, style = style)
-        } else if (b <= 0f) {
-          drawPath(segment(paths.outer, length + a, length + b), color, alpha = alpha, style = style)
-        } else {
-          drawPath(segment(paths.outer, length + a, length), color, alpha = alpha, style = style)
-          drawPath(segment(paths.outer, 0f, b), color, alpha = alpha, style = style)
+      val tail = length * 0.32f
+      val fadeOut = 1f - ((run - 0.85f) / 0.15f).coerceIn(0f, 1f)
+      val pieces = 20
+      for (brace in listOf(paths.left, paths.right)) {
+        for (i in 0 until pieces) {
+          val b = head - tail * i / pieces
+          val a = head - tail * (i + 1) / pieces
+          if (b <= 0f) break
+          val style =
+            Stroke(
+              width = BRACE_WIDTH,
+              cap = if (i == 0) StrokeCap.Round else StrokeCap.Butt,
+              join = StrokeJoin.Round,
+            )
+          drawPath(segment(brace, a, b), brush, alpha = (1f - i.toFloat() / pieces) * fadeOut, style = style)
         }
+      }
+
+      val s = 0.9f + 0.14f * pulse
+      withTransform({ scale(scaleX = s, scaleY = s, pivot = CORE_CENTER) }) {
+        drawPath(paths.core, brush, alpha = 0.55f + 0.45f * pulse)
       }
     }
   }
@@ -308,7 +366,6 @@ fun AltrexModelLoading(title: String, modelName: String, hint: String, modifier:
       animationSpec = infiniteRepeatable(tween(1500, easing = FastOutSlowInEasing)),
       label = "shimmer",
     )
-  val primary = MaterialTheme.colorScheme.primary
 
   Column(
     modifier = modifier.padding(horizontal = 32.dp),
@@ -336,12 +393,12 @@ fun AltrexModelLoading(title: String, modelName: String, hint: String, modifier:
       modifier =
         Modifier.width(160.dp).height(3.dp).clip(RoundedCornerShape(50)).clearAndSetSemantics {}
     ) {
-      drawRect(primary.copy(alpha = 0.15f))
+      drawRect(BrandGreen.copy(alpha = 0.15f))
       val x = size.width * shimmer
       drawRect(
         brush =
           Brush.horizontalGradient(
-            colors = listOf(Color.Transparent, primary, Color.Transparent),
+            colors = listOf(Color.Transparent, BrandGreen, Color.Transparent),
             startX = x - size.width * 0.35f,
             endX = x + size.width * 0.35f,
           )
@@ -358,22 +415,22 @@ fun AltrexModelLoading(title: String, modelName: String, hint: String, modifier:
   }
 }
 
-/** Small rounded tile with the "A", shown next to the model's answers. */
+/** Small rounded tile with the shield, shown next to the model's answers. */
 @Composable
 fun AltrexAvatar(size: Dp = 22.dp) {
-  val paths = remember { AltrexLogoPaths() }
-  val primary = MaterialTheme.colorScheme.primary
+  val paths = remember { ShieldPaths() }
+  val tint = BrandGreen
   Box(
     modifier =
       Modifier.size(size)
         .clip(RoundedCornerShape(size * 0.32f))
-        .background(primary.copy(alpha = 0.12f))
-        .border(1.dp, primary.copy(alpha = 0.28f), RoundedCornerShape(size * 0.32f))
+        .background(tint.copy(alpha = 0.12f))
+        .border(1.dp, tint.copy(alpha = 0.28f), RoundedCornerShape(size * 0.32f))
         .clearAndSetSemantics {},
     contentAlignment = Alignment.Center,
   ) {
     Canvas(modifier = Modifier.fillMaxSize()) {
-      inLogoSpace(fraction = 0.5f) { drawPath(paths.filled, primary) }
+      inLogoSpace(fraction = 0.64f) { drawPath(paths.all, brandBrush()) }
     }
   }
 }
