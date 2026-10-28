@@ -1,0 +1,3 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+<g fill="#111111"><path d="M98 94 L72 94 L38 128 L72 162 L98 162 L64 128 Z" transform="rotate(45 128 128)"/><path d="M98 94 L72 94 L38 128 L72 162 L98 162 L64 128 Z" transform="rotate(135 128 128)"/><path d="M98 94 L72 94 L38 128 L72 162 L98 162 L64 128 Z" transform="rotate(225 128 128)"/><path d="M98 94 L72 94 L38 128 L72 162 L98 162 L64 128 Z" transform="rotate(315 128 128)"/><path d="M128 108 L148 128 L128 148 L108 128 Z"/></g>
+</svg>

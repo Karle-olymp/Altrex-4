@@ -1,0 +1,3 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+<defs><mask id="ap4"><circle cx="128" cy="128" r="108" fill="#fff"/><path d="M128 84 L84 128 L128 172 L172 128 Z" fill="#000"/><line x1="84" y1="128" x2="-68.7" y2="280.7" stroke="#000" stroke-width="9"/><line x1="128" y1="172" x2="280.7" y2="324.7" stroke="#000" stroke-width="9"/><line x1="172" y1="128" x2="324.7" y2="-24.7" stroke="#000" stroke-width="9"/><line x1="128" y1="84" x2="-24.7" y2="-68.7" stroke="#000" stroke-width="9"/></mask></defs><circle cx="128" cy="128" r="108" fill="#111111" mask="url(#ap4)"/>
+</svg>
