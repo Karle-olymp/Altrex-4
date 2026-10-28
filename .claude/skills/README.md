@@ -11,6 +11,7 @@ ne font pas partie de l'application Android. Chaque dossier garde sa licence.
 | motion-prompt-writer | github.com/charlie947/motion-graphics-skills | 229022e | MIT |
 | hyperframes | github.com/heygen-com/hyperframes | 76222e4 | Apache-2.0 |
 | apple-design | github.com/emilkowalski/skills | 2d22863 | MIT |
+| logo-design | github.com/kaankiziltug/logo-design-skill | 7340903 | MIT (logos de `assets/library/svg/` : marques de leurs propriétaires, voir `TRADEMARKS.md`) |
 
 Copiées telles quelles depuis ces dépôts (aucun script exécuté à l'installation).
 Pour les mettre à jour, recopier le dossier `skills/<nom>` du dépôt d'origine.
