@@ -252,7 +252,14 @@ private fun TerminalPanel(generation: Int) {
         factory = { ctx ->
           TerminalView(ctx, null).apply {
             setTextSize((14 * ctx.resources.displayMetrics.scaledDensity).toInt())
-            setTypeface(Typeface.MONOSPACE)
+            // The app's own monospace font: Typeface.MONOSPACE follows the phone's font setting on
+            // Samsung, which can be a proportional handwriting font.
+            setTypeface(
+              androidx.core.content.res.ResourcesCompat.getFont(
+                ctx,
+                com.google.ai.edge.gallery.R.font.jetbrains_mono_regular,
+              ) ?: Typeface.MONOSPACE
+            )
             isFocusable = true
             isFocusableInTouchMode = true
             setTerminalViewClient(ViewClient(this, extra))
@@ -345,7 +352,7 @@ private fun KeyButton(label: String, active: Boolean = false, onClick: () -> Uni
   TextButton(onClick = onClick) {
     Text(
       label,
-      fontFamily = FontFamily.Monospace,
+      fontFamily = FontFamily(androidx.compose.ui.text.font.Font(com.google.ai.edge.gallery.R.font.jetbrains_mono_regular)),
       color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
     )
   }
