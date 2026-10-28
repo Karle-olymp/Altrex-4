@@ -77,7 +77,7 @@ class RunIntentTool(private val context: Context, private val skillsProvider: Sk
       val ask = AskActionPermissionAction(label = label, parameters = parameters)
       channel.send(ask)
       // An unanswered dialog counts as a refusal.
-      when (withTimeoutOrNull(USER_REPLY_TIMEOUT_MS) { ask.result.await() } ?: PermissionResult.DENY) {
+      when (withTimeoutOrNull(USER_REPLY_TIMEOUT_MS) { ask.result.await() } ?: PermissionResult.DENY.also { ask.result.complete(it) }) {
         PermissionResult.DENY ->
           return mapOf(
             "action" to intent,

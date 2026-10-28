@@ -146,7 +146,8 @@ object LlamaCppToolBridge {
         "load_skill" -> tools.any { it is LoadSkillTool }
         "run_js" -> tools.any { it is RunJsTool }
         "run_intent" -> tools.any { it is RunIntentTool }
-        "runMcpTool" -> tools.any { it is RunMcpTool }
+        // [ALTREX] Only when an MCP tool is really active: no tool boilerplate for nothing.
+        "runMcpTool" -> tools.filterIsInstance<RunMcpTool>().any { it.hasActiveTools() }
         "webSearch" -> tools.any { it is WebSearchTool }
         "run_command" -> tools.any { it is com.google.ai.edge.gallery.tools.RunCommandTool }
         else -> false

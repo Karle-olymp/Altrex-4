@@ -45,10 +45,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import com.google.ai.edge.gallery.security.UntrustedContent
 import kotlinx.coroutines.withContext
 
 private const val TAG = "AGMcpManagerVM"
+
+// [ALTREX] MCP limits.
+private const val CONNECT_TIMEOUT_MS = 10_000L
+private const val MAX_TOOL_NAME_CHARS = 64
+private const val MAX_TOOL_DESCRIPTION_CHARS = 600
+private const val MAX_TOOL_SCHEMA_CHARS = 1_500
 
 data class McpManagerUiState(
   val mcpServers: List<McpServerState> = emptyList(),
@@ -81,14 +89,41 @@ constructor(
       try {
         // 2. Retrieve the list of configured MCP servers previously saved in DataStore.
         val savedServers = mcpServersDataStore.data.first().mcpServerList
-        val loadedStates = savedServers.map { serverProto ->
+        // [ALTREX] Close the previous connections before opening new ones (each reload leaked them).
+        closeClients(_uiState.value.mcpServers)
+        // [ALTREX] All servers at once, each with a time limit: a dead server delayed the model load.
+        val loadedStates = kotlinx.coroutines.coroutineScope {
+          savedServers.map { serverProto -> async { loadOne(serverProto) } }.map { it.await() }
+        }
+        _uiState.update { it.copy(mcpServers = loadedStates, loadingMcpServer = false) }
+        mcpServersDataStore.updateData {
+          McpServers.newBuilder()
+            .addAllMcpServer(
+              loadedStates.mapIndexed { index, state ->
+                if (state.error != null) savedServers[index] else state.mcpServer
+              }
+            )
+            .build()
+        }
+      } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        Log.e(TAG, "Error reading saved MCP servers", e)
+        _uiState.update { it.copy(loadingMcpServer = false) }
+      }
+    }
+  }
+
+  /** Connects one saved server and lists its tools, within [CONNECT_TIMEOUT_MS]. */
+  private suspend fun loadOne(serverProto: McpServer): McpServerState =
           try {
             // Map existing tool enablement configurations to preserve user preferences upon
             // reconnect.
             val savedToolsMap = serverProto.toolsList.associate { it.name to it.enabled }
             val savedAlwaysAllowMap = serverProto.toolsList.associate { it.name to it.alwaysAllow }
             val (client, mcpTools) =
-              initializeClientAndLoadTools(serverProto.url, savedToolsMap, savedAlwaysAllowMap)
+              kotlinx.coroutines.withTimeout(CONNECT_TIMEOUT_MS) {
+                initializeClientAndLoadTools(serverProto.url, savedToolsMap, savedAlwaysAllowMap)
+              }
             val serverVersion = client.serverVersion
             val updatedServerProto =
               serverProto
@@ -107,37 +142,31 @@ constructor(
                 .build()
             McpServerState(mcpServer = updatedServerProto, client = client, error = null)
           } catch (e: Exception) {
-            if (e is CancellationException) throw e
+            if (e is CancellationException && e !is kotlinx.coroutines.TimeoutCancellationException) throw e
             Log.e(TAG, "Error loading MCP server: ${serverProto.url}", e)
             // Fallback: If connection fails during startup, load the server in a disabled state.
             McpServerState(
               mcpServer = serverProto.toBuilder().setEnabled(false).build(),
               client = null,
-              error = e.message ?: "Failed to connect",
+              error =
+                if (e is kotlinx.coroutines.TimeoutCancellationException) "Serveur injoignable (délai dépassé)"
+                else e.message ?: "Failed to connect",
             )
           }
-        }
-        // 3. Populate the live UI state with the freshly loaded client connections and tool
-        // schemas.
-        _uiState.update { it.copy(mcpServers = loadedStates, loadingMcpServer = false) }
-        // 4. Re-sync the DataStore to reflect any newly discovered tool structures or disabled
-        // fallback flags.
-        mcpServersDataStore.updateData {
-          McpServers.newBuilder()
-            .addAllMcpServer(
-              loadedStates.mapIndexed { index, state ->
-                // If loading failed, persist the original state instead of the disabled state
-                // used in memory, allowing retries on the next app start.
-                if (state.error != null) savedServers[index] else state.mcpServer
-              }
-            )
-            .build()
-        }
-      } catch (e: Exception) {
-        Log.e(TAG, "Error reading saved MCP servers", e)
-        _uiState.update { it.copy(loadingMcpServer = false) }
-      }
+
+  /** [ALTREX] Closes MCP sessions without waiting (best effort). */
+  private fun closeClients(states: List<McpServerState>) {
+    val clients = states.mapNotNull { it.client }
+    if (clients.isEmpty()) return
+    kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+      for (c in clients) runCatching { c.close() }
     }
+  }
+
+  override fun onCleared() {
+    closeClients(_uiState.value.mcpServers)
+    runCatching { httpClient.close() }
+    super.onCleared()
   }
 
   /**
@@ -256,6 +285,9 @@ constructor(
         val filtered = currentServers.mcpServerList.filter { it.url != url }
         McpServers.newBuilder().addAllMcpServer(filtered).build()
       }
+      // [ALTREX] Its key goes with it, and its connection is closed.
+      userDataDataStore.updateData { it.toBuilder().removeMcpAuths(url).build() }
+      closeClients(_uiState.value.mcpServers.filter { it.mcpServer.url == url })
       _uiState.update { currentState ->
         currentState.copy(mcpServers = currentState.mcpServers.filter { it.mcpServer.url != url })
       }
@@ -274,7 +306,12 @@ constructor(
       .flatMap { it.mcpServer.toolsList }
       .filter { it.enabled }
       .joinToString("\n\n") { tool ->
-        "MCP tool name: \"${tool.name}\"\n- Description: ${tool.description}\n- Input schema: ${tool.inputSchema}"
+        // [ALTREX] Descriptions come from the server: chat and tool tags neutralized, length capped,
+        // so a server cannot fake a turn or a tool call in the system prompt.
+        val name = UntrustedContent.neutralize(tool.name.take(MAX_TOOL_NAME_CHARS))
+        val description = UntrustedContent.neutralize(tool.description.take(MAX_TOOL_DESCRIPTION_CHARS))
+        val schema = UntrustedContent.neutralize(tool.inputSchema.take(MAX_TOOL_SCHEMA_CHARS))
+        "MCP tool name: \"$name\"\n- Description: $description\n- Input schema: $schema"
       }
   }
 

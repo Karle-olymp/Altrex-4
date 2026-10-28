@@ -681,6 +681,11 @@ fun AgentChatScreen(
 
   // [ALTREX] A phone action without its own confirmation screen (alarm, notification…).
   currentActionPermission?.let { action ->
+    // [ALTREX] Closed as soon as the request is answered or expired (refused after the delay).
+    LaunchedEffect(action) {
+      action.result.await()
+      if (currentActionPermission === action) currentActionPermission = null
+    }
     McpToolCallPermissionDialog(
       title = action.label,
       toolName = action.label,
@@ -694,12 +699,17 @@ fun AgentChatScreen(
 
   if (currentMcpPermissionAction != null) {
     val action = currentMcpPermissionAction!!
+    LaunchedEffect(action) {
+      action.result.await()
+      if (currentMcpPermissionAction === action) currentMcpPermissionAction = null
+    }
     McpToolCallPermissionDialog(
       toolName = action.toolName,
       argument = action.argument,
       onResult = { result ->
-        action.result.complete(result)
-        if (result == PermissionResult.ALWAYS_ALLOW) {
+        // An answer given after the request expired changes nothing (no late "always allow").
+        val accepted = action.result.complete(result)
+        if (accepted && result == PermissionResult.ALWAYS_ALLOW) {
           val serverState =
             mcpManagerViewModel.uiState.value.mcpServers.find { serverState ->
               serverState.mcpServer.toolsList.any { it.name == action.toolName }

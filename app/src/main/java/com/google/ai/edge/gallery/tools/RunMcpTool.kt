@@ -37,6 +37,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 private const val TAG = "AGRunMcpTool"
 
+/** [ALTREX] Longest wait for one MCP tool call. */
+private const val MCP_CALL_TIMEOUT_MS = 90_000L
+
 class RunMcpTool(
   private val mcpServersProvider: McpServersProvider,
   private val skillsProvider: SkillsProvider,
@@ -44,6 +47,10 @@ class RunMcpTool(
 ) : ToolDefinition {
   override val alwaysAllow: Boolean = true
   override var executionContext: ToolExecutionContext? = null
+
+  /** [ALTREX] Whether at least one enabled tool of an enabled server exists (else runMcpTool is not offered). */
+  fun hasActiveTools(): Boolean =
+    mcpServersProvider.mcpServers.any { s -> s.mcpServer.enabled && s.mcpServer.toolsList.any { it.enabled } }
 
   /** Runs MCP tool */
   @Tool(description = "Run a MCP tool")
@@ -53,10 +60,11 @@ class RunMcpTool(
   ): Map<String, String> {
     Log.d(TAG, "Run MCP tool:\n- name: $toolName\n- input: ${com.google.ai.edge.gallery.security.SecretRedactor.redact(input)}")
     return runBlocking(Dispatchers.IO) {
+      // [ALTREX] Only enabled tools of enabled servers: a tool the user turned off is never run.
       val serverState =
-        mcpServersProvider.mcpServers.find { serverState ->
-          serverState.mcpServer.toolsList.any { it.name == toolName }
-        }
+        mcpServersProvider.mcpServers
+          .filter { it.mcpServer.enabled }
+          .find { serverState -> serverState.mcpServer.toolsList.any { it.name == toolName && it.enabled } }
 
       if (serverState == null) {
         Log.w(TAG, "MCP server or tool not found for: $toolName")
@@ -88,9 +96,10 @@ class RunMcpTool(
           )
         }
         channel.send(permissionAction)
+        // Unanswered: refused, and the dialog closes (the screen watches the result).
         val permissionResult =
           withTimeoutOrNull(USER_REPLY_TIMEOUT_MS) { permissionAction.result.await() }
-            ?: PermissionResult.DENY
+            ?: PermissionResult.DENY.also { permissionAction.result.complete(it) }
         if (permissionResult == PermissionResult.DENY) {
           executionContext
             ?.actionChannel
@@ -116,15 +125,25 @@ class RunMcpTool(
               addItemDescription = "- Input: $input",
             )
           )
+        // [ALTREX] A slow or stuck server must not block the agent loop.
         val result =
-        client.callTool(
-          request = CallToolRequest(
-            CallToolRequestParams(
-              name = toolName,
-              arguments = kotlinx.serialization.json.Json.parseToJsonElement(input).jsonObject
+          withTimeoutOrNull(MCP_CALL_TIMEOUT_MS) {
+            client.callTool(
+              request = CallToolRequest(
+                CallToolRequestParams(
+                  name = toolName,
+                  arguments = kotlinx.serialization.json.Json.parseToJsonElement(input).jsonObject
+                )
+              )
             )
-          )
-        )
+          }
+            ?: run {
+              logMcpExecution(success = false, errorType = "timeout")
+              return@runBlocking mapOf(
+                "error" to "The MCP tool did not answer within ${MCP_CALL_TIMEOUT_MS / 1000} s.",
+                "status" to "failed",
+              )
+            }
 
         if (result == null) {
           Log.d(TAG, "Tool execution returned null result")
@@ -143,7 +162,8 @@ class RunMcpTool(
         if (result.isError == true) {
           val errorText =
             result.content.filterIsInstance<TextContent>().joinToString("\n") { it.text ?: "" }
-          Log.e(TAG, "MCP tool \"$toolName\" failed: $errorText")
+          // [ALTREX] The output may hold private data: only its size goes to logcat.
+          Log.e(TAG, "MCP tool \"$toolName\" failed (${errorText.length} chars)")
           executionContext
             ?.actionChannel
             ?.send(
@@ -159,7 +179,7 @@ class RunMcpTool(
         } else {
           val successText =
             result.content.filterIsInstance<TextContent>().joinToString("\n") { it.text ?: "" }
-          Log.d(TAG, "MCP tool \"$toolName\" succeeded:\n$successText")
+          Log.d(TAG, "MCP tool \"$toolName\" succeeded (${successText.length} chars)")
           executionContext
             ?.actionChannel
             ?.send(

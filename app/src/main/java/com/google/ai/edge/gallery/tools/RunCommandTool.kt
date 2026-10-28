@@ -58,7 +58,7 @@ class RunCommandTool(private val context: Context) : ToolDefinition {
             parameters = cmd,
           )
         channel.send(ask)
-        when (withTimeoutOrNull(USER_REPLY_TIMEOUT_MS) { ask.result.await() } ?: PermissionResult.DENY) {
+        when (withTimeoutOrNull(USER_REPLY_TIMEOUT_MS) { ask.result.await() } ?: PermissionResult.DENY.also { ask.result.complete(it) }) {
           PermissionResult.DENY ->
             return@runBlocking mapOf(
               "result" to "refused: the user did not allow this command. Do not run it again; tell the user.",
