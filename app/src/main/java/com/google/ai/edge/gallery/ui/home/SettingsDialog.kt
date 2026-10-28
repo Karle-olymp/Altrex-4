@@ -96,6 +96,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
@@ -360,6 +362,8 @@ fun SettingsDialog(
         if (showLinux) {
           com.google.ai.edge.gallery.terminal.LinuxTestDialog(onDismiss = { showLinux = false })
         }
+        // [ALTREX] The model's own Linux (run_command tool): approvals and reset.
+        SettingsSection("Linux du modèle") { AgentLinuxSettings() }
 
         // Privacy.
         SettingsSection("Confidentialité") {
@@ -655,6 +659,62 @@ private fun SemanticSearchRow() {
         ) {
           Text("Télécharger")
         }
+    }
+  }
+}
+
+/**
+ * [ALTREX] The model's Linux environment (run_command): whether each command needs approval, and a
+ * reset that deletes everything the model installed there.
+ */
+@Composable
+private fun AgentLinuxSettings() {
+  val context = LocalContext.current
+  val scope = rememberCoroutineScope()
+  var always by remember {
+    mutableStateOf(com.google.ai.edge.gallery.tools.RunCommandTool.isAlwaysAllowed(context))
+  }
+  val env = remember { com.google.ai.edge.gallery.terminal.LinuxEnv.of(context, com.google.ai.edge.gallery.terminal.LinuxEnv.AGENT) }
+  var installed by remember { mutableStateOf(env.isInstalled) }
+  var resetting by remember { mutableStateOf(false) }
+  Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+    Text(
+      "Avec « Skills et outils », le modèle peut lancer des commandes dans son propre Linux, séparé " +
+        "de ton terminal. Il a accès à Internet comme l'appli.",
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+      Column(modifier = Modifier.weight(1f)) {
+        Text("Toujours autoriser ses commandes", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
+        Text(
+          if (always) "Les commandes s'exécutent sans te demander" else "Chaque commande t'est montrée avant de s'exécuter",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+      androidx.compose.material3.Switch(
+        checked = always,
+        onCheckedChange = {
+          always = it
+          com.google.ai.edge.gallery.tools.RunCommandTool.setAlwaysAllowed(context, it)
+        },
+      )
+    }
+    if (installed) {
+      androidx.compose.material3.TextButton(
+        enabled = !resetting,
+        onClick = {
+          resetting = true
+          scope.launch {
+            env.uninstall()
+            installed = env.isInstalled
+            resetting = false
+          }
+        },
+      ) {
+        Text(if (resetting) "Réinitialisation…" else "Réinitialiser le Linux du modèle")
+      }
     }
   }
 }
