@@ -371,7 +371,7 @@
   <string name="mcp_server_authorization" translatable="true" description="Label for the authorization configuration section when adding an MCP server. [CHAR_LIMIT=22]">Authorization</string>
   <string name="mcp_server_auth_none" translatable="true" description="Option indicating no authorization is needed for the MCP server. [CHAR_LIMIT=16]">None</string>
   <string name="mcp_server_auth_request_header" translatable="true" description="Option indicating authorization via request headers. [CHAR_LIMIT=24]">Request header</string>
-  <string name="mcp_server_auth_oauth_wip" translatable="true" description="Option indicating OAuth authorization (Work In Progress). [CHAR_LIMIT=19]">OAuth (WIP)</string>
+  <string name="mcp_server_auth_oauth_wip" translatable="true" description="Option indicating OAuth authorization (Work In Progress). [CHAR_LIMIT=19]">Sign in (OAuth)</string>
   <string name="mcp_server_header_name" translatable="true" description="Label for the input field where the user enters the authorization header name. [CHAR_LIMIT=26]">Header name</string>
   <string name="mcp_server_header_value" translatable="true" description="Label for the input field where the user enters the authorization header value. [CHAR_LIMIT=26]">Header value</string>
 

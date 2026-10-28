@@ -39,8 +39,8 @@ android {
 
     // Needed for HuggingFace auth workflows.
     // Use the scheme of the "Redirect URLs" in HuggingFace app.
-    manifestPlaceholders["appAuthRedirectScheme"] =
-        "REPLACE_WITH_YOUR_REDIRECT_SCHEME_IN_HUGGINGFACE_APP"
+    // [ALTREX] OAuth return to the app (AppAuth): connectors sign-in, McpOAuth.redirectUri.
+    manifestPlaceholders["appAuthRedirectScheme"] = "com.aistudio.altrex.app"
     manifestPlaceholders["applicationName"] = "com.google.ai.edge.gallery.GalleryApplication"
     manifestPlaceholders["appIcon"] = "@mipmap/ic_launcher"
 

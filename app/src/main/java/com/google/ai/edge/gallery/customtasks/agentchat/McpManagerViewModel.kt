@@ -70,6 +70,7 @@ class McpManagerViewModel
 constructor(
   private val mcpServersDataStore: DataStore<McpServers>,
   private val userDataDataStore: DataStore<UserData>,
+  @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
 ) : ViewModel(), McpServersProvider {
   override val mcpServers: List<McpServerState>
     get() = uiState.value.mcpServers
@@ -285,8 +286,9 @@ constructor(
         val filtered = currentServers.mcpServerList.filter { it.url != url }
         McpServers.newBuilder().addAllMcpServer(filtered).build()
       }
-      // [ALTREX] Its key goes with it, and its connection is closed.
+      // [ALTREX] Its key (or OAuth tokens) goes with it, and its connection is closed.
       userDataDataStore.updateData { it.toBuilder().removeMcpAuths(url).build() }
+      com.google.ai.edge.gallery.connectors.McpOAuth.signOut(appContext, url)
       closeClients(_uiState.value.mcpServers.filter { it.mcpServer.url == url })
       _uiState.update { currentState ->
         currentState.copy(mcpServers = currentState.mcpServers.filter { it.mcpServer.url != url })
@@ -443,12 +445,26 @@ constructor(
     val client =
       Client(
         clientInfo =
-          Implementation(name = "google-ai-edge-gallery", version = BuildConfig.VERSION_NAME)
+          Implementation(name = "Altrex", version = BuildConfig.VERSION_NAME)
       )
     // Retrieve authentication details from parameter or DataStore and configure the HTTP transport.
     val resolvedAuth = mcpAuth ?: userDataDataStore.data.first().mcpAuthsMap[url]
+    // [ALTREX] Connector signed in with OAuth: its bearer token (refreshed when needed).
+    val bearer =
+      if (resolvedAuth?.authMethodCase == McpAuth.AuthMethodCase.OAUTH) {
+        com.google.ai.edge.gallery.connectors.McpOAuth.accessToken(appContext, url)
+          ?: throw IllegalStateException("Connexion expirée : reconnecte-toi à ce connecteur.")
+      } else {
+        null
+      }
     val transport =
-      if (
+      if (bearer != null) {
+        StreamableHttpClientTransport(
+          client = httpClient,
+          url = url,
+          requestBuilder = { headers.append("Authorization", "Bearer $bearer") },
+        )
+      } else if (
         resolvedAuth != null && resolvedAuth.authMethodCase == McpAuth.AuthMethodCase.REQUEST_HEADER
       ) {
         val reqHeader = resolvedAuth.requestHeader
