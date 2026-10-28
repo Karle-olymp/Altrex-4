@@ -28,4 +28,15 @@ class McpOAuthTest {
     assertEquals("https://mcp.notion.com", McpOAuth.origin("https://mcp.notion.com/mcp"))
     assertEquals("https://h.example:8443", McpOAuth.origin("https://h.example:8443/a/b"))
   }
+
+  @Test
+  fun errorReason_readsTheServiceReason() {
+    assertEquals(
+      "redirect_uri must use https",
+      McpOAuth.errorReason("{\"error\":\"invalid_redirect_uri\",\"error_description\":\"redirect_uri must use https\"}"),
+    )
+    assertEquals("invalid_client_metadata", McpOAuth.errorReason("{\"error\":\"invalid_client_metadata\"}"))
+    assertEquals("bad\nthing".replace("\n", " "), McpOAuth.errorReason("{\"error\":{\"message\":\"bad\\nthing\"}}"))
+    assertEquals(null, McpOAuth.errorReason("<html>nope</html>"))
+  }
 }

@@ -40,7 +40,14 @@ private const val TAG = "AGMcpOAuth"
  */
 object McpOAuth {
   /** Where the browser sends the user back (AppAuth's RedirectUriReceiverActivity). */
-  val redirectUri: Uri by lazy { Uri.parse("${BuildConfig.APPLICATION_ID}:/oauth2redirect") }
+  val redirectUri: Uri by lazy { Uri.parse(REDIRECT_URIS.first()) }
+
+  /**
+   * The redirect forms tried at registration. Both open AppAuth's receiver (it matches the scheme
+   * only); some services refuse the single-slash form of RFC 8252, others the double-slash one.
+   */
+  private val REDIRECT_URIS =
+    listOf("${BuildConfig.APPLICATION_ID}:/oauth2redirect", "${BuildConfig.APPLICATION_ID}://oauth2redirect")
 
   /** What is needed to start the browser step, kept until it comes back. */
   data class Pending(
@@ -51,6 +58,10 @@ object McpOAuth {
     val clientId: String,
     val clientSecret: String?,
     val scope: String?,
+    /** The redirect registered for this client (one of [REDIRECT_URIS]). */
+    val redirect: String = REDIRECT_URIS.first(),
+    /** RFC 8707 resource: the one the server announces, else its URL. */
+    val resource: String = serverUrl,
   )
 
   class OAuthException(message: String) : IOException(message)
@@ -76,11 +87,13 @@ object McpOAuth {
       if (methods != null && (0 until methods.length()).none { methods.optString(it) == "S256" }) {
         throw OAuthException("Ce service ne prend pas en charge PKCE (S256) : connexion refusée par sécurité.")
       }
-      val (clientId, clientSecret) = clientFor(context, asIssuer, asMeta)
       val scope =
         scopeHint
           ?: resourceMeta?.optJSONArray("scopes_supported")?.let { joinStrings(it) }
-      Pending(server, asIssuer, authEndpoint, tokenEndpoint, clientId, clientSecret, scope)
+      val client = clientFor(context, asIssuer, asMeta, scope)
+      val resource =
+        resourceMeta?.optString("resource")?.takeIf { sameOrigin(it, server) } ?: server
+      Pending(server, asIssuer, authEndpoint, tokenEndpoint, client.id, client.secret, scope, client.redirect, resource)
     }
 
   /** RFC 9728: from the 401 challenge, else the well-known paths. Null when the server has none. */
@@ -140,38 +153,79 @@ object McpOAuth {
     throw OAuthException("Ce serveur ne publie pas de configuration OAuth : utilise une clé d'API à la place.")
   }
 
-  /** RFC 7591 dynamic registration, once per authorization server (kept). */
-  private fun clientFor(context: Context, issuer: String, asMeta: JSONObject): Pair<String, String?> {
+  private data class Client(val id: String, val secret: String?, val redirect: String)
+
+  /**
+   * RFC 7591 dynamic registration, once per authorization server (kept). Services differ on what
+   * they accept, so a refused registration (400) is retried with the other redirect form, then
+   * with the scope declared; the service's own reason is shown if every form is refused.
+   */
+  private fun clientFor(context: Context, issuer: String, asMeta: JSONObject, scope: String?): Client {
     store(context).getString("client|$issuer", null)?.let { saved ->
       val o = JSONObject(SecretCipher.decrypt(saved))
-      return o.getString("client_id") to o.optString("client_secret").ifBlank { null }
+      return Client(
+        o.getString("client_id"),
+        o.optString("client_secret").ifBlank { null },
+        o.optString("altrex_redirect").ifBlank { REDIRECT_URIS.first() },
+      )
     }
     val endpoint = asMeta.optString("registration_endpoint").ifBlank { null }
       ?: throw OAuthException(
         "Ce service n'accepte pas l'enregistrement automatique des applis : il faut un identifiant " +
           "client déclaré chez lui (pas encore pris en charge)."
       )
-    val body =
-      JSONObject()
-        .put("client_name", "Altrex")
-        .put("redirect_uris", JSONArray().put(redirectUri.toString()))
-        .put("grant_types", JSONArray().put("authorization_code").put("refresh_token"))
-        .put("response_types", JSONArray().put("code"))
-        .put("token_endpoint_auth_method", "none")
-    val conn = open(httpsUrl(endpoint))
-    conn.requestMethod = "POST"
-    conn.doOutput = true
-    conn.setRequestProperty("Content-Type", "application/json")
-    conn.outputStream.use { it.write(body.toString().toByteArray()) }
-    val code = conn.responseCode
-    val text = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-    conn.disconnect()
-    if (code !in 200..299) throw OAuthException("Enregistrement d'Altrex refusé par le service ($code).")
-    val o = JSONObject(text)
-    val clientId = o.optString("client_id").ifBlank { null } ?: throw OAuthException("Réponse d'enregistrement invalide.")
-    store(context).edit().putString("client|$issuer", SecretCipher.encrypt(o.toString())).apply()
-    return clientId to o.optString("client_secret").ifBlank { null }
+    val attempts =
+      REDIRECT_URIS.map { it to null } +
+        (if (scope.isNullOrBlank()) emptyList() else REDIRECT_URIS.map { it to scope })
+    var lastError = ""
+    for ((redirect, withScope) in attempts) {
+      val body =
+        JSONObject()
+          .put("client_name", "Altrex")
+          .put("redirect_uris", JSONArray().put(redirect))
+          .put("grant_types", JSONArray().put("authorization_code").put("refresh_token"))
+          .put("response_types", JSONArray().put("code"))
+          .put("token_endpoint_auth_method", "none")
+          .apply { withScope?.let { put("scope", it) } }
+      val conn = open(httpsUrl(endpoint))
+      conn.requestMethod = "POST"
+      conn.doOutput = true
+      conn.setRequestProperty("Content-Type", "application/json")
+      conn.setRequestProperty("Accept", "application/json")
+      conn.outputStream.use { it.write(body.toString().toByteArray()) }
+      val code = conn.responseCode
+      val text =
+        (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+      conn.disconnect()
+      if (code in 200..299) {
+        val o = JSONObject(text)
+        val clientId = o.optString("client_id").ifBlank { null } ?: throw OAuthException("Réponse d'enregistrement invalide.")
+        o.put("altrex_redirect", redirect)
+        store(context).edit().putString("client|$issuer", SecretCipher.encrypt(o.toString())).apply()
+        return Client(clientId, o.optString("client_secret").ifBlank { null }, redirect)
+      }
+      lastError = "Enregistrement d'Altrex refusé par le service ($code)" + (errorReason(text)?.let { " : $it" } ?: ".")
+      Log.d(TAG, "Registration refused ($code) for redirect $redirect, scope ${withScope != null}")
+      if (code != 400) break
+    }
+    throw OAuthException(lastError)
   }
+
+  /** The reason an OAuth error body gives (error_description, else error), short and on one line. */
+  internal fun errorReason(body: String): String? {
+    val o = runCatching { JSONObject(body) }.getOrNull() ?: return null
+    val nested = o.optJSONObject("error")
+    val reason =
+      o.optString("error_description").ifBlank { null }
+        ?: nested?.optString("message")?.ifBlank { null }
+        ?: o.optString("message").ifBlank { null }
+        ?: o.optString("error").ifBlank { null }
+        ?: return null
+    return reason.replace(Regex("[\\p{Cntrl}]+"), " ").trim().take(200).ifEmpty { null }
+  }
+
+  internal fun sameOrigin(a: String, b: String): Boolean =
+    runCatching { origin(httpsUrl(a)) == origin(httpsUrl(b)) }.getOrDefault(false)
 
   // ---------------------------------------------------------------- browser step and tokens
 
@@ -180,9 +234,9 @@ object McpOAuth {
     val config =
       AuthorizationServiceConfiguration(Uri.parse(pending.authorizationEndpoint), Uri.parse(pending.tokenEndpoint))
     val request =
-      AuthorizationRequest.Builder(config, pending.clientId, ResponseTypeValues.CODE, redirectUri)
+      AuthorizationRequest.Builder(config, pending.clientId, ResponseTypeValues.CODE, Uri.parse(pending.redirect))
         .apply { pending.scope?.takeIf { it.isNotBlank() }?.let { setScope(it) } }
-        .setAdditionalParameters(mapOf("resource" to pending.serverUrl))
+        .setAdditionalParameters(mapOf("resource" to pending.resource))
         .build()
     return AuthorizationService(context).getAuthorizationRequestIntent(request)
   }
@@ -198,7 +252,7 @@ object McpOAuth {
     }
     val service = AuthorizationService(context)
     try {
-      val tokenRequest = response.createTokenExchangeRequest(mapOf("resource" to pending.serverUrl))
+      val tokenRequest = response.createTokenExchangeRequest(mapOf("resource" to pending.resource))
       val tokens =
         suspendCancellableCoroutine { cont ->
           val callback =

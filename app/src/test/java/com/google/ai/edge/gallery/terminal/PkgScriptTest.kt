@@ -50,4 +50,22 @@ class PkgScriptTest {
     assertEquals(1, unknown.first)
     assertTrue(unknown.second.contains("frobnicate"))
   }
+
+  @Test
+  fun installWithoutPackageExplains() {
+    val r = run("pkg", "install")
+    assertEquals(1, r.first)
+    assertTrue(r.second.contains("Usage"))
+  }
+
+  @Test
+  fun setupScriptIsValidShell() {
+    val f = Files.createTempFile("setup", ".sh").toFile()
+    f.writeText(LinuxEnv.SETUP_SCRIPT)
+    val p = ProcessBuilder("sh", "-n", f.path).redirectErrorStream(true).start()
+    val out = p.inputStream.bufferedReader().readText()
+    assertEquals(out, 0, p.waitFor())
+    f.delete()
+    assertTrue(LinuxEnv.SETUP_SCRIPT.contains("apk add bash"))
+  }
 }

@@ -66,6 +66,12 @@ private const val AGENT_PROMPT_HEAD =
   - Running a shell command, installing a package, executing code or a script: call `run_command`. It runs in your own Alpine Linux: install packages with `apk add <package>` (not apt or yum), one short command per call, then read `exit_code` and `output`.
   - Recent information from the internet: call `webSearch`.
   - A task that matches a skill in --- SKILLS ---: call `load_skill` with its exact name, then follow its instructions.
+
+  When the user asks you to install, run, check, clone or download something, do it yourself with `run_command`: never tell the user to type the command, and never state a result that no tool gave you.
+  Examples:
+  - "install python 3" → call `run_command` with {"command": "apk add python3"}
+  - "quelle version de Linux ?" → call `run_command` with {"command": "uname -a"}
+  - "clone github.com/user/projet" → call `run_command` with {"command": "apk add git && git clone https://github.com/user/projet"}
   """
 
 private const val AGENT_PROMPT_MCP_PATH =
