@@ -1,0 +1,55 @@
+{
+  "brand": "Altrex · Argora",
+  "tagline": "L'IA locale qui défend tes systèmes",
+  "brief": "Altrex fait tourner des modèles d'IA directement sur le téléphone, sans cloud. Argora, le modèle cybersécurité d'Autaris, y tourne : il doit défendre les systèmes et repousser les attaques. Une seule famille de marques, calme, premium, technique.",
+  "adjectives": ["protecteur", "technique", "calme", "premium"],
+  "criteria": "Réussite : se lit comme de la cybersécurité ET du code, distinct des boucliers d'antivirus, lisible à 16 px, fonctionne en une couleur, une vraie paire Altrex / Argora.",
+  "mockups": ["app-icon", "terminal", "readme", "website", "favicon-tab", "sticker"],
+  "nav": ["Modèles", "Sécurité", "Télécharger"],
+  "brand_color": "#0C151B",
+  "tile_color": "#0C151B",
+  "greyscale": false,
+  "final": true,
+  "deck_title": "identité finale",
+  "designer": "Autaris",
+  "concepts": [
+    {
+      "name": "Altrex",
+      "symbol": "svg/altrex-symbole-noir.svg",
+      "lockup": "svg/altrex-horizontal-noir.svg",
+      "stacked": "svg/altrex-empile-noir.svg",
+      "symbol_on_tile": "svg/altrex-symbole-couleur.svg",
+      "symbol_on_dark": "svg/altrex-symbole-couleur.svg",
+      "lockup_on_dark": "svg/altrex-horizontal-couleur.svg",
+      "stacked_on_dark": "svg/altrex-empile-couleur.svg",
+      "idea": "Deux accolades de code dessinent un bouclier autour d'un noyau : le code qui protège ce qui tourne sur ton appareil.",
+      "rationale": [
+        "Cybersécurité et programmation lisibles en un coup d'œil",
+        "Un tracé unique et arrondi : calme, pas agressif",
+        "Tient à 16 px grâce à une coupe épaissie pour les petites tailles"
+      ]
+    },
+    {
+      "name": "Argora",
+      "symbol": "svg/argora-symbole-noir.svg",
+      "lockup": "svg/argora-horizontal-noir.svg",
+      "stacked": "svg/argora-empile-noir.svg",
+      "symbol_on_tile": "svg/argora-symbole-couleur.svg",
+      "symbol_on_dark": "svg/argora-symbole-couleur.svg",
+      "lockup_on_dark": "svg/argora-horizontal-couleur.svg",
+      "stacked_on_dark": "svg/argora-empile-couleur.svg",
+      "idea": "Le même bouclier, le noyau devient un losange taillé : le modèle gardien, plus dur, en dégradé cyan → vert.",
+      "rationale": [
+        "Même famille qu'Altrex, reconnaissable au premier regard",
+        "Le losange devient la signature d'Argora (pixels, puces, animations)",
+        "Couleur propre (cyan → vert) pour le distinguer dans l'appli"
+      ]
+    }
+  ],
+  "recommendation": "Altrex et Argora partagent le bouclier d'accolades ; seul le noyau change. Le système peut accueillir d'autres produits Autaris avec leur propre signe au centre.",
+  "next_steps": [
+    "Remplacer l'icône de l'appli Android (fichiers prêts dans android/)",
+    "Mettre à jour l'animation d'intro : les accolades se referment autour du noyau",
+    "Recherche d'antériorité de marque avant usage public"
+  ]
+}
