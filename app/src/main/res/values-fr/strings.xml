@@ -337,7 +337,7 @@
   <string name="mcp_server_authorization">Autorisation</string>
   <string name="mcp_server_auth_none">Aucune</string>
   <string name="mcp_server_auth_request_header">En-tête de requête</string>
-  <string name="mcp_server_auth_oauth_wip">OAuth (en cours)</string>
+  <string name="mcp_server_auth_oauth_wip">Connexion (OAuth)</string>
   <string name="mcp_server_header_name">Nom de l\'en-tête</string>
   <string name="mcp_server_header_value">Valeur de l\'en-tête</string>
   <string name="import_model_terms_subtitle">Tu es responsable du respect des conditions propres à chaque modèle.</string>

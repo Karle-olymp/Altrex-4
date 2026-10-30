@@ -86,6 +86,9 @@ open class AgentToolsImpl : AgentTools {
 
   val webSearchTool by lazy { WebSearchTool() }
 
+  /** [ALTREX] The model's own Linux terminal (approval per command). */
+  val runCommandTool by lazy { com.google.ai.edge.gallery.tools.RunCommandTool(context = context.applicationContext) }
+
   override var toolsEnabled: Boolean = true
 
   override fun isReady(): Boolean =
@@ -94,7 +97,7 @@ open class AgentToolsImpl : AgentTools {
 
   override fun getAvailableTools(): List<ToolDefinition> {
     if (!toolsEnabled || !isReady()) return emptyList()
-    return listOf(loadSkillTool, runMcpTool, runJsTool, runIntentTool, webSearchTool) + activeTools
+    return listOf(loadSkillTool, runMcpTool, runJsTool, runIntentTool, webSearchTool, runCommandTool) + activeTools
   }
 
   override fun registerTool(tool: ToolDefinition) {

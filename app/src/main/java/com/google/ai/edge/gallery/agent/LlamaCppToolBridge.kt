@@ -104,6 +104,17 @@ object LlamaCppToolBridge {
             AgentToolParam("query", "string", "The search query."),
           ),
       ),
+      // [ALTREX] The model's own Alpine Linux (separate from the user's terminal).
+      AgentToolSpec(
+        name = "run_command",
+        description =
+          "Run a shell command in your own Alpine Linux environment (apk add, python3, git, curl…). " +
+            "The user sees and approves every command. Returns the exit code and the output.",
+        params =
+          listOf(
+            AgentToolParam("command", "string", "The shell command to run (sh syntax), from /root."),
+          ),
+      ),
     )
 
   private val gson = Gson()
@@ -135,8 +146,10 @@ object LlamaCppToolBridge {
         "load_skill" -> tools.any { it is LoadSkillTool }
         "run_js" -> tools.any { it is RunJsTool }
         "run_intent" -> tools.any { it is RunIntentTool }
-        "runMcpTool" -> tools.any { it is RunMcpTool }
+        // [ALTREX] Only when an MCP tool is really active: no tool boilerplate for nothing.
+        "runMcpTool" -> tools.filterIsInstance<RunMcpTool>().any { it.hasActiveTools() }
         "webSearch" -> tools.any { it is WebSearchTool }
+        "run_command" -> tools.any { it is com.google.ai.edge.gallery.tools.RunCommandTool }
         else -> false
       }
     return specs.filter { has(it.name) }
@@ -192,6 +205,15 @@ object LlamaCppToolBridge {
             return err("The webSearch tool requires a non-empty \"query\" argument.")
           }
           ok(tool.webSearch(query))
+        }
+        "runcommand" -> {
+          val tool = tools.filterIsInstance<com.google.ai.edge.gallery.tools.RunCommandTool>().firstOrNull()
+            ?: return err("Tool run_command is not available.")
+          val command = arg(args, "command", "cmd", "shell")
+          if (command.isEmpty()) {
+            return err("The run_command tool requires a non-empty \"command\" argument.")
+          }
+          ok(tool.runCommand(command))
         }
         else -> err("Unknown tool \"${call.name}\".")
       }

@@ -42,7 +42,7 @@ class LlamaCppToolBridgeTest {
     val names = LlamaCppToolBridge.specs.map { it.name }.toSet()
 
     assertEquals(
-      setOf("load_skill", "run_js", "run_intent", "runMcpTool", "webSearch"),
+      setOf("load_skill", "run_js", "run_intent", "runMcpTool", "webSearch", "run_command"),
       names,
     )
   }
@@ -54,6 +54,24 @@ class LlamaCppToolBridgeTest {
     assertEquals(1, spec.params.size)
     assertEquals("query", spec.params[0].name)
     assertTrue(spec.params[0].required)
+  }
+
+  @Test
+  fun specs_runCommandTakesOneCommand() {
+    val spec = LlamaCppToolBridge.specs.first { it.name == "run_command" }
+
+    assertEquals(listOf("command"), spec.params.map { it.name })
+    assertTrue(spec.params[0].required)
+  }
+
+  @Test
+  fun dispatch_runCommandWithoutTheToolIsUnavailable() = runBlocking {
+    val out =
+      LlamaCppToolBridge.dispatch(
+        AgentToolCall("run_command", JSONObject().put("command", "ls"), ""),
+        FakeToolsProvider(emptyList()),
+      )
+    assertTrue(out.contains("not available"))
   }
 
   @Test

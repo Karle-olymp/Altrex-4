@@ -44,6 +44,88 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
     /** Output kept from one command (the rest is cut). */
     const val MAX_OUTPUT_CHARS = 200_000
 
+    /** `pkg` as in Termux, run by `apk` (Alpine's package manager). */
+    internal val PKG_SCRIPT =
+      """
+      #!/bin/sh
+      # Altrex : la commande pkg de Termux, traduite pour apk (le gestionnaire de paquets d'Alpine).
+      cmd="${'$'}1"
+      [ ${'$'}# -gt 0 ] && shift
+      case "${'$'}cmd" in
+        install|in|add)
+          [ ${'$'}# -eq 0 ] && { echo "Usage : pkg install <paquet> [paquet…]" >&2; exit 1; }
+          exec apk add "${'$'}@" ;;
+        uninstall|remove|rm|del|purge) exec apk del "${'$'}@" ;;
+        update|up) exec apk update ;;
+        upgrade|ug|full-upgrade) apk update && exec apk upgrade "${'$'}@" ;;
+        search|se) exec apk search "${'$'}@" ;;
+        list-installed|list|li) exec apk list --installed "${'$'}@" ;;
+        list-all|la) exec apk list "${'$'}@" ;;
+        show|sh|info) exec apk info -a "${'$'}@" ;;
+        files) exec apk info -L "${'$'}@" ;;
+        ""|help|-h|--help)
+          echo "pkg (Altrex) : raccourci vers apk, le gestionnaire de paquets d'Alpine."
+          echo "  pkg install <paquet>    = apk add <paquet>"
+          echo "  pkg uninstall <paquet>  = apk del <paquet>"
+          echo "  pkg update / upgrade    = apk update / apk upgrade"
+          echo "  pkg search <mot>        = apk search <mot>"
+          echo "  pkg list-installed      = apk list --installed"
+          echo "  pkg show <paquet>       = apk info -a <paquet>"
+          [ -z "${'$'}cmd" ] && exit 1 || exit 0 ;;
+        *) echo "pkg : commande inconnue « ${'$'}cmd ». Tape pkg help." >&2; exit 1 ;;
+      esac
+      """.trimIndent() + "\n"
+
+    /** Packages of `altrex-setup`: what a usual terminal has (≈ 300 Mo with Node and Python). */
+    private const val BASE_PACKAGES =
+      "bash bash-completion coreutils findutils grep sed gawk procps-ng util-linux ncurses " +
+        "ca-certificates curl wget git git-lfs openssh-client-default gnupg rsync " +
+        "nano vim less tar gzip xz zip unzip file tree htop jq " +
+        "python3 py3-pip nodejs npm github-cli gcompat libstdc++ man-pages"
+    private const val DEV_PACKAGES = "build-base cmake linux-headers pkgconf python3-dev go rust cargo"
+
+    /** `altrex-setup`: installs the usual tools in one go (`--dev` adds compilers). */
+    internal val SETUP_SCRIPT =
+      """
+      #!/bin/sh
+      # Altrex : installe d'un coup les outils d'un terminal complet.
+      set -e
+      echo "Installation des outils de base (git, curl, bash, python, node, gh, nano…)."
+      apk update
+      apk add $BASE_PACKAGES
+      if [ "${'$'}1" = "--dev" ]; then
+        echo "Ajout des compilateurs (gcc, make, cmake, go, rust)…"
+        apk add $DEV_PACKAGES
+      fi
+      # pip installe aussi hors environnement virtuel (Alpine l'interdit par défaut).
+      mkdir -p /root/.config/pip
+      printf '[global]
+break-system-packages = true
+' > /root/.config/pip/pip.conf
+      touch /root/.altrex-setup-done
+      echo
+      echo "Terminé. Ferme et rouvre le terminal (bouton ↻) pour passer sous bash."
+      [ "${'$'}1" = "--dev" ] || echo "Pour compiler (gcc, make, go, rust) : altrex-setup --dev"
+      """.trimIndent() + "\n"
+
+    /** `apt` / `apt-get` habits, same translation. */
+    internal val APT_SCRIPT =
+      """
+      #!/bin/sh
+      # Altrex : apt n'existe pas sous Alpine, on passe par pkg (donc apk).
+      exec pkg "${'$'}@"
+      """.trimIndent() + "\n"
+
+    /** Shown once per interactive shell of the user's terminal (the model's commands are not). */
+    internal val PROFILE_HINT =
+      """
+      case ${'$'}- in *i*)
+        echo "Alpine Linux (Altrex). Paquets : pkg install <nom> ou apk add <nom>. Aide : pkg help"
+        [ -f /root/.altrex-setup-done ] || echo "Premier lancement ? Tape altrex-setup pour installer git, curl, bash, python, node, gh…"
+        [ -d /root/partage ] && echo "Dossier partagé avec le téléphone : ~/partage (Android/media/…/Linux)"
+      ;; esac
+      """.trimIndent() + "\n"
+
     fun of(context: Context, name: String): LinuxEnv = LinuxEnv(context.applicationContext, name)
   }
 
@@ -87,6 +169,7 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
         File(tmp, "etc/hosts").writeText("127.0.0.1 localhost\n::1 localhost\n")
         File(tmp, "root").mkdirs()
         File(tmp, "tmp").mkdirs()
+        writeHelpers(tmp)
         rootfs.deleteRecursively()
         if (!tmp.renameTo(rootfs)) throw IOException("Installation impossible (renommage).")
         baseDir.listFiles { f -> f.name.startsWith(".installed-") }?.forEach { it.delete() }
@@ -94,6 +177,21 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
         progress("Prêt.")
       }
     }
+
+  /**
+   * Termux habits in Alpine: `pkg` (and `apt`) translated to `apk`, and a one-line hint when the
+   * user's terminal opens. Rewritten when missing or outdated, so older installs get them too.
+   */
+  private fun writeHelpers(root: File) {
+    val bin = File(root, "usr/local/bin").apply { mkdirs() }
+    for ((file, text) in listOf("pkg" to PKG_SCRIPT, "apt" to APT_SCRIPT, "apt-get" to APT_SCRIPT, "altrex-setup" to SETUP_SCRIPT).map { (n, t) -> File(bin, n) to t }) {
+      if (!file.exists() || file.readText() != text) file.writeText(text)
+      file.setExecutable(true, false)
+    }
+    val profile = File(root, "etc/profile.d").apply { mkdirs() }
+    val hint = File(profile, "altrex.sh")
+    if (!hint.exists() || hint.readText() != PROFILE_HINT) hint.writeText(PROFILE_HINT)
+  }
 
   /** Removes the environment (everything installed in it). */
   suspend fun uninstall() = withContext(Dispatchers.IO) { baseDir.deleteRecursively() }
@@ -147,6 +245,7 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
 
   /** [argv] run by PRoot with the Alpine files as its root, from /root. */
   fun launch(argv: List<String>): Launch {
+    if (isInstalled) runCatching { writeHelpers(rootfs) }
     val tmp = File(context.cacheDir, "proot-tmp-$name").apply { mkdirs() }
     val args =
       listOf(
@@ -158,7 +257,7 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
         "-b", "/proc",
         "-b", "/sys",
         "-w", "/root",
-      ) + argv
+      ) + sharedFolderBind() + argv
     val env =
       linkedMapOf(
         "PROOT_LOADER" to loader.absolutePath,
@@ -171,6 +270,21 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
         "TMPDIR" to "/tmp",
       )
     return Launch(proot.absolutePath, args, env)
+  }
+
+  /**
+   * The user's terminal sees a folder of the phone as ~/partage: Android/media/<app>/Linux, which
+   * file managers show and the app writes without any storage permission. The model's environment
+   * gets none: it only sees its own files.
+   */
+  private fun sharedFolderBind(): List<String> {
+    if (name != USER) return emptyList()
+    @Suppress("DEPRECATION")
+    val media = context.externalMediaDirs.firstOrNull() ?: return emptyList()
+    val shared = File(media, "Linux")
+    if (!shared.isDirectory && !shared.mkdirs()) return emptyList()
+    File(rootfs, "root/partage").mkdirs()
+    return listOf("-b", "${shared.absolutePath}:/root/partage")
   }
 
   /** Starts [argv] inside the environment (stdin/stdout/stderr pipes, stderr merged). */

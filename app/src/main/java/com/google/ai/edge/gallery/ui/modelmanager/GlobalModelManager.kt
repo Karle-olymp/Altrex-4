@@ -520,9 +520,9 @@ fun GlobalModelManager(
   if (showRemoteSpaceDialog) {
     RemoteSpaceDialog(
       onDismiss = { showRemoteSpaceDialog = false },
-      onAdd = { spaceId ->
+      onAdd = { spaceId, manifestJson ->
         showRemoteSpaceDialog = false
-        viewModel.addRemoteSpaceModel(spaceId)
+        viewModel.addRemoteSpaceModel(spaceId, manifestJson)
         scope.launch {
           snackbarHostState.showSnackbar(
             "« $spaceId » ajouté. Il tourne dans le Space, pas sur le téléphone : tes messages y sont envoyés."
@@ -713,9 +713,43 @@ private fun getFileName(context: Context, uri: Uri): String? {
  * not local: the conversation is sent to the Space.
  */
 @Composable
-private fun RemoteSpaceDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
+private fun RemoteSpaceDialog(onDismiss: () -> Unit, onAdd: (spaceId: String, manifestJson: String) -> Unit) {
   var input by remember { mutableStateOf("") }
   val spaceId = com.google.ai.edge.gallery.runtime.RemoteSpace.parseSpaceId(input)
+  val context = LocalContext.current
+  // Optional argora-manifest.json: the trained system prompt and modes of the model in the Space.
+  var manifestJson by remember { mutableStateOf("") }
+  var manifestInfo by remember { mutableStateOf<String?>(null) }
+  val manifestPicker =
+    androidx.activity.compose.rememberLauncherForActivityResult(
+      androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { picked ->
+      if (picked == null) return@rememberLauncherForActivityResult
+      val text =
+        try {
+          context.contentResolver.openInputStream(picked)?.use { stream ->
+            val limit = 512 * 1024
+            val buffer = java.io.ByteArrayOutputStream()
+            val chunk = ByteArray(16 * 1024)
+            while (buffer.size() <= limit) {
+              val n = stream.read(chunk)
+              if (n < 0) break
+              buffer.write(chunk, 0, n)
+            }
+            buffer.toByteArray().takeIf { it.size <= limit }?.toString(Charsets.UTF_8)
+          }
+        } catch (e: Exception) {
+          null
+        }
+      val manifest = text?.let { com.google.ai.edge.gallery.data.ArgoraManifest.parse(it) }
+      if (manifest == null) {
+        manifestJson = ""
+        manifestInfo = "Ce fichier n'est pas un manifeste Argora reconnu."
+      } else {
+        manifestJson = text
+        manifestInfo = "Manifeste joint : prompt système et ${manifest.modes.size} mode(s)."
+      }
+    }
   androidx.compose.material3.AlertDialog(
     onDismissRequest = onDismiss,
     title = { Text("Modèle distant") },
@@ -738,12 +772,18 @@ private fun RemoteSpaceDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
           placeholder = { Text("Autaris/argora-api") },
           isError = input.isNotBlank() && spaceId == null,
         )
+        androidx.compose.material3.TextButton(onClick = { manifestPicker.launch(arrayOf("application/json", "*/*")) }) {
+          Text(if (manifestJson.isEmpty()) "Joindre un manifeste Argora (facultatif)" else "Changer de manifeste")
+        }
+        manifestInfo?.let {
+          Text(it, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+        }
       }
     },
     confirmButton = {
       androidx.compose.material3.TextButton(
         enabled = spaceId != null,
-        onClick = { spaceId?.let(onAdd) },
+        onClick = { spaceId?.let { onAdd(it, manifestJson) } },
       ) {
         Text("Ajouter")
       }

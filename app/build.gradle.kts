@@ -27,6 +27,8 @@ plugins {
 }
 
 android {
+  // [ALTREX] Robolectric tests need the merged resources (themes, drawables).
+  testOptions { unitTests.isIncludeAndroidResources = true }
   namespace = "com.google.ai.edge.gallery"
   compileSdk = 37
 
@@ -39,8 +41,8 @@ android {
 
     // Needed for HuggingFace auth workflows.
     // Use the scheme of the "Redirect URLs" in HuggingFace app.
-    manifestPlaceholders["appAuthRedirectScheme"] =
-        "REPLACE_WITH_YOUR_REDIRECT_SCHEME_IN_HUGGINGFACE_APP"
+    // [ALTREX] OAuth return to the app (AppAuth): connectors sign-in, McpOAuth.redirectUri.
+    manifestPlaceholders["appAuthRedirectScheme"] = "com.aistudio.altrex.app"
     manifestPlaceholders["applicationName"] = "com.google.ai.edge.gallery.GalleryApplication"
     manifestPlaceholders["appIcon"] = "@mipmap/ic_launcher"
 
@@ -148,6 +150,10 @@ dependencies {
   ksp(libs.hilt.android.compiler)
   testImplementation(libs.junit)
   testImplementation("org.json:json:20240303")
+  // [ALTREX] Composables run on the JVM (Robolectric, native graphics) to catch drawing crashes.
+  testImplementation("org.robolectric:robolectric:4.16")
+  testImplementation(platform(libs.androidx.compose.bom))
+  testImplementation(libs.androidx.ui.test.junit4)
   androidTestImplementation(libs.androidx.junit)
   androidTestImplementation(libs.androidx.espresso.core)
   androidTestImplementation(platform(libs.androidx.compose.bom))

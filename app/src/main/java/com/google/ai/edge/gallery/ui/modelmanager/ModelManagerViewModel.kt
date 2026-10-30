@@ -810,7 +810,7 @@ constructor(
    * [ALTREX] Adds a model served by a Hugging Face Space ([com.google.ai.edge.gallery.runtime.RemoteSpace])
    * to the model list: nothing is downloaded, the model runs in the Space. [spaceId] is owner/name.
    */
-  fun addRemoteSpaceModel(spaceId: String) {
+  fun addRemoteSpaceModel(spaceId: String, manifestJson: String = "") {
     val info =
       ImportedModel.newBuilder()
         .setFileName(com.google.ai.edge.gallery.runtime.RemoteSpace.modelName(spaceId))
@@ -823,6 +823,9 @@ constructor(
             .setDefaultTopp(0.95f)
             .setDefaultTemperature(0.3f)
             .setSupportThinking(true)
+            // [ALTREX] Argora served by a Space: its manifest gives the trained system prompt and the
+            // mode suffixes, as for an imported GGUF.
+            .setManifestJson(manifestJson)
             .build()
         )
         .build()

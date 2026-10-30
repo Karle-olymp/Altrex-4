@@ -32,6 +32,8 @@ class GalleryApplication : Application() {
 
   override fun onCreate() {
     super.onCreate()
+    // [ALTREX] Keep the details of a crash, shown at the next launch.
+    com.google.ai.edge.gallery.ui.home.CrashLog.install(this)
     // [ALTREX] Must be set before the llama.cpp library is loaded.
     org.nehuatl.llamacpp.NativeCpuOptions.forceBasicCpu =
       getSharedPreferences(org.nehuatl.llamacpp.NativeCpuOptions.PREFS, MODE_PRIVATE)

@@ -13,6 +13,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -46,8 +51,22 @@ fun LastExitDialog() {
     AlertDialog(
       onDismissRequest = { dismiss() },
       title = { Text("Altrex s'est arrêté") },
-      text = { Text(current.first) },
+      text = {
+        androidx.compose.foundation.layout.Box(
+          Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())
+        ) {
+          Text(current.first)
+        }
+      },
       confirmButton = { TextButton(onClick = { dismiss() }) { Text("OK") } },
+      dismissButton = {
+        if (current.first.contains("Détails")) {
+          val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+          TextButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(current.first)) }) {
+            Text("Copier")
+          }
+        }
+      },
     )
   }
 }
@@ -71,7 +90,15 @@ private fun describeLastAbnormalExit(context: Context): Pair<String, Long>? {
         ApplicationExitInfo.REASON_CRASH_NATIVE ->
           "Plantage dans le moteur natif (llama.cpp ou LiteRT)$detail. Ce n'est pas un manque de " +
             "mémoire : envoie-moi ce message."
-        ApplicationExitInfo.REASON_CRASH -> "Plantage de l'application$detail."
+        ApplicationExitInfo.REASON_CRASH -> {
+          // The trace saved by CrashLog when it is about this exit (written just before it).
+          val trace =
+            CrashLog.read(context, consume = true)
+              ?.takeIf { (_, at) -> kotlin.math.abs(info.timestamp - at) < 60_000L }
+              ?.first
+          "Plantage de l'application$detail." +
+            (trace?.let { "\n\nDétails (copie-les et envoie-les-moi) :\n" + it.lines().take(30).joinToString("\n") } ?: "")
+        }
         ApplicationExitInfo.REASON_ANR -> "L'application ne répondait plus$detail."
         ApplicationExitInfo.REASON_SIGNALED ->
           "L'application a été arrêtée par le système (signal ${info.status})$detail. Si cela " +

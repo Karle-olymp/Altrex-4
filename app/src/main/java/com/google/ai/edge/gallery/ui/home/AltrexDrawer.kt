@@ -37,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.ListAlt
 import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Mic
@@ -96,6 +97,14 @@ private val SPACES =
       "Linux (Alpine) : paquets, Python, git…",
       Icons.Outlined.Terminal,
       1,
+    ),
+    // [ALTREX] Connectors (remote MCP servers): catalog, sign-in and approvals.
+    DrawerEntry(
+      com.google.ai.edge.gallery.connectors.CONNECTORS_ENTRY_ID,
+      "Connecteurs",
+      "GitHub, Notion, Linear, Hugging Face…",
+      Icons.Outlined.Hub,
+      0,
     ),
   )
 
