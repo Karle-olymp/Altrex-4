@@ -688,33 +688,100 @@ private fun SemanticSearchRow() {
 private fun AgentLinuxSettings() {
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
-  var always by remember {
-    mutableStateOf(com.google.ai.edge.gallery.tools.RunCommandTool.isAlwaysAllowed(context))
-  }
+  val shell = com.google.ai.edge.gallery.tools.AgentShell
+  var mode by remember { mutableStateOf(shell.mode(context)) }
+  var prefixes by remember { mutableStateOf(shell.allowedPrefixes(context).sorted()) }
+  var edits by remember { mutableStateOf(shell.editsAllowed(context)) }
+  var share by remember { mutableStateOf(com.google.ai.edge.gallery.terminal.LinuxEnv.agentSharesFolder(context)) }
   val env = remember { com.google.ai.edge.gallery.terminal.LinuxEnv.of(context, com.google.ai.edge.gallery.terminal.LinuxEnv.AGENT) }
   var installed by remember { mutableStateOf(env.isInstalled) }
   var resetting by remember { mutableStateOf(false) }
   Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
     Text(
-      "Dans Discuter, le modèle peut lancer des commandes dans son propre Linux, séparé " +
-        "de ton terminal. Il a accès à Internet comme l'appli.",
+      "Dans Discuter, le modèle a son propre Linux, séparé de ton terminal : commandes, fichiers, " +
+        "tâches de fond. Il a accès à Internet comme l'appli.",
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+    Text(
+      "Ses commandes",
+      style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+      modifier = Modifier.padding(top = 10.dp),
+    )
+    for ((m, label) in
+      listOf(
+        com.google.ai.edge.gallery.tools.AgentShell.Mode.READS_FREE to "Lectures libres, me demander le reste",
+        com.google.ai.edge.gallery.tools.AgentShell.Mode.ASK_ALL to "Me demander pour chaque commande",
+        com.google.ai.edge.gallery.tools.AgentShell.Mode.ALLOW_ALL to "Tout autoriser sans demander",
+      )) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier =
+          Modifier.fillMaxWidth().clickable {
+            mode = m
+            shell.setMode(context, m)
+            edits = shell.editsAllowed(context)
+          },
+      ) {
+        androidx.compose.material3.RadioButton(
+          selected = mode == m,
+          onClick = {
+            mode = m
+            shell.setMode(context, m)
+            edits = shell.editsAllowed(context)
+          },
+        )
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+      }
+    }
+    if (prefixes.isNotEmpty()) {
+      Text(
+        "Toujours autorisés : " + prefixes.joinToString(", "),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 4.dp),
+      )
+      androidx.compose.material3.TextButton(
+        onClick = {
+          for (p in prefixes) shell.removePrefix(context, p)
+          prefixes = emptyList()
+        }
+      ) {
+        Text("Oublier ces autorisations")
+      }
+    }
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
       Column(modifier = Modifier.weight(1f)) {
-        Text("Toujours autoriser ses commandes", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
+        Text("Modifier ses fichiers sans demander", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
         Text(
-          if (always) "Les commandes s'exécutent sans te demander" else "Chaque commande t'est montrée avant de s'exécuter",
+          "Écritures et modifications de fichiers dans son Linux",
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }
       androidx.compose.material3.Switch(
-        checked = always,
+        checked = edits,
+        enabled = mode != com.google.ai.edge.gallery.tools.AgentShell.Mode.ALLOW_ALL,
         onCheckedChange = {
-          always = it
-          com.google.ai.edge.gallery.tools.RunCommandTool.setAlwaysAllowed(context, it)
+          edits = it
+          shell.setEditsAllowed(context, it)
+        },
+      )
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+      Column(modifier = Modifier.weight(1f)) {
+        Text("Accès au dossier partagé", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
+        Text(
+          "Le modèle voit ~/partage (Android/media/…/Linux), comme ton terminal",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+      androidx.compose.material3.Switch(
+        checked = share,
+        onCheckedChange = {
+          share = it
+          com.google.ai.edge.gallery.terminal.LinuxEnv.setAgentSharesFolder(context, it)
         },
       )
     }
@@ -724,6 +791,7 @@ private fun AgentLinuxSettings() {
         onClick = {
           resetting = true
           scope.launch {
+            com.google.ai.edge.gallery.tools.AgentJobs.stopAll()
             env.uninstall()
             installed = env.isInstalled
             resetting = false

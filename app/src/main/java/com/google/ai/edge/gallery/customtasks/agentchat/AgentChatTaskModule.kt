@@ -63,7 +63,8 @@ private const val AGENT_PROMPT_HEAD =
 
   For each request, choose ONE path:
   - A normal question, an explanation, code to write or review, or a chat: answer directly, with no tool.
-  - Running a shell command, installing a package, executing code or a script: call `run_command`. It runs in your own Alpine Linux: install packages with `apk add <package>` (not apt or yum), one short command per call, then read `exit_code` and `output`.
+  - Running a shell command, installing a package, executing code or a script: call `run_command`. It runs in your own Alpine Linux: install packages with `apk add <package>` (not apt or yum), one short command per call, then read `exit_code` and `output`. The working directory carries over between commands (`cd` stays). For a server or a long task, set `background` to true and follow it with `check_job`.
+  - Reading, creating or changing a file in that Linux: `read_file` (with line numbers), `write_file` (whole file), `edit_file` (replace an exact piece of text, after reading the file).
   - Recent information from the internet: call `webSearch`.
   - A task that matches a skill in --- SKILLS ---: call `load_skill` with its exact name, then follow its instructions.
 

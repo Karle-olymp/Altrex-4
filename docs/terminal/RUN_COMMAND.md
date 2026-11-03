@@ -1,4 +1,4 @@
-# Outil `run_command` : format exact (pour le dataset Argora)
+# Terminal du modèle : `run_command`, `read_file`, `write_file`, `edit_file`, `check_job` (format exact, pour le dataset Argora)
 
 Avec cet outil, le modèle dispose de son propre Alpine Linux, distinct du terminal de l'utilisateur. Il n'est proposé que lorsque « Skills et outils » est activé.
 
@@ -72,3 +72,87 @@ Le prompt contient aussi une règle (« fais-le toi-même avec `run_command`, ne
 - « clone … » → `apk add git && git clone …`.
 
 Le texte exact se trouve dans `AGENT_PROMPT_HEAD` (`AgentChatTaskModule.kt`).
+
+
+## Mise à jour 2026-11 : terminal façon Claude Code
+
+### Specs (bloc `# Tools`, après `webSearch`, dans cet ordre)
+
+Les outils du terminal se suivent dans cet ordre : `run_command`, `read_file`, `write_file`, `edit_file`, `check_job`. Ils ne sont proposés que si le Linux est disponible.
+
+Paramètres de `run_command` :
+- `command` (string, obligatoire) : le répertoire courant et les variables exportées sont conservés d'une commande à l'autre.
+- `timeout` (integer, facultatif) : jusqu'à 600 s, 120 par défaut.
+- `background` (boolean, facultatif) : renvoie tout de suite un `job_id`.
+
+Autres outils :
+
+| Outil | Paramètres |
+|---|---|
+| `read_file` | `path` ; `offset` et `limit` facultatifs (lignes, 300 par défaut) |
+| `write_file` | `path`, `content` |
+| `edit_file` | `path`, `old_string`, `new_string` ; `replace_all` facultatif. `old_string` doit être unique, sauf avec `replace_all`. |
+| `check_job` | `job_id` ; `stop` facultatif |
+
+Les descriptions exactes sont dans `LlamaCppToolBridge.specs`.
+
+### Résultats
+
+`run_command` :
+```json
+{"exit_code":"0","output":"…","cwd":"/root/projet","status":"succeeded"}
+```
+- Délai dépassé : `note` = « stopped: took longer than N s. For long work, use background=true and check_job. ».
+- Lancé en arrière-plan :
+```json
+{"job_id":"job1","note":"Started in the background. Read its output with check_job(\"job1\"); stop it with check_job(\"job1\", stop=true).","status":"succeeded"}
+```
+
+`read_file` (lignes numérotées au format `%6d\t`, coupées à 500 caractères) :
+```json
+{"path":"a.py","total_lines":"42","content":"     1\timport os\n…","note":"Lines 301 to 420 not shown: call read_file again with offset.","status":"succeeded"}
+```
+
+`write_file` :
+```json
+{"path":"…","bytes":"123","status":"succeeded"}
+```
+
+`edit_file` :
+```json
+{"path":"…","replacements":"1","status":"succeeded"}
+```
+
+Erreurs de `edit_file`, au format `{"error":…,"status":"failed"}` :
+- « old_string was not found in the file. Read the file again and copy the text exactly. »
+- « old_string was found N times. Add surrounding lines to make it unique, or set replace_all. »
+
+`check_job` :
+```json
+{"job_id":"job1","command":"…","state":"running","new_output":"…","status":"succeeded"}
+```
+- `state` vaut `running`, `finished` ou `stopped`.
+- `exit_code` est présent quand la tâche est terminée.
+
+Tous ces résultats sont encadrés comme contenu non fiable (`DONNÉES-{nonce}`).
+
+### Refus (les mêmes textes que `run_intent` et MCP)
+
+- `{"result":"refused: the user did not allow this action. Do not try again; tell the user.","status":"failed"}`
+- `{"result":"refused: the user could not be asked to allow this action. Do not try again; tell the user.","status":"failed"}`
+
+### Autorisations (côté appli, invisibles pour le modèle)
+
+**Commandes**, selon le mode réglé :
+- **Par défaut :** les commandes en lecture seule passent librement (`ls`, `cat`, `grep`, `git status`…, sans `;`, `&`, `>` ni `$(`) ; les autres sont demandées.
+- **Toujours me demander.**
+- **Tout autoriser.**
+
+Le bouton « Toujours » d'une demande s'applique au programme concerné, par exemple « npm ». Il ne couvre jamais une commande enchaînée (avec `;` ou `&`).
+
+**Fichiers :** `write_file` et `edit_file` sont demandés, sauf si l'utilisateur a activé « Modifier ses fichiers sans demander ».
+
+**Comportement attendu du modèle :**
+- lire un fichier avant de le modifier ;
+- utiliser `edit_file` pour les petites modifications et `write_file` pour un nouveau fichier ;
+- lancer en arrière-plan les serveurs et les tâches longues, puis les suivre avec `check_job`.

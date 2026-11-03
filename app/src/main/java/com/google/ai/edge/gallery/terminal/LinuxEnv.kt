@@ -126,6 +126,17 @@ break-system-packages = true
       ;; esac
       """.trimIndent() + "\n"
 
+    private const val AGENT_PREFS = "altrex_run_command"
+    private const val KEY_SHARE = "share_folder"
+
+    /** Whether the model's Linux also sees ~/partage (off by default). */
+    fun agentSharesFolder(context: Context): Boolean =
+      context.getSharedPreferences(AGENT_PREFS, Context.MODE_PRIVATE).getBoolean(KEY_SHARE, false)
+
+    fun setAgentSharesFolder(context: Context, share: Boolean) {
+      context.getSharedPreferences(AGENT_PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_SHARE, share).apply()
+    }
+
     fun of(context: Context, name: String): LinuxEnv = LinuxEnv(context.applicationContext, name)
   }
 
@@ -207,10 +218,29 @@ break-system-packages = true
     command: String,
     timeoutMs: Long = DEFAULT_TIMEOUT_MS,
     onOutput: (String) -> Unit = {},
+  ): CommandResult = exec(listOf("/bin/sh", "-lc", command), null, timeoutMs, onOutput)
+
+  /**
+   * Runs [argv] in the environment with [stdin] as its input (closed after), so that commands and
+   * file contents reach it without any shell quoting. Same output and time limit as [run].
+   */
+  suspend fun exec(
+    argv: List<String>,
+    stdin: String?,
+    timeoutMs: Long = DEFAULT_TIMEOUT_MS,
+    onOutput: (String) -> Unit = {},
   ): CommandResult =
     withContext(Dispatchers.IO) {
       check(isInstalled) { "Environnement Linux non installé." }
-      val process = start(listOf("/bin/sh", "-lc", command))
+      val process = start(argv)
+      Thread {
+          try {
+            process.outputStream.use { out -> stdin?.let { out.write(it.toByteArray()) } }
+          } catch (e: IOException) {
+            // The program ended without reading everything.
+          }
+        }
+        .start()
       val out = StringBuilder()
       val reader = Thread {
         try {
@@ -275,10 +305,10 @@ break-system-packages = true
   /**
    * The user's terminal sees a folder of the phone as ~/partage: Android/media/<app>/Linux, which
    * file managers show and the app writes without any storage permission. The model's environment
-   * gets none: it only sees its own files.
+   * sees it only when the user allows it in the settings ([agentSharesFolder]).
    */
   private fun sharedFolderBind(): List<String> {
-    if (name != USER) return emptyList()
+    if (name != USER && !(name == AGENT && agentSharesFolder(context))) return emptyList()
     @Suppress("DEPRECATION")
     val media = context.externalMediaDirs.firstOrNull() ?: return emptyList()
     val shared = File(media, "Linux")

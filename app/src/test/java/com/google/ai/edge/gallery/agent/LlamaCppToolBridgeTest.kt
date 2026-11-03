@@ -42,7 +42,10 @@ class LlamaCppToolBridgeTest {
     val names = LlamaCppToolBridge.specs.map { it.name }.toSet()
 
     assertEquals(
-      setOf("load_skill", "run_js", "run_intent", "runMcpTool", "webSearch", "run_command"),
+      setOf(
+        "load_skill", "run_js", "run_intent", "runMcpTool", "webSearch",
+        "run_command", "read_file", "write_file", "edit_file", "check_job",
+      ),
       names,
     )
   }
@@ -57,11 +60,18 @@ class LlamaCppToolBridgeTest {
   }
 
   @Test
-  fun specs_runCommandTakesOneCommand() {
+  fun specs_runCommandTakesACommandAndOptions() {
     val spec = LlamaCppToolBridge.specs.first { it.name == "run_command" }
 
-    assertEquals(listOf("command"), spec.params.map { it.name })
-    assertTrue(spec.params[0].required)
+    assertEquals(listOf("command", "timeout", "background"), spec.params.map { it.name })
+    assertEquals(listOf(true, false, false), spec.params.map { it.required })
+  }
+
+  @Test
+  fun specs_editFileNeedsPathOldAndNew() {
+    val spec = LlamaCppToolBridge.specs.first { it.name == "edit_file" }
+
+    assertEquals(listOf("path", "old_string", "new_string"), spec.params.filter { it.required }.map { it.name })
   }
 
   @Test
