@@ -262,6 +262,9 @@ object RemoteSpace {
 /** [ALTREX] The loaded state of a remote model: nothing in RAM, only where to send requests. */
 data class RemoteModelInstance(val spaceId: String, val token: String?)
 
+/** [ALTREX] A cloud model ([CloudApi]): its provider and model id; the key is read at each request. */
+data class CloudModelInstance(val provider: CloudApi.Provider, val modelId: String)
+
 /**
  * [ALTREX] [LlmModelHelper] for [RemoteSpace] models. Stateless like llama.cpp: the agent loop sends
  * the full conversation (a [LlamaHelper.chatRequest]) on every turn.
@@ -287,6 +290,20 @@ object RemoteModelHelper : LlmModelHelper {
     coroutineScope: CoroutineScope?,
   ) {
     appContext = context.applicationContext
+    if (CloudApi.isCloud(model.name)) {
+      val (provider, modelId) =
+        CloudApi.parse(model.name) ?: run {
+          onDone("Modèle cloud invalide : ${model.name}")
+          return
+        }
+      if (CloudApi.getKey(appContext, provider) == null) {
+        onDone("Aucune clé ${provider.label} : ajoute-la dans Réglages → Modèles cloud.")
+        return
+      }
+      model.instance = CloudModelInstance(provider, modelId)
+      onDone("")
+      return
+    }
     val spaceId = RemoteSpace.spaceId(model.name)
     if (RemoteSpace.parseSpaceId(spaceId) == null) {
       onDone("Identifiant de Space invalide : $spaceId")
@@ -325,6 +342,10 @@ object RemoteModelHelper : LlmModelHelper {
     coroutineScope: CoroutineScope?,
     extraContext: Map<String, String>?,
   ) {
+    (model.instance as? CloudModelInstance)?.let { cloud ->
+      runCloud(model, cloud, input, resultListener, cleanUpListener, onError, images, audioClips, extraContext)
+      return
+    }
     val instance = model.instance as? RemoteModelInstance
     if (instance == null) {
       onError("Le modèle distant n'est pas initialisé.")
@@ -389,5 +410,77 @@ object RemoteModelHelper : LlmModelHelper {
 
   override fun stopResponse(model: Model) {
     stopGen.incrementAndGet()
+  }
+
+  /** [ALTREX] Same request and streaming as a Space, through the provider's API ([CloudApi]). */
+  private fun runCloud(
+    model: Model,
+    cloud: CloudModelInstance,
+    input: String,
+    resultListener: ResultListener,
+    cleanUpListener: CleanUpListener,
+    onError: (message: String) -> Unit,
+    images: List<Bitmap>,
+    audioClips: List<ByteArray>,
+    extraContext: Map<String, String>?,
+  ) {
+    if (images.isNotEmpty() || audioClips.isNotEmpty()) {
+      onError("Les images et l'audio ne sont pas encore envoyés aux modèles cloud.")
+      return
+    }
+    val key = CloudApi.getKey(appContext, cloud.provider)
+    if (key == null) {
+      onError("Aucune clé ${cloud.provider.label} : ajoute-la dans Réglages → Modèles cloud.")
+      return
+    }
+    val messagesJson =
+      if (input.startsWith(LlamaHelper.CHAT_REQUEST_PREFIX)) {
+        input.removePrefix(LlamaHelper.CHAT_REQUEST_PREFIX)
+      } else {
+        JSONArray()
+          .put(JSONObject().put("role", "system").put("content", LlamaHelper.getDefaultSystemPrompt()))
+          .put(JSONObject().put("role", "user").put("content", input))
+          .toString()
+      }
+    val thinking = extraContext?.get("enable_thinking") == "true"
+    val maxTokens = model.llmMaxToken.takeIf { it > 0 }?.coerceIn(256, 64_000) ?: 8192
+    val myGen = stopGen.get()
+    scope.launch {
+      var shown = ""
+      fun show(text: String) {
+        if (stopGen.get() != myGen || !text.startsWith(shown) || text.length == shown.length) return
+        resultListener(text.substring(shown.length), false, null)
+        shown = text
+      }
+      try {
+        val answer =
+          CloudApi.chat(
+            provider = cloud.provider,
+            modelId = cloud.modelId,
+            key = key,
+            messagesJson = messagesJson,
+            thinking = thinking,
+            maxTokens = maxTokens,
+            isCancelled = { stopGen.get() != myGen },
+            onText = ::show,
+          )
+        if (stopGen.get() != myGen) {
+          cleanUpListener()
+          return@launch
+        }
+        show(answer)
+        resultListener("", true, null)
+      } catch (e: Exception) {
+        if (stopGen.get() != myGen) {
+          cleanUpListener()
+        } else {
+          Log.w(TAG, "Cloud request failed (${e.javaClass.simpleName})")
+          onError(
+            (e as? CloudApi.CloudException)?.message
+              ?: "${cloud.provider.label} injoignable (${e.javaClass.simpleName}). Vérifie ta connexion."
+          )
+        }
+      }
+    }
   }
 }

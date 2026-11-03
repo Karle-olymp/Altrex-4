@@ -343,7 +343,9 @@ fun SettingsDialog(
         }
 
         // [ALTREX] API keys of the online tools, stored encrypted on the phone.
-        SettingsSection("Clés d'API") { ApiKeysSettings() }
+        SettingsSection("Clés d'API") { ApiKeysSettings(API_KEYS) }
+        // [ALTREX] Keys of cloud model providers (models added from the model list).
+        SettingsSection("Modèles cloud") { ApiKeysSettings(CLOUD_KEYS) }
 
         // [ALTREX] Local memory: a folder the model draws on.
         SettingsSection("Mémoire locale") { MemorySettings() }
@@ -438,18 +440,33 @@ private val API_KEYS =
     ),
   )
 
+/** [ALTREX] One key per cloud provider ([com.google.ai.edge.gallery.runtime.CloudApi]). */
+private val CLOUD_KEYS =
+  com.google.ai.edge.gallery.runtime.CloudApi.Provider.entries.map { p ->
+    ApiKeySpec(
+      name = p.label,
+      purpose = "Modèles ${p.label.substringBefore(" (")}",
+      help =
+        "Colle ta clé d'API ${p.label} (${p.keyPage.removePrefix("https://")}). Elle n'est envoyée " +
+          "qu'à ${java.net.URL(p.baseUrl).host}, quand tu utilises un de ses modèles ; l'usage est facturé " +
+          "sur ton compte. Ajoute ensuite le modèle depuis la liste des modèles → Modèle cloud.",
+      read = { com.google.ai.edge.gallery.runtime.CloudApi.getKey(it, p) },
+      save = { c, k -> com.google.ai.edge.gallery.runtime.CloudApi.saveKey(c, p, k) },
+    )
+  }
+
 /**
  * [ALTREX] Every API key in one place: status (masked), add or change, delete. Keys are stored
  * encrypted on the phone and are never sent to the model.
  */
 @Composable
-private fun ApiKeysSettings() {
+private fun ApiKeysSettings(specs: List<ApiKeySpec>) {
   val context = LocalContext.current
   var version by remember { mutableStateOf(0) }
   var editing by remember { mutableStateOf<ApiKeySpec?>(null) }
   var input by remember { mutableStateOf("") }
 
-  for (spec in API_KEYS) {
+  for (spec in specs) {
     val key = remember(version) { spec.read(context) }
     Row(
       verticalAlignment = Alignment.CenterVertically,

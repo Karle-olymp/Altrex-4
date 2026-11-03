@@ -832,6 +832,29 @@ constructor(
     addImportedLlmModel(info)
   }
 
+  /**
+   * [ALTREX] Adds a cloud model (provider API with the user's key, [CloudApi]). Nothing to download;
+   * a long answer budget since these models have large contexts.
+   */
+  fun addCloudModel(provider: com.google.ai.edge.gallery.runtime.CloudApi.Provider, modelId: String) {
+    val info =
+      ImportedModel.newBuilder()
+        .setFileName(com.google.ai.edge.gallery.runtime.CloudApi.modelName(provider, modelId))
+        .setFileSize(0L)
+        .setLlmConfig(
+          LlmConfig.newBuilder()
+            .addCompatibleAccelerators(Accelerator.CPU.label)
+            .setDefaultMaxTokens(8192)
+            .setDefaultTopk(40)
+            .setDefaultTopp(0.95f)
+            .setDefaultTemperature(1.0f)
+            .setSupportThinking(true)
+            .build()
+        )
+        .build()
+    addImportedLlmModel(info)
+  }
+
   fun getTokenStatusAndData(): TokenStatusAndData {
     // Try to load token data from DataStore.
     var tokenStatus = TokenStatus.NOT_STORED
@@ -1416,7 +1439,10 @@ constructor(
         // through the native llama.cpp engine, everything else (.task/.litertlm) through
         // LiteRT-LM.
         runtimeType =
-          if (com.google.ai.edge.gallery.runtime.RemoteSpace.isRemote(info.fileName)) {
+          if (
+            com.google.ai.edge.gallery.runtime.RemoteSpace.isRemote(info.fileName) ||
+              com.google.ai.edge.gallery.runtime.CloudApi.isCloud(info.fileName)
+          ) {
             RuntimeType.REMOTE
           } else if (info.fileName.endsWith(".gguf")) {
             RuntimeType.LLAMA_CPP
