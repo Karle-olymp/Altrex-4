@@ -317,10 +317,11 @@ break-system-packages = true
     return listOf("-b", "${shared.absolutePath}:/root/partage")
   }
 
-  /** Starts [argv] inside the environment (stdin/stdout/stderr pipes, stderr merged). */
-  fun start(argv: List<String>): Process {
+  /** Starts [argv] inside the environment (stdin/stdout/stderr pipes, stderr merged unless asked). */
+  fun start(argv: List<String>, mergeStderr: Boolean = true): Process {
     val l = launch(argv)
-    val pb = ProcessBuilder(listOf(l.executable) + l.args).redirectErrorStream(true).directory(rootfs)
+    // A protocol on stdout (MCP over stdio) needs stderr apart.
+    val pb = ProcessBuilder(listOf(l.executable) + l.args).redirectErrorStream(mergeStderr).directory(rootfs)
     pb.environment().apply {
       clear()
       putAll(l.env)

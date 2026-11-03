@@ -55,3 +55,27 @@ Reconnecter ou ajouter de nouveau un connecteur conserve ses réglages :
 Au retour dans Discuter, `refreshFromStore()` reprend les changements faits dans l'écran Connecteurs :
 - elle reconnecte seulement si des serveurs ont été ajoutés ou retirés ;
 - sinon, elle recopie juste les réglages.
+
+## Connecteurs locaux (stdio)
+
+Un connecteur local est un serveur MCP lancé comme un programme (`npx`, `uvx`, `python`…) dans le Linux du modèle. Il communique par l'entrée et la sortie standard, comme ceux de Claude Code ou de Claude Desktop.
+
+**Enregistrement.** Il est enregistré comme un connecteur distant, avec pour url `stdio:` suivie de la commande.
+
+**Préparation.** Au premier ajout, `LocalMcp.prepare` installe le Linux si besoin, puis le lanceur de la commande :
+- `nodejs` et `npm` pour `npx` ;
+- `uv` et `python3` pour `uvx`.
+
+**Exécution.**
+- Le processus est lancé depuis `/root`, avec stderr à part : la sortie standard porte le protocole.
+- Il est arrêté avec son client.
+- Délai de connexion : 90 s, au lieu de 10 s pour un connecteur distant.
+
+**Catalogue :**
+- les serveurs de référence MCP : fichiers, mémoire, réflexion pas à pas, pages web (`uvx`), heure (`uvx`) ;
+- REA (`npx -y rea-agents@latest mcp`, avec des modules natifs : non vérifié sous Alpine) ;
+- toute autre commande saisie à la main.
+
+**Autorisations.** Les mêmes que pour les connecteurs distants (lecture libre, actions demandées). Le serveur ne voit que le Linux du modèle.
+
+**Test.** `StdioMcpLiveTest` (avec `MCP_STDIO_TEST=1`) branche un vrai `server-memory` sur le même transport : les 9 outils sont listés, et les indications `readOnlyHint` sont lues.

@@ -91,6 +91,9 @@ fun ConnectorsScreen(
   var errorFor by remember { mutableStateOf<Pair<String, String>?>(null) }
   var keyFor by remember { mutableStateOf<ConnectorCatalog.Connector?>(null) }
   var showAddByUrl by remember { mutableStateOf(false) }
+  var showAddLocal by remember { mutableStateOf(false) }
+  // What a local connector is doing while it is prepared (installing node, uv…).
+  var noteFor by remember { mutableStateOf<Pair<String, String>?>(null) }
   var toolsOf by remember { mutableStateOf<String?>(null) }
   var removeUrl by remember { mutableStateOf<String?>(null) }
 
@@ -126,8 +129,25 @@ fun ConnectorsScreen(
     }
   }
 
+  /** Local connector: installs what its command needs, then starts it and lists its tools. */
+  fun connectLocal(id: String, command: String, connectorId: String) {
+    busyId = id
+    errorFor = null
+    scope.launch {
+      val error = LocalMcp.prepare(context, command) { msg -> noteFor = id to msg }
+      noteFor = if (error == null) id to "Démarrage du serveur (le premier lancement télécharge le paquet)…" else null
+      if (error != null) {
+        errorFor = id to error
+        busyId = null
+      } else {
+        viewModel.addMcpServer(LocalMcp.url(command), McpAuth.AuthMethodCase.NONE, "", "", connectorId)
+      }
+    }
+  }
+
   fun connect(c: ConnectorCatalog.Connector) {
     when (c.auth) {
+      ConnectorCatalog.Auth.LOCAL -> connectLocal(c.id, LocalMcp.command(c.url), c.id)
       ConnectorCatalog.Auth.NONE -> {
         busyId = c.id
         errorFor = null
@@ -143,6 +163,7 @@ fun ConnectorsScreen(
     val id = busyId ?: return@LaunchedEffect
     if (!uiState.loadingMcpServer && pending == null) {
       uiState.error?.let { errorFor = id to it }
+      noteFor = null
       viewModel.clearError()
       busyId = null
     }
@@ -187,7 +208,13 @@ fun ConnectorsScreen(
             onEnabled = { viewModel.setMcpServerEnabled(state.mcpServer.url, it) },
             onPolicy = { viewModel.setMcpServerPolicy(state.mcpServer.url, it) },
             onTools = { toolsOf = state.mcpServer.url },
-            onReconnect = { signIn(state.mcpServer.url, state.mcpServer.url) },
+            onReconnect = {
+              if (LocalMcp.isLocal(state.mcpServer.url)) {
+                connectLocal(state.mcpServer.url, LocalMcp.command(state.mcpServer.url), "")
+              } else {
+                signIn(state.mcpServer.url, state.mcpServer.url)
+              }
+            },
             onRemove = { removeUrl = state.mcpServer.url },
           )
         }
@@ -210,6 +237,33 @@ fun ConnectorsScreen(
             error = errorFor?.takeIf { it.first == c.id }?.second,
             onConnect = { connect(c) },
           )
+        }
+      }
+
+      // Local connectors: programs in the model's Linux.
+      item(key = "t:local") { SectionTitle("Locaux (dans le Linux du modèle)") }
+      items(LocalMcp.CATALOG.map(ConnectorCatalog::local), key = { "k:" + it.id }) { c ->
+        CatalogRow(
+          connector = c,
+          connected = c.url in connectedUrls,
+          busy = busyId == c.id,
+          error = errorFor?.takeIf { it.first == c.id }?.second,
+          note = noteFor?.takeIf { it.first == c.id }?.second,
+          onConnect = { connect(c) },
+        )
+      }
+      item {
+        OutlinedButton(onClick = { showAddLocal = true }, modifier = Modifier.fillMaxWidth()) {
+          Icon(Icons.Outlined.Add, contentDescription = null)
+          Spacer(Modifier.width(8.dp))
+          Text("Ajouter un connecteur local (commande)")
+        }
+        val id = "custom"
+        errorFor?.takeIf { it.first == id }?.second?.let {
+          Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+        noteFor?.takeIf { it.first == id }?.second?.let {
+          Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
       }
 
@@ -241,6 +295,16 @@ fun ConnectorsScreen(
       },
       onOpenKeyPage = {
         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(c.keyPage))) }
+      },
+    )
+  }
+
+  if (showAddLocal) {
+    LocalCommandDialog(
+      onDismiss = { showAddLocal = false },
+      onAdd = { command ->
+        showAddLocal = false
+        connectLocal("custom", command, "")
       },
     )
   }
@@ -312,6 +376,7 @@ private fun CatalogRow(
   connected: Boolean,
   busy: Boolean,
   error: String?,
+  note: String? = null,
   onConnect: () -> Unit,
 ) {
   Card(
@@ -336,6 +401,7 @@ private fun CatalogRow(
               ConnectorCatalog.Auth.OAUTH -> "Connexion avec ton compte"
               ConnectorCatalog.Auth.KEY -> "Avec une clé que tu crées sur le service"
               ConnectorCatalog.Auth.NONE -> "Public, sans compte"
+              ConnectorCatalog.Auth.LOCAL -> LocalMcp.command(connector.url)
             },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -350,6 +416,9 @@ private fun CatalogRow(
       }
       error?.let {
         Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
+      }
+      note?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
       }
     }
   }
@@ -368,7 +437,9 @@ private fun ConnectedCard(
   onRemove: () -> Unit,
 ) {
   val server = state.mcpServer
-  val host = runCatching { Uri.parse(server.url).host }.getOrNull().orEmpty()
+  val host =
+    if (LocalMcp.isLocal(server.url)) "Local : " + LocalMcp.command(server.url)
+    else runCatching { Uri.parse(server.url).host }.getOrNull().orEmpty()
   val name = catalog?.name ?: server.name.ifBlank { host }
   var expanded by remember { mutableStateOf(false) }
   val tools = server.toolsList
@@ -488,6 +559,41 @@ private fun KeyDialog(
       }
     },
     confirmButton = { Button(onClick = { onConfirm(key) }, enabled = key.isNotBlank()) { Text("Connecter") } },
+    dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+  )
+}
+
+/** [ALTREX] A local connector from its command (npx, uvx, python…), run in the model's Linux. */
+@Composable
+private fun LocalCommandDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
+  var command by remember { mutableStateOf("") }
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("Connecteur local") },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+          "La commande qui lance un serveur MCP en « stdio », comme dans la configuration de Claude " +
+            "Code ou Claude Desktop. Il tourne dans le Linux du modèle (pas sur ton téléphone) ; node " +
+            "ou uv s'installent tout seuls si la commande commence par npx ou uvx.",
+          style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
+          "Exemples : npx -y @modelcontextprotocol/server-filesystem /root\nuvx mcp-server-fetch",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+          value = command,
+          onValueChange = { command = it },
+          label = { Text("Commande") },
+          modifier = Modifier.fillMaxWidth(),
+        )
+      }
+    },
+    confirmButton = {
+      Button(onClick = { onAdd(command.trim()) }, enabled = command.isNotBlank()) { Text("Ajouter") }
+    },
     dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
   )
 }

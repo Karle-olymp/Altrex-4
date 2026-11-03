@@ -54,6 +54,7 @@ private const val TAG = "AGMcpManagerVM"
 
 // [ALTREX] MCP limits.
 private const val CONNECT_TIMEOUT_MS = 10_000L
+private const val LOCAL_CONNECT_TIMEOUT_MS = 90_000L
 private const val MAX_TOOL_NAME_CHARS = 64
 private const val MAX_TOOL_DESCRIPTION_CHARS = 600
 private const val MAX_TOOL_SCHEMA_CHARS = 1_500
@@ -79,6 +80,9 @@ constructor(
   val uiState = _uiState.asStateFlow()
 
   private val httpClient = HttpClient(Android) { install(SSE) }
+
+  /** [ALTREX] Processes of the local connectors (stdio), by url: stopped with their client. */
+  private val localProcesses = java.util.concurrent.ConcurrentHashMap<String, Process>()
 
   /** [ALTREX] Whether [loadMcpServers] has completed once (see [refreshFromStore]). */
   @Volatile private var loadedOnce = false
@@ -126,7 +130,11 @@ constructor(
             val savedToolsMap = serverProto.toolsList.associate { it.name to it.enabled }
             val savedAlwaysAllowMap = serverProto.toolsList.associate { it.name to it.alwaysAllow }
             val (client, mcpTools) =
-              kotlinx.coroutines.withTimeout(CONNECT_TIMEOUT_MS) {
+              // A local connector starts a program (npx, uvx…): give it more time than a request.
+              kotlinx.coroutines.withTimeout(
+                if (com.google.ai.edge.gallery.connectors.LocalMcp.isLocal(serverProto.url)) LOCAL_CONNECT_TIMEOUT_MS
+                else CONNECT_TIMEOUT_MS
+              ) {
                 initializeClientAndLoadTools(serverProto.url, savedToolsMap, savedAlwaysAllowMap)
               }
             val serverVersion = client.serverVersion
@@ -161,6 +169,7 @@ constructor(
 
   /** [ALTREX] Closes MCP sessions without waiting (best effort). */
   private fun closeClients(states: List<McpServerState>) {
+    for (st in states) localProcesses.remove(st.mcpServer.url)?.destroy()
     val clients = states.mapNotNull { it.client }
     if (clients.isEmpty()) return
     kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
@@ -170,6 +179,8 @@ constructor(
 
   override fun onCleared() {
     closeClients(_uiState.value.mcpServers)
+    for (p in localProcesses.values) p.destroy()
+    localProcesses.clear()
     runCatching { httpClient.close() }
     super.onCleared()
   }
@@ -526,7 +537,17 @@ constructor(
         null
       }
     val transport =
-      if (bearer != null) {
+      if (com.google.ai.edge.gallery.connectors.LocalMcp.isLocal(url)) {
+        // [ALTREX] Local connector: a program in the model's Linux, over stdin/stdout.
+        localProcesses.remove(url)?.destroy()
+        val (stdio, process) =
+          com.google.ai.edge.gallery.connectors.LocalMcp.start(
+            appContext,
+            com.google.ai.edge.gallery.connectors.LocalMcp.command(url),
+          )
+        localProcesses[url] = process
+        stdio
+      } else if (bearer != null) {
         StreamableHttpClientTransport(
           client = httpClient,
           url = url,
@@ -544,8 +565,15 @@ constructor(
       } else {
         StreamableHttpClientTransport(client = httpClient, url = url)
       }
-    client.connect(transport)
-    val toolsResponse = client.listTools()
+    val toolsResponse =
+      try {
+        client.connect(transport)
+        client.listTools()
+      } catch (e: Throwable) {
+        // A local server that did not start (missing package, crash): its process goes too.
+        localProcesses.remove(url)?.destroy()
+        throw e
+      }
     val mcpTools =
       toolsResponse?.tools.orEmpty().map { tool ->
         val isEnabled = savedToolsMap?.get(tool.name) ?: true

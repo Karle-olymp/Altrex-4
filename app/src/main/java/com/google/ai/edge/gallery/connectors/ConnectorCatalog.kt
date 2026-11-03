@@ -13,6 +13,8 @@ object ConnectorCatalog {
     OAUTH,
     /** A key or token the user creates on the service, sent as a bearer token. */
     KEY,
+    /** A program started in the model's Linux ([LocalMcp]). */
+    LOCAL,
   }
 
   data class Connector(
@@ -74,7 +76,13 @@ object ConnectorCatalog {
 
   fun byId(id: String): Connector? = ALL.find { it.id == id }
 
-  fun byUrl(url: String): Connector? = ALL.find { it.url.trimEnd('/') == url.trimEnd('/') }
+  fun byUrl(url: String): Connector? =
+    ALL.find { it.url.trimEnd('/') == url.trimEnd('/') }
+      ?: if (LocalMcp.isLocal(url)) LocalMcp.byCommand(LocalMcp.command(url))?.let(::local) else null
+
+  /** A local catalog entry shown like the others. */
+  fun local(e: LocalMcp.Entry): Connector =
+    Connector("local-" + e.id, e.name, e.description, "", LocalMcp.url(e.command), Auth.LOCAL, e.color)
 
   /** The header value sent for a [Auth.KEY] connector: the key as a bearer token. */
   fun bearer(key: String): String {
