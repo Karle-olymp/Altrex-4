@@ -83,7 +83,9 @@ message Settings {
   bool is_gemma_terms_accepted = 8;
 
   repeated string viewed_promo_id = 10;
-  bool disable_firebase_analytics = 11;
+  // [ALTREX] 11 was disable_firebase_analytics (Firebase removed): never reuse it.
+  reserved 11;
+  reserved "disable_firebase_analytics";
 }
 
 message McpAuth {

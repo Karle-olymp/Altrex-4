@@ -56,7 +56,12 @@ cd Altrex-4
 ./gradlew assembleDebug
 
 # L'APK est généré dans :
-# app/build/outputs/apk/debug/app-debug.apk
+# app/build/outputs/apk/debug/altrex-debug.apk
+
+# APK release (R8 : code réduit et optimisé, ressources inutiles retirées, non débogable)
+./gradlew assembleRelease
+# app/build/outputs/apk/release/altrex-release.apk
+# + app/build/outputs/mapping/release/mapping.txt (à garder avec l'APK)
 ```
 
 Pour installer directement sur un appareil connecté :
@@ -68,11 +73,24 @@ Pour installer directement sur un appareil connecté :
 > La compilation native (`externalNativeBuild` / CMake) nécessite le NDK et ne produit que
 > l'ABI `arm64-v8a`.
 
+Les deux APK sont signés avec la même clé, `debug.keystore` à la racine du dépôt (non suivi par
+git, mots de passe « android ») : l'APK release s'installe par-dessus un APK debug sans perte de
+données. Sans ce fichier, l'APK release est produit non signé.
+
+Une trace de plantage d'un APK release (fenêtre « Altrex s'est arrêté ») a des noms de classes
+raccourcis. Pour la relire, utiliser le `mapping.txt` **du même build** :
+
+```bash
+$ANDROID_HOME/cmdline-tools/latest/bin/retrace app/build/outputs/mapping/release/mapping.txt trace.txt
+```
+
 ## Intégration continue
 
-Le workflow GitHub Actions `.github/workflows/build-debug-apk.yml` compile l'APK de debug
-(déclenchement manuel `workflow_dispatch`) et publie l'artefact dans une release GitHub
-`debug-latest`.
+Le workflow GitHub Actions `.github/workflows/build-debug-apk.yml` lance les tests et compile
+l'APK de debug (pull requests et déclenchement manuel `workflow_dispatch`) ; en manuel, il le
+publie dans la release GitHub `debug-latest`. En manuel seulement, un second job compile l'APK
+release et le garde 14 jours, avec son `mapping.txt`, comme artefact du workflow (rien n'est
+publié).
 
 ## Structure du dépôt
 

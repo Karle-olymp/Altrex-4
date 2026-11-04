@@ -16,8 +16,6 @@
 
 plugins {
   alias(libs.plugins.android.application)
-  // Note: set apply to true to enable google-services (requires google-services.json).
-  alias(libs.plugins.google.services) apply false
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.kotlin.serialization)
   alias(libs.plugins.protobuf)
@@ -68,9 +66,14 @@ externalNativeBuild {
       version = "3.22.1"
     }
   }
+  // [ALTREX] One key for every build: debug.keystore at the repo root (untracked; CI writes it from
+  // the ALTREX_DEBUG_KEYSTORE_B64 secret). The release build uses it too, so a release APK installs
+  // over the debug builds already on the phone (another key would force an uninstall and lose the
+  // data). Without the file, the release APK is left unsigned instead of failing the build.
+  val sharedKeystore = file("${rootDir}/debug.keystore")
   signingConfigs {
     create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
+      storeFile = sharedKeystore
       storePassword = "android"
       keyAlias = "androiddebugkey"
       keyPassword = "android"
@@ -81,7 +84,17 @@ externalNativeBuild {
     debug {
       signingConfig = signingConfigs.getByName("debugConfig")
     }
+    // [ALTREX] Real release build: R8 (code shrinking, optimization, obfuscation) and resource
+    // shrinking. Rules: app/proguard-rules.pro. Not debuggable. Decode crash traces with
+    // app/build/outputs/mapping/release/mapping.txt (README.md, docs/STABILISATION.md).
     release {
+      isMinifyEnabled = true
+      isShrinkResources = true
+      isDebuggable = false
+      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+      if (sharedKeystore.exists()) {
+        signingConfig = signingConfigs.getByName("debugConfig")
+      }
     }
   }
   compileOptions {
@@ -98,8 +111,16 @@ externalNativeBuild {
     jniLibs {
       useLegacyPackaging = true
     }
+    // [ALTREX] Parameter tables of two post-quantum algorithms (Picnic, SIKE) of BouncyCastle,
+    // pulled in by pdfbox-android: 8 MB that PDF reading never uses.
+    resources {
+      excludes += listOf("org/bouncycastle/pqc/crypto/picnic/**", "org/bouncycastle/pqc/crypto/sike/**")
+    }
   }
 }
+
+// [ALTREX] Output files named after the app: altrex-debug.apk, altrex-release.apk.
+base { archivesName.set("altrex") }
 
 dependencies {
   // [ALTREX] Terminal screen: Termux's terminal emulator and view (Apache-2.0 exception of
@@ -128,9 +149,6 @@ dependencies {
   implementation(libs.commonmark)
   implementation(libs.richtext)
   implementation(libs.pdfbox.android)
-  implementation(libs.tflite)
-  implementation(libs.tflite.gpu)
-  implementation(libs.tflite.support)
   implementation(libs.camerax.core)
   implementation(libs.camerax.camera2)
   implementation(libs.camerax.lifecycle)
@@ -142,9 +160,6 @@ dependencies {
   implementation(libs.hilt.android)
   implementation(libs.hilt.navigation.compose)
   implementation(libs.play.services.oss.licenses)
-  implementation(platform(libs.firebase.bom))
-  implementation(libs.firebase.analytics)
-  implementation(libs.firebase.messaging)
   implementation(libs.androidx.exifinterface)
   implementation(libs.moshi.kotlin)
   ksp(libs.hilt.android.compiler)
@@ -166,7 +181,6 @@ dependencies {
   implementation(libs.mcp.kotlin.sdk)
   implementation(libs.ktor.client.android)
   implementation(libs.ktor.client.core)
-  implementation(libs.tasks.vision)
 }
 
 protobuf {

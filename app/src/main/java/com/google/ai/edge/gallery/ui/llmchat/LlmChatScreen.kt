@@ -16,10 +16,8 @@
 
 package com.google.ai.edge.gallery.ui.llmchat
 
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import android.graphics.Bitmap
-import android.os.Bundle
-import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -27,12 +25,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.ModelCapability
 import com.google.ai.edge.gallery.data.Task
-import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessage
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessageAudioClip
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessageImage
@@ -41,8 +37,6 @@ import com.google.ai.edge.gallery.ui.common.chat.ChatView
 import com.google.ai.edge.gallery.ui.common.chat.SendMessageTrigger
 import com.google.ai.edge.gallery.ui.common.chat.convertToLitertMessage
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
-
-private const val TAG = "AGLlmChatScreen"
 
 @Composable
 fun LlmChatScreen(
@@ -66,10 +60,8 @@ fun LlmChatScreen(
   sendMessageTrigger: SendMessageTrigger? = null,
   showImagePicker: Boolean = false,
   showAudioPicker: Boolean = false,
-  getActiveSkills: () -> List<String> = { emptyList() },
   skillCount: Int = 0,
   mcpCount: Int = 0,
-  mcpToolsCount: Int = 0,
   topContent: (@Composable () -> Unit)? = null,
 ) {
   val chatMode by viewModel.chatMode.collectAsState()
@@ -95,13 +87,11 @@ fun LlmChatScreen(
     curSystemPrompt = curSystemPrompt,
     skillCount = skillCount,
     mcpCount = mcpCount,
-    mcpToolsCount = mcpToolsCount,
     onSystemPromptChanged = onSystemPromptChanged,
     emptyStateComposable = emptyStateComposable,
     sendMessageTrigger = sendMessageTrigger,
     showImagePicker = showImagePicker,
     showAudioPicker = showAudioPicker,
-    getActiveSkills = getActiveSkills,
     topContent = topContent ?: defaultTopContent,
   )
 }
@@ -128,10 +118,8 @@ fun ChatViewWrapper(
   sendMessageTrigger: SendMessageTrigger? = null,
   showImagePicker: Boolean = false,
   showAudioPicker: Boolean = false,
-  getActiveSkills: () -> List<String> = { emptyList() },
   skillCount: Int = 0,
   mcpCount: Int = 0,
-  mcpToolsCount: Int = 0,
   topContent: (@Composable () -> Unit)? = null,
 ) {
   val context = LocalContext.current
@@ -278,27 +266,6 @@ fun ChatViewWrapper(
             )
           }
         }
-
-        val activeSkills = getActiveSkills()
-        Log.d(
-          TAG,
-          "Analytics: generate_action, capability_name=${task.id}, active_skills=${activeSkills.joinToString(",")}, active_mcp_servers_count=$mcpCount, active_mcp_tools_count=$mcpToolsCount",
-        )
-        firebaseAnalytics?.logEvent(
-          GalleryEvent.GENERATE_ACTION.id,
-          Bundle().apply {
-            putString("capability_name", task.id)
-            putString("model_id", model.name)
-            putBoolean("has_image", images.isNotEmpty())
-            putInt("image_count", images.size)
-            putBoolean("has_audio", audioMessages.isNotEmpty())
-            putInt("audio_count", audioMessages.size)
-            putInt("active_skills_count", activeSkills.size)
-            putString("active_skills_list", activeSkills.joinToString(","))
-            putInt("active_mcp_servers_count", mcpCount)
-            putInt("active_mcp_tools_count", mcpToolsCount)
-          },
-        )
       }
     },
     onRunAgainClicked = { model, message ->

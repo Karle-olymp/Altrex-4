@@ -16,7 +16,7 @@
 
 package com.google.ai.edge.gallery.ui.llmsingleturn
 
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 
 import android.util.Log
 import androidx.activity.compose.BackHandler
@@ -55,8 +55,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.core.os.bundleOf
-import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.ui.common.AltrexModelLoading
 import com.google.ai.edge.gallery.data.BuiltInTaskId
@@ -64,7 +62,6 @@ import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.RuntimeType
 import com.google.ai.edge.gallery.data.ModelDownloadStatusType
 import com.google.ai.edge.gallery.data.Task
-import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.ui.common.ErrorDialog
 import com.google.ai.edge.gallery.ui.common.ModelPageAppBar
 import com.google.ai.edge.gallery.ui.common.chat.ModelDownloadStatusInfoPanel
@@ -546,10 +543,6 @@ private fun CodeModeMainContent(
               }
             }
 
-            firebaseAnalytics?.logEvent(
-              GalleryEvent.GENERATE_ACTION.id,
-              bundleOf("capability_name" to task.id, "model_id" to selectedModel.name),
-            )
           },
           onStopButtonClicked = { model -> viewModel.stopResponse(model = model) },
           modifier =

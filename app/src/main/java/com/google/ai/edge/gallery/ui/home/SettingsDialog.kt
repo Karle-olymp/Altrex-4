@@ -139,7 +139,6 @@ val SETTINGS_BLOCKS =
 @Composable
 fun SettingsDialog(
   curThemeOverride: Theme,
-  curFirebaseAnalytics: Boolean,
   modelManagerViewModel: ModelManagerViewModel,
   onDismissed: () -> Unit,
 ) {

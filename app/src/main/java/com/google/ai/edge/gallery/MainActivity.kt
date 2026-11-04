@@ -20,7 +20,6 @@ import android.animation.ObjectAnimator
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import android.view.View
 import android.view.animation.DecelerateInterpolator
 import androidx.activity.ComponentActivity
@@ -34,8 +33,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.animation.doOnEnd
-import androidx.core.net.toUri
-import androidx.core.os.bundleOf
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import com.google.ai.edge.gallery.ui.common.AltrexIntro
@@ -44,7 +41,6 @@ import com.google.ai.edge.gallery.ui.modelmanager.sharedModelManager
 import com.google.ai.edge.gallery.ui.theme.GalleryTheme
 import com.google.ai.edge.litertlm.ExperimentalApi
 import com.google.ai.edge.litertlm.ExperimentalFlags
-import com.google.firebase.analytics.FirebaseAnalytics
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -62,18 +58,6 @@ class MainActivity : ComponentActivity() {
     // This prevents Jetpack Compose from automatically restoring the previous screen
     // and forces the app to start cleanly on the Home Screen after an OS kill.
     super.onCreate(null)
-
-    // [ALTREX] Intent extras are not logged: shared text and links are the user's data.
-    // Convert FCM Console data extras to intent data for GalleryNavGraph to pick up
-    intent.getStringExtra("deeplink")?.let { link ->
-      Log.d(TAG, "onCreate: found a deeplink extra")
-      if (link.startsWith("http://") || link.startsWith("https://")) {
-        val browserIntent = Intent(Intent.ACTION_VIEW, link.toUri())
-        startActivity(browserIntent)
-      } else {
-        intent.data = link.toUri()
-      }
-    }
 
     val isFreshStart = savedInstanceState == null
 
@@ -164,33 +148,5 @@ class MainActivity : ComponentActivity() {
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
-
-    // [ALTREX] Intent extras are not logged: shared text and links are the user's data.
-    intent.getStringExtra("deeplink")?.let { link ->
-      Log.d(TAG, "onNewIntent: found a deeplink extra")
-      if (link.startsWith("http://") || link.startsWith("https://")) {
-        val browserIntent = Intent(Intent.ACTION_VIEW, link.toUri())
-        startActivity(browserIntent)
-      } else {
-        intent.data = link.toUri()
-      }
-    }
-  }
-
-  override fun onResume() {
-    super.onResume()
-
-    firebaseAnalytics?.logEvent(
-      FirebaseAnalytics.Event.APP_OPEN,
-      bundleOf(
-        "app_version" to BuildConfig.VERSION_NAME,
-        "os_version" to Build.VERSION.SDK_INT.toString(),
-        "device_model" to Build.MODEL,
-      ),
-    )
-  }
-
-  companion object {
-    private const val TAG = "AGMainActivity"
   }
 }

@@ -174,7 +174,7 @@ class SkillManagerViewModel @Inject constructor(val skillManager: SkillManager) 
 
     viewModelScope.launch {
       try {
-        val unused = skillManager.addSkillFromUrl(url, _uiState.value.featuredSkills)
+        val unused = skillManager.addSkillFromUrl(url)
         syncSkillsFromManager()
         onSuccess()
       } catch (e: Exception) {
@@ -222,8 +222,7 @@ class SkillManagerViewModel @Inject constructor(val skillManager: SkillManager) 
 
     viewModelScope.launch {
       try {
-        val unused =
-          skillManager.addSkillFromLocalImport(directoryUri, _uiState.value.featuredSkills)
+        val unused = skillManager.addSkillFromLocalImport(directoryUri)
         syncSkillsFromManager()
         onSuccess()
       } catch (e: Exception) {
@@ -254,24 +253,24 @@ class SkillManagerViewModel @Inject constructor(val skillManager: SkillManager) 
   }
 
   fun addSkill(skill: Skill, addToDataStore: Boolean) {
-    skillManager.addSkill(skill, addToDataStore, _uiState.value.featuredSkills)
+    skillManager.addSkill(skill, addToDataStore)
     syncSkillsFromManager()
   }
 
   fun deleteSkill(name: String) {
-    skillManager.deleteSkill(name, _uiState.value.featuredSkills)
+    skillManager.deleteSkill(name)
     syncSkillsFromManager()
   }
 
   fun deleteSkills(names: Set<String>) {
     viewModelScope.launch {
-      skillManager.deleteSkills(names, _uiState.value.featuredSkills)
+      skillManager.deleteSkills(names)
       syncSkillsFromManager()
     }
   }
 
   fun setSkillSelected(skill: SkillState, selected: Boolean) {
-    skillManager.setSkillSelected(skill.skill, selected, _uiState.value.featuredSkills)
+    skillManager.setSkillSelected(skill.skill, selected)
     syncSkillsFromManager()
   }
 
@@ -329,7 +328,6 @@ class SkillManagerViewModel @Inject constructor(val skillManager: SkillManager) 
             requireSecret = requireSecret,
             requireSecretDescription = requireSecretDescription,
             homepage = homepage,
-            featuredSkills = _uiState.value.featuredSkills,
           )
         onSuccess()
       } catch (e: Exception) {
@@ -355,10 +353,6 @@ class SkillManagerViewModel @Inject constructor(val skillManager: SkillManager) 
   /** Checks if a skill with the given [skillName] is currently selected. */
   fun isSkillSelected(skillName: String): Boolean {
     return skillManager.isSkillSelected(skillName)
-  }
-
-  fun getSkillShortId(skill: Skill): String {
-    return skillManager.getSkillShortId(skill, _uiState.value.featuredSkills)
   }
 
   companion object {

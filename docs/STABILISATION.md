@@ -350,3 +350,44 @@ Effort : S = moins d'une demi-journée, M = 1 à 2 jours, L = plus. « Décision
 ---
 
 *Méthode : lecture du code, recherches de références (`grep`) dans `app/src`, manifeste fusionné et rapport de fusion présents dans `app/build/`, contenu de l'APK `altrex-debug-notes.apk` (`unzip -l` et `unzip -v`), résultats de tests présents dans `app/build/test-results/`, et vérification HTTP de l'existence des fichiers de liste de modèles chez Google. Gradle n'a pas été lancé et rien n'a été installé.*
+
+---
+
+## Journal des correctifs
+
+Légende : **fait (7cdbde3)** et **fait (2749630)** = commits précédents ; **fait (ce lot)** = modifications laissées dans l'arbre de travail, non commitées.
+
+| Plan | Sujet | État |
+|---|---|---|
+| 1 | Liste des modèles : plus d'écran vide, « Réessayer » hors ligne | fait (7cdbde3, puis écran de bienvenue dans 2749630) |
+| 2 | Serveur WebView limité au dossier des skills, `scriptName` contrôlé | fait (7cdbde3) |
+| 3 | `rg`, `--pre`, `--compress-program`, programmes appelés par un chemin | fait (7cdbde3) |
+| 4 | Textes « Confidentialité » et sous-titre du menu | fait (7cdbde3) |
+| 5 | Marqueur Linux sans numéro de version d'Alpine | fait (7cdbde3) |
+| 6 | Erreurs des Spaces rattrapées | fait (7cdbde3) |
+| 7 | Journaux sans saisies ni extras ; écran allumé seulement pendant une génération | fait (2749630) |
+| 8 | Firebase, TFLite, MediaPipe, permissions inutiles, `bouncycastle/pqc` | fait (ce lot), voir ci-dessous |
+| 9, 10, 11 | Code mort, menu à 4 espaces, Réglages en 6 blocs, tâches Agent Skills / Sécurité et accueil Google retirés | fait (2749630) |
+| 16 | `POST_NOTIFICATIONS` demandée avant un rappel | fait (2749630) |
+| 17 | Build `release` avec R8, réduction des ressources, `proguard-rules.pro`, signature | fait (ce lot), signature avec la clé debug (voir ci-dessous) |
+| 22 | Avertissements Kotlin | en partie (ce lot) : relevés, seuls ceux des fichiers modifiés sont corrigés |
+| 12-15, 18-21, 23 | Liste Altrex, mise à jour, images hors cache, OAuth, historique, chiffrement, agents, mémoire, variantes llama.cpp | à faire |
+
+### Ce lot (étapes 8, 17, 22)
+
+- **Firebase retiré** : plugin `google-services`, BoM, `firebase-analytics`, `firebase-messaging`, `GalleryFcmMessagingService`, `Analytics.kt` (`GalleryEvent`, `firebaseAnalytics`), les appels `logEvent` de 17 fichiers et ce qui ne servait qu'à eux (paramètres `featuredSkills` « pour l'analytics » de `SkillManager`, identifiants courts de skills, heures de début de téléchargement, `logMcpExecution`), l'extra `deeplink` de `MainActivity` (les rappels locaux passent par `NotificationReceiver`, inchangé), le canal de notification FCM, l'option cachée `disable_firebase_analytics` (champ 11 de `settings.proto` mis en `reserved`).
+- **TFLite (3 artefacts) et MediaPipe `tasks-vision` retirés** : aucun import ni appel par réflexion dans le code ; `:app:dependencies` montre qu'aucune autre bibliothèque ne les tire (LiteRT-LM ne dépend que de Gson, kotlin-reflect et des coroutines ; ML Kit GenAI non plus) ; `liblitertlm_jni.so` ne dépend d'aucune de leurs bibliothèques natives (`readelf -d`).
+- **Permissions** : retirées du manifeste `READ_MEDIA_IMAGES`, `ACCESS_MEDIA_LOCATION`, `READ_EXTERNAL_STORAGE`, `GET_ACCOUNTS`, `c2dm.permission.RECEIVE`, `READ_GSERVICES` ; `tools:node="remove"` pour `AD_ID`, `ACCESS_ADSERVICES_*`, `READ_PHONE_STATE`, `WRITE_EXTERNAL_STORAGE`. Gardées : `RECEIVE_BOOT_COMPLETED` (`BootReceiver` replanifie les rappels), `WAKE_LOCK` et `ACCESS_NETWORK_STATE` (WorkManager), les autres de 2.4. Manifeste fusionné : 25 → 13 permissions.
+- **Release** : `isMinifyEnabled`, `isShrinkResources`, non débogable, règles `app/proguard-rules.pro` (chaque bloc dit pourquoi), signée avec `debug.keystore` si le fichier existe (même clé que le debug : s'installe par-dessus, pas de perte de données), sinon non signée. Sorties : `altrex-debug.apk`, `altrex-release.apk`. ABI : `arm64-v8a` seul (déjà le cas). `useLegacyPackaging = true` reste : PRoot exécute ses bibliothèques, qui doivent être extraites ; coût : environ 69 Mo extraits sur le téléphone en plus de l'APK.
+- **Tailles** : debug 175,2 → 150,6 Mo ; release 43,1 Mo (code 10 Mo au lieu de 114 Mo).
+- **Tests** : `ManifestPermissionsTest` et `ReleaseBuildConfigTest` (règles R8 indispensables, réglages release, bibliothèques retirées) ; 208 tests.
+- **CI** : nom de l'APK publié mis à jour ; job `release` en déclenchement manuel seulement (jamais sur une PR), APK et `mapping.txt` gardés 14 jours comme artefact, rien de publié.
+
+### Lire une trace de plantage d'un APK release
+
+Dans un APK release, les classes ont des noms courts (`wg1.<init>(SourceFile:12)`). Les numéros de ligne sont conservés. Pour retrouver les vrais noms, il faut le `mapping.txt` **du build qui a produit l'APK installé** (`app/build/outputs/mapping/release/mapping.txt`, ou l'artefact du workflow) :
+
+1. copier la trace de la fenêtre « Altrex s'est arrêté » dans `trace.txt` ;
+2. `$ANDROID_HOME/cmdline-tools/latest/bin/retrace mapping.txt trace.txt`.
+
+Testé sur une trace inventée : `at wg1.<init>(SourceFile:12)` devient `at com.google.ai.edge.gallery.ui.common.coderunner.CodeRunner.<init>(CodeRunner.kt:131)`.

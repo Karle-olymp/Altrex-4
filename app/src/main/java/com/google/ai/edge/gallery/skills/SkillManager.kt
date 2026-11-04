@@ -18,16 +18,13 @@ package com.google.ai.edge.gallery.skills
 
 import android.content.Context
 import android.net.Uri
-import android.os.Bundle
 import android.provider.OpenableColumns
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
-import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.common.getJsonResponse
 import com.google.ai.edge.gallery.data.AllowedSkill
 import com.google.ai.edge.gallery.data.DataStoreRepository
 import com.google.ai.edge.gallery.data.SkillAllowlist
-import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.proto.Skill
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -35,7 +32,6 @@ import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.InputStreamReader
 import java.net.URL
-import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -51,23 +47,6 @@ import kotlinx.coroutines.withContext
 private const val TAG = "AGSkillManager"
 
 private const val SKILL_ALLOWLIST_URL = ""
-
-enum class SkillSource(val sourceName: String) {
-  BUILTIN("builtin"),
-  FEATURED("featured"),
-  REMOTE_URL("remote_url"),
-  LOCAL_IMPORT("local_import"),
-  UNKNOWN("unknown"),
-}
-
-enum class SkillAction(val value: String) {
-  ADD("add"),
-  DELETE("delete"),
-  ENABLE("enable"),
-  DISABLE("disable"),
-  ENABLE_ALL("enable_all"),
-  DISABLE_ALL("disable_all"),
-}
 
 /**
  * Manages skills backend logic including discovery, loading, DataStore storage, and file
@@ -176,13 +155,9 @@ constructor(
    * Automatically adds the parsed skill to DataStore and memory upon validation.
    *
    * @param url The URL pointing to the skill directory or `SKILL.md`.
-   * @param featuredSkills Optional list of featured skills for analytics tagging.
    * @return The newly added [Skill] proto.
    */
-  suspend fun addSkillFromUrl(
-    url: String,
-    featuredSkills: List<AllowedSkill> = emptyList(),
-  ): Skill {
+  suspend fun addSkillFromUrl(url: String): Skill {
     return withContext(Dispatchers.IO) {
       Log.d(TAG, "Validating skill from URL: $url")
 
@@ -231,7 +206,7 @@ constructor(
       }
 
       // 6. Add to state and data store.
-      addSkill(skill = skill, addToDataStore = true, featuredSkills = featuredSkills)
+      addSkill(skill = skill, addToDataStore = true)
       Log.d(TAG, "Successfully added skill from URL: ${skill.name}")
       skill
     }
@@ -295,13 +270,9 @@ constructor(
    * Imports, parses, and copies a local skill directory from [directoryUri] into internal storage.
    *
    * @param directoryUri The tree URI of the selected skill directory.
-   * @param featuredSkills Optional list of featured skills for analytics tagging.
    * @return The imported [Skill] proto containing its local internal import path.
    */
-  suspend fun addSkillFromLocalImport(
-    directoryUri: Uri,
-    featuredSkills: List<AllowedSkill> = emptyList(),
-  ): Skill {
+  suspend fun addSkillFromLocalImport(directoryUri: Uri): Skill {
     return withContext(Dispatchers.IO) {
       Log.d(TAG, "Validating skill from directory URI: $directoryUri")
 
@@ -343,7 +314,7 @@ constructor(
       // Create the destination directory.
       if (destDir.exists()) {
         Log.d(TAG, "Destination directory already exists, deleting: ${destDir.path}")
-        deleteSkill(name = parsedSkill.name, featuredSkills = featuredSkills)
+        deleteSkill(name = parsedSkill.name)
       }
       if (!destDir.exists()) {
         destDir.mkdirs()
@@ -386,7 +357,7 @@ constructor(
 
       // Update the skill proto with the new import directory name.
       val skillWithDir = parsedSkill.toBuilder().setImportDirName(newImportDirName).build()
-      addSkill(skill = skillWithDir, addToDataStore = true, featuredSkills = featuredSkills)
+      addSkill(skill = skillWithDir, addToDataStore = true)
       Log.d(TAG, "Successfully added skill from local import: ${skillWithDir.name}")
       skillWithDir
     }
@@ -397,13 +368,8 @@ constructor(
    *
    * @param skill The skill to add.
    * @param addToDataStore Whether to save the skill to DataStore asynchronously.
-   * @param featuredSkills Optional list of featured skills for analytics tagging.
    */
-  fun addSkill(
-    skill: Skill,
-    addToDataStore: Boolean,
-    featuredSkills: List<AllowedSkill> = emptyList(),
-  ) {
+  fun addSkill(skill: Skill, addToDataStore: Boolean) {
     Log.d(TAG, "Adding skill: $skill")
 
     // Update state.
@@ -420,13 +386,6 @@ constructor(
       }
     }
 
-    firebaseAnalytics?.logEvent(
-      GalleryEvent.SKILL_MANAGEMENT.id,
-      getSkillLoggingParams(skill, featuredSkills).apply {
-        putString("action", SkillAction.ADD.value)
-      },
-    )
-
     if (addToDataStore) {
       // Add skill to data store.
       coroutineScope.launch { dataStoreRepository.addSkill(skill) }
@@ -437,21 +396,10 @@ constructor(
    * Removes a single skill by [name] from in-memory state, disk storage, and DataStore.
    *
    * @param name The unique name of the skill to delete.
-   * @param featuredSkills Optional list of featured skills for analytics tagging.
    */
-  fun deleteSkill(name: String, featuredSkills: List<AllowedSkill> = emptyList()) {
+  fun deleteSkill(name: String) {
     // Locate the skill to be deleted.
     val skill = _skills.value.firstOrNull { it.name == name } ?: return
-
-    val loggingParams = getSkillLoggingParams(skill, featuredSkills)
-    Log.d(
-      TAG,
-      "Analytics: skill_management, action=${SkillAction.DELETE.value}, params=$loggingParams",
-    )
-    firebaseAnalytics?.logEvent(
-      GalleryEvent.SKILL_MANAGEMENT.id,
-      loggingParams.apply { putString("action", SkillAction.DELETE.value) },
-    )
 
     // Update state.
     _skills.update { currentSkills -> currentSkills.filter { it.name != name } }
@@ -476,24 +424,11 @@ constructor(
    * Removes multiple skills specified by [names] from in-memory state, disk storage, and DataStore.
    *
    * @param names A set of skill names to delete.
-   * @param featuredSkills Optional list of featured skills for analytics tagging.
    */
-  suspend fun deleteSkills(names: Set<String>, featuredSkills: List<AllowedSkill> = emptyList()) {
+  suspend fun deleteSkills(names: Set<String>) {
     val skillsToDelete = _skills.value.filter { names.contains(it.name) }
     if (skillsToDelete.isEmpty()) {
       return
-    }
-
-    for (skill in skillsToDelete) {
-      val loggingParams = getSkillLoggingParams(skill, featuredSkills)
-      Log.d(
-        TAG,
-        "Analytics: skill_management, action=${SkillAction.DELETE.value}, params=$loggingParams",
-      )
-      firebaseAnalytics?.logEvent(
-        GalleryEvent.SKILL_MANAGEMENT.id,
-        loggingParams.apply { putString("action", SkillAction.DELETE.value) },
-      )
     }
 
     // Update state.
@@ -522,22 +457,10 @@ constructor(
    *
    * @param skill The skill to modify.
    * @param selected True if the skill should be enabled, false otherwise.
-   * @param featuredSkills Optional list of featured skills for analytics tagging.
    */
-  fun setSkillSelected(
-    skill: Skill,
-    selected: Boolean,
-    featuredSkills: List<AllowedSkill> = emptyList(),
-  ) {
+  fun setSkillSelected(skill: Skill, selected: Boolean) {
     // Update state.
     val updatedSkill = skill.toBuilder().setSelected(selected).build()
-
-    firebaseAnalytics?.logEvent(
-      GalleryEvent.SKILL_MANAGEMENT.id,
-      getSkillLoggingParams(skill, featuredSkills).apply {
-        putString("action", if (selected) SkillAction.ENABLE.value else SkillAction.DISABLE.value)
-      },
-    )
 
     _skills.update { currentSkills ->
       currentSkills.map { curSkill ->
@@ -563,20 +486,6 @@ constructor(
     _skills.update { currentSkills ->
       currentSkills.map { skill -> skill.toBuilder().setSelected(selected).build() }
     }
-
-    Log.d(
-      TAG,
-      "Analytics: skill_management, action=${if (selected) SkillAction.ENABLE_ALL.value else SkillAction.DISABLE_ALL.value}",
-    )
-    firebaseAnalytics?.logEvent(
-      GalleryEvent.SKILL_MANAGEMENT.id,
-      Bundle().apply {
-        putString(
-          "action",
-          if (selected) SkillAction.ENABLE_ALL.value else SkillAction.DISABLE_ALL.value,
-        )
-      },
-    )
 
     // Update data store.
     coroutineScope.launch { dataStoreRepository.setAllSkillsSelected(selected) }
@@ -626,7 +535,6 @@ constructor(
     requireSecret: Boolean = false,
     requireSecretDescription: String = "",
     homepage: String = "",
-    featuredSkills: List<AllowedSkill> = emptyList(),
   ): Skill {
     return withContext(Dispatchers.IO) {
       Log.d(TAG, "saveSkillEdit: $name")
@@ -679,7 +587,7 @@ constructor(
             .setHomepage(homepage)
             .setImportDirName(skillDestDir.relativeTo(context.filesDir).path)
             .build()
-        addSkill(newSkill, addToDataStore = true, featuredSkills = featuredSkills)
+        addSkill(newSkill, addToDataStore = true)
         newSkill
       } else {
         Log.d(TAG, "Saving skill edit: $name")
@@ -826,72 +734,6 @@ constructor(
   /** Checks if a skill with the given [skillName] is currently selected. */
   fun isSkillSelected(skillName: String): Boolean {
     return _skills.value.firstOrNull { it.name == skillName }?.selected == true
-  }
-
-  /**
-   * Determines the origin [SkillSource] (builtin, featured, remote URL, local import) of [skill].
-   */
-  fun getSkillSource(skill: Skill, featuredSkills: List<AllowedSkill> = emptyList()): SkillSource {
-    val isFeatured =
-      skill.skillUrl.isNotEmpty() && featuredSkills.any { it.skillUrl == skill.skillUrl }
-    return when {
-      skill.builtIn -> SkillSource.BUILTIN
-      isFeatured -> SkillSource.FEATURED
-      skill.skillUrl.isNotEmpty() -> SkillSource.REMOTE_URL
-      skill.importDirName.isNotEmpty() -> SkillSource.LOCAL_IMPORT
-      else -> SkillSource.UNKNOWN
-    }
-  }
-
-  /**
-   * Generates a short 4-character hash to act as a stable ID. This solves the 100-character limit
-   * for list logging in GA4 AND allows us to distinguish between different custom skills in
-   * reports. Note: When we migrate to Cleancut or a similar service that doesn't have severe
-   * character limits, we can drop the human-readable skill_name from setup events and rely purely
-   * on this hash ID.
-   */
-  fun getSkillShortId(skill: Skill, featuredSkills: List<AllowedSkill> = emptyList()): String {
-    val source = getSkillSource(skill, featuredSkills)
-    val identifier =
-      when (source) {
-        SkillSource.BUILTIN,
-        SkillSource.FEATURED -> skill.name
-        SkillSource.LOCAL_IMPORT -> skill.importDirName
-        else -> skill.skillUrl
-      }
-    if (identifier.isEmpty()) return "xxxx"
-
-    val prefix =
-      when (source) {
-        SkillSource.BUILTIN -> "b_"
-        SkillSource.FEATURED -> "f_"
-        SkillSource.LOCAL_IMPORT -> "l_"
-        else -> "c_"
-      }
-
-    return try {
-      val digest = MessageDigest.getInstance("SHA-256")
-      val hashBytes = digest.digest(identifier.toByteArray())
-      val hexString = hashBytes.joinToString("") { "%02x".format(it) }
-      prefix + hexString.take(4)
-    } catch (e: Exception) {
-      prefix + "fail"
-    }
-  }
-
-  private fun getSkillLoggingParams(
-    skill: Skill,
-    featuredSkills: List<AllowedSkill> = emptyList(),
-  ): Bundle {
-    val source = getSkillSource(skill, featuredSkills)
-    val skillName =
-      if (source == SkillSource.BUILTIN || source == SkillSource.FEATURED) skill.name
-      else "custom_skill"
-    return Bundle().apply {
-      putString("source", source.sourceName)
-      putString("skill_name", skillName)
-      putString("skill_id", getSkillShortId(skill, featuredSkills))
-    }
   }
 
   private fun getSkillDestinationDir(originalImportDirName: String): File {

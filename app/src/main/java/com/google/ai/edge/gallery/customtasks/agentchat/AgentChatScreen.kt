@@ -17,7 +17,6 @@
 package com.google.ai.edge.gallery.customtasks.agentchat
 
 import android.content.Context
-import android.os.Bundle
 import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
@@ -80,15 +79,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.agent.PromptExpander
-import com.google.ai.edge.gallery.common.LOCAL_URL_BASE
 import com.google.ai.edge.gallery.data.AgentSkillsURLs
 import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.Task
-import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.skills.formatSelectedSkills
 import com.google.ai.edge.gallery.tools.AskInfoToolAction
 import com.google.ai.edge.gallery.tools.AskMcpToolCallPermissionAction
@@ -255,7 +251,6 @@ fun AgentChatScreen(
     viewModel = viewModel,
     skillCount = skillCount,
     mcpCount = mcpCount,
-    mcpToolsCount = mcpToolsCount,
     topContent = {
       // [ALTREX] Chat and agent are one screen: skills and tools are always there, only the
       // autonomous mode is a choice.
@@ -328,11 +323,6 @@ fun AgentChatScreen(
     onMcpClicked = { showMcpManagerBottomSheet = true },
     showImagePicker = true,
     showAudioPicker = true,
-    getActiveSkills = {
-      skillManagerViewModel.getSelectedSkills().map { skill ->
-        skillManagerViewModel.getSkillShortId(skill)
-      }
-    },
     composableBelowMessageList = { model ->
       val actionChannel = agentTools.receiveActionChannel
       val doneIcon = ImageVector.vectorResource(R.drawable.skill)
@@ -355,36 +345,12 @@ fun AgentChatScreen(
               )
             }
             is CallJsToolAction -> {
-              val skillName =
-                if (action.url.contains("/skills/")) {
-                  action.url.substringAfter("/skills/").substringBefore("/")
-                } else if (action.url.startsWith(LOCAL_URL_BASE + "/")) {
-                  action.url.substringAfter(LOCAL_URL_BASE + "/").substringBefore("/")
-                } else {
-                  action.url
-                }
-              val skill = skillManagerViewModel.getSkill(name = skillName)
-              val skillId = skill?.let { skillManagerViewModel.getSkillShortId(it) } ?: "xxxx"
               try {
                 // Set up a safety net timeout so we NEVER hang the chat or tool execution
                 launch {
                   delay(60000L) // 60 seconds max
                   if (!action.result.isCompleted) {
                     Log.e(TAG, "JS Execution timed out, completing with error.")
-                    Log.d(
-                      TAG,
-                      "Analytics: skill_execution, capability_name=${task.id}, skill_name=$skillName, success=false, error_type=timeout",
-                    )
-                    firebaseAnalytics?.logEvent(
-                      GalleryEvent.SKILL_EXECUTION.id,
-                      Bundle().apply {
-                        putString("capability_name", task.id)
-                        putString("skill_name", skillName)
-                        putString("skill_id", skillId)
-                        putBoolean("success", false)
-                        putString("error_type", "timeout")
-                      },
-                    )
                     action.result.complete(
                       "{\"error\": \"Skill execution timed out. Please check network connection.\"}"
                     )
@@ -406,22 +372,6 @@ fun AgentChatScreen(
                 chatViewJavascriptInterface.onResultListener = { result ->
                   // [ALTREX] The raw result is not logged (it may hold the user's data).
                   action.result.complete(result)
-                  val isSuccess = !result.contains("\"error\":")
-                  val errorType = if (isSuccess) "" else "js_error"
-                  Log.d(
-                    TAG,
-                    "Analytics: skill_execution, capability_name=${task.id}, skill_name=$skillName, success=$isSuccess, error_type=$errorType",
-                  )
-                  firebaseAnalytics?.logEvent(
-                    GalleryEvent.SKILL_EXECUTION.id,
-                    Bundle().apply {
-                      putString("capability_name", task.id)
-                      putString("skill_name", skillName)
-                      putString("skill_id", skillId)
-                      putBoolean("success", isSuccess)
-                      putString("error_type", errorType)
-                    },
-                  )
                 }
 
                 val safeData = JSONObject.quote(action.data)
@@ -448,20 +398,6 @@ fun AgentChatScreen(
                     .trimIndent()
                 webViewRef?.evaluateJavascript(script, null)
               } catch (e: Exception) {
-                Log.d(
-                  TAG,
-                  "Analytics: skill_execution, capability_name=${task.id}, skill_name=$skillName, success=false, error_type=exception",
-                )
-                firebaseAnalytics?.logEvent(
-                  GalleryEvent.SKILL_EXECUTION.id,
-                  Bundle().apply {
-                    putString("capability_name", task.id)
-                    putString("skill_name", skillName)
-                    putString("skill_id", skillId)
-                    putBoolean("success", false)
-                    putString("error_type", "exception")
-                  },
-                )
                 action.result.completeExceptionally(e)
               }
             }
@@ -570,13 +506,6 @@ fun AgentChatScreen(
                       messages =
                         listOf(ChatMessageText(content = promptChip.prompt, side = ChatSide.USER)),
                     )
-                  firebaseAnalytics?.logEvent(
-                    GalleryEvent.BUTTON_CLICKED.id,
-                    Bundle().apply {
-                      putString("event_type", "agent_skills_prompt_chip")
-                      putString("button_id", promptChip.label)
-                    },
-                  )
                 }
                 // Skill is not selected, show alert dialog.
                 else {

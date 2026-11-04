@@ -28,7 +28,6 @@
   <string name="aichat_initializing_title" translatable="true" description="Status indicator when initializing model. [CHAR_LIMIT=31]">Initializing model</string>
   <string name="aichat_initializing_content" translatable="true" description="Loading message shown while a chat or translator session is initializing. [CHAR_LIMIT=110]">Sit tight, this can take up to 1 minute</string>
   <string name="app_name" translatable="false">Altrex</string>
-  <string name="gallery_news_notification_title" translatable="true" description="Default title for push notifications about gallery news. [CHAR_LIMIT=26]">Gallery News</string>
   <string name="baseline" translatable="true" description="Label for a button or chip to set a benchmark run as the comparison baseline. [CHAR_LIMIT=18]">Baseline</string>
   <string name="basic_info" translatable="true" description="Header for a section showing basic information about a benchmark run. [CHAR_LIMIT=26]">Basic info</string>
   <string name="benchmark" translatable="false">Benchmark</string>

@@ -74,7 +74,6 @@ open class AgentToolsImpl : AgentTools {
     RunMcpTool(
       mcpServersProvider = mcpManagerViewModel,
       skillsProvider = skillsProvider,
-      taskId = taskId,
     )
   }
 

@@ -20,11 +20,8 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequestParams
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 
-import android.os.Bundle
 import android.util.Log
-import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.common.convertStringToJsonObject
-import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.mcp.McpServersProvider
 import com.google.ai.edge.gallery.proto.McpPermissionPolicy
 import com.google.ai.edge.gallery.proto.McpTool
@@ -45,7 +42,6 @@ private const val MCP_CALL_TIMEOUT_MS = 90_000L
 class RunMcpTool(
   private val mcpServersProvider: McpServersProvider,
   private val skillsProvider: SkillsProvider,
-  private val taskId: String,
 ) : ToolDefinition {
   override val alwaysAllow: Boolean = true
   override var executionContext: ToolExecutionContext? = null
@@ -87,13 +83,11 @@ class RunMcpTool(
 
       if (serverState == null) {
         Log.w(TAG, "MCP server or tool not found for: $toolName")
-        logMcpExecution(success = false, errorType = "tool_not_found")
         return@runBlocking guardMissingEntityWithSkillFallback(name = toolName, type = "Tool")
       }
 
       val client = serverState.client
       if (client == null) {
-        logMcpExecution(success = false, errorType = "client_not_initialized")
         return@runBlocking mapOf("error" to "Client not initialized", "status" to "failed")
       }
 
@@ -107,7 +101,6 @@ class RunMcpTool(
         // counts as a refusal too.
         val channel = executionContext?.actionChannel
         if (channel == null) {
-          logMcpExecution(success = false, errorType = "no_permission_channel")
           return@runBlocking mapOf(
             "result" to "refused: the user could not be asked to allow this action. Do not try again; tell the user.",
             "status" to "failed",
@@ -127,7 +120,6 @@ class RunMcpTool(
                 inProgress = false,
               )
             )
-          logMcpExecution(success = false, errorType = "permission_denied")
           return@runBlocking mapOf(
             "result" to "refused: the user did not allow this action. Do not try again; tell the user.",
             "status" to "failed",
@@ -159,7 +151,6 @@ class RunMcpTool(
             )
           }
             ?: run {
-              logMcpExecution(success = false, errorType = "timeout")
               return@runBlocking mapOf(
                 "error" to "The MCP tool did not answer within ${MCP_CALL_TIMEOUT_MS / 1000} s.",
                 "status" to "failed",
@@ -176,7 +167,6 @@ class RunMcpTool(
                 inProgress = false,
               )
             )
-          logMcpExecution(success = false, errorType = "null_result")
           return@runBlocking mapOf("error" to "Null result", "status" to "failed")
         }
 
@@ -195,7 +185,6 @@ class RunMcpTool(
                 inProgress = false,
               )
             )
-          logMcpExecution(success = false, errorType = "tool_error")
           return@runBlocking mapOf("error" to errorText, "status" to "failed")
         } else {
           val successText =
@@ -211,7 +200,6 @@ class RunMcpTool(
                 addItemDescription = successText,
               )
             )
-          logMcpExecution(success = true, errorType = "")
           return@runBlocking mapOf("result" to successText, "status" to "succeeded")
         }
       } catch (e: Exception) {
@@ -226,7 +214,6 @@ class RunMcpTool(
               addItemDescription = e.message ?: "Unknown error",
             )
           )
-        logMcpExecution(success = false, errorType = "exception")
         return@runBlocking mapOf("error" to (e.message ?: "Unknown error"), "status" to "failed")
       }
     }
@@ -245,22 +232,5 @@ class RunMcpTool(
     val isSkill = skillsProvider.loadSkill(name) != null
     val error = if (isSkill) "$type not found. Try to run it as a skill" else "Tool not found"
     return mapOf("error" to error, "status" to "failed")
-  }
-
-  private fun logMcpExecution(success: Boolean, errorType: String) {
-    Log.d(
-      TAG,
-      "Analytics: mcp_execution, capability_name=$taskId, success=$success, error_type=$errorType",
-    )
-    firebaseAnalytics?.logEvent(
-      GalleryEvent.MCP_EXECUTION.id,
-      Bundle().apply {
-        putString("capability_name", taskId)
-        putBoolean("success", success)
-        if (errorType.isNotEmpty()) {
-          putString("error_type", errorType)
-        }
-      },
-    )
   }
 }

@@ -57,7 +57,6 @@
   <string name="model_not_support_image_message">Ce modèle n\'accepte pas les images.</string>
   <string name="model_not_support_audio_message">Ce modèle n\'accepte pas l\'audio.</string>
   <string name="image_limit_ignored_message">Certaines images ont été ignorées : limite atteinte.</string>
-  <string name="gallery_news_notification_title">Nouveautés Altrex</string>
   <string name="baseline">Référence</string>
   <string name="basic_info">Informations</string>
   <string name="benchmark_comparison_help_title">Comparer des benchmarks</string>
