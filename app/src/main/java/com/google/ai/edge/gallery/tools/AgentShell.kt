@@ -142,7 +142,7 @@ object AgentShell {
   /** Commands that only read (and their read-only sub-commands). */
   private val READ_ONLY =
     setOf(
-      "ls", "cat", "head", "tail", "wc", "pwd", "echo", "grep", "egrep", "fgrep", "rg", "find", "which",
+      "ls", "cat", "head", "tail", "wc", "pwd", "echo", "grep", "egrep", "fgrep", "find", "which",
       "whoami", "uname", "date", "file", "stat", "du", "df", "tree", "id", "hostname", "sort", "uniq",
       "cut", "tr", "basename", "dirname", "realpath", "readlink", "md5sum", "sha1sum", "sha256sum",
       "printenv", "nproc", "free", "uptime", "ps", "jq", "diff", "cmp", "column", "nl", "true",
@@ -154,6 +154,23 @@ object AgentShell {
       "npm" to setOf("ls", "list", "view", "outdated"),
       "pip" to setOf("list", "show", "freeze"),
     )
+
+  /** Options that make a reader run another program (rg --pre, sort --compress-program, tar…). */
+  private val RUNS_PROGRAMS =
+    listOf("--pre", "--compress-program", "--use-compress-program", "--to-command", "--checkpoint-action", "--exec", "--shell")
+
+  /**
+   * The program a command word names, only when it is a plain name or lives in a system folder: a
+   * path like ./ls or /root/ls could be anything the model wrote, so it never counts as "ls".
+   */
+  internal fun bareProgram(word: String?): String? {
+    if (word.isNullOrEmpty()) return null
+    if (!word.contains('/')) return word
+    val dir = word.substringBeforeLast('/') + "/"
+    return word.substringAfterLast('/').takeIf { it.isNotEmpty() && dir in SYSTEM_DIRS }
+  }
+
+  private val SYSTEM_DIRS = setOf("/bin/", "/usr/bin/", "/sbin/", "/usr/sbin/", "/usr/local/bin/")
 
   private val FIND_WRITES = setOf("-exec", "-execdir", "-delete", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls")
   private val LIST_FLAGS = setOf("-a", "-r", "-v", "-vv", "--list", "--all", "--verbose")
@@ -169,14 +186,15 @@ object AgentShell {
 
   /** The program a command starts with ("npm install x" → "npm"). */
   fun programOf(command: String): String? =
-    command.trim().split(Regex("\\s+")).firstOrNull()?.substringAfterLast('/')?.takeIf { it.isNotEmpty() && isSimple(it) }
+    bareProgram(command.trim().split(Regex("\\s+")).firstOrNull())?.takeIf { isSimple(it) }
 
   internal fun isReadOnly(command: String): Boolean {
     if (!isSimple(command)) return false
     return segments(command).all { words ->
-      val prog = words.firstOrNull()?.substringAfterLast('/') ?: return@all false
+      val prog = bareProgram(words.firstOrNull()) ?: return@all false
       val args = words.drop(1)
       when {
+        args.any { a -> RUNS_PROGRAMS.any { a.startsWith(it) } } -> false
         // Options that make these readers write or delete.
         args.any { it.startsWith("--output") } -> false
         prog == "find" -> args.none { it in FIND_WRITES }
@@ -195,7 +213,7 @@ object AgentShell {
     if (!isSimple(command)) return true
     // Free when every program of the pipeline is an "always" one, or (default mode) only reads.
     return !segments(command).all { words ->
-      words.firstOrNull()?.substringAfterLast('/') in prefixes ||
+      bareProgram(words.firstOrNull())?.let { it in prefixes } == true ||
         (mode == Mode.READS_FREE && isReadOnly(words.joinToString(" ")))
     }
   }

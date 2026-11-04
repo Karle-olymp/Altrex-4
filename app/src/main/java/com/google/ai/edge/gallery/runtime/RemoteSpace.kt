@@ -394,15 +394,19 @@ object RemoteModelHelper : LlmModelHelper {
         }
         if (shown.isEmpty()) resultListener(answer, false, null) else show(answer)
         resultListener("", true, null)
-      } catch (e: Exception) {
-        if (stopGen.get() != myGen) {
-          cleanUpListener()
-        } else {
-          Log.w(TAG, "Remote request failed", e)
-          onError(
-            (e as? RemoteSpace.SpaceException)?.message
-              ?: "Space injoignable (${e.javaClass.simpleName}). Vérifie ta connexion."
-          )
+      } catch (e: Throwable) {
+        // [ALTREX] This thread has no handler of its own: anything escaping here closed the app.
+        if (e is kotlinx.coroutines.CancellationException) throw e
+        Log.w(TAG, "Remote request failed", e)
+        runCatching {
+          if (stopGen.get() != myGen) {
+            cleanUpListener()
+          } else {
+            onError(
+              (e as? RemoteSpace.SpaceException)?.message
+                ?: "Space injoignable (${e.javaClass.simpleName}). Vérifie ta connexion."
+            )
+          }
         }
       }
     }

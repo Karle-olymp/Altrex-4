@@ -373,10 +373,13 @@ fun SettingsDialog(
             icon = Icons.Outlined.Lock,
             title = "Ce qui sort du téléphone",
             subtitle =
-              "Les modèles et la mémoire locale restent sur ton téléphone. Le scan de l'espace Code " +
-                "envoie du code à SecurCode après ton accord, projet par projet ; la recherche web " +
-                "n'envoie que tes requêtes à Brave ; l'import GitHub ne fait que télécharger. Aucune " +
-                "clé n'est jamais montrée au modèle.",
+              "Les modèles locaux, la mémoire locale et tes notes restent sur ton téléphone. Quand tu " +
+                "utilises un modèle cloud ou un Space, tes messages, les résultats des outils et les " +
+                "documents joints partent chez ce fournisseur, avec ta clé. Un connecteur reçoit ce que " +
+                "le modèle lui envoie, et lui seul. Le scan de l'espace Code envoie du code à SecurCode " +
+                "après ton accord, projet par projet ; la recherche web n'envoie que tes requêtes à " +
+                "Brave ; l'import GitHub ne fait que télécharger. Aucune clé n'est jamais montrée au " +
+                "modèle.",
           )
         }
 

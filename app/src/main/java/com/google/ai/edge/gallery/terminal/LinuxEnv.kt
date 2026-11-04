@@ -157,10 +157,15 @@ break-system-packages = true
 
   private val baseDir = File(context.filesDir, "linux/$name")
   val rootfs = File(baseDir, "rootfs")
-  private val marker = File(baseDir, ".installed-$ALPINE_VERSION")
+  // [ALTREX] One marker whatever the Alpine version: it carried the version, so changing ALPINE_VERSION
+  // made every installed Linux look absent and the next install erased its packages and /root. The
+  // old versioned markers still count.
+  private val marker = File(baseDir, ".installed")
 
   val isInstalled: Boolean
-    get() = marker.exists() && File(rootfs, "bin/busybox").exists()
+    get() =
+      (marker.exists() || baseDir.listFiles { f -> f.name.startsWith(".installed-") }.orEmpty().isNotEmpty()) &&
+        File(rootfs, "bin/busybox").exists()
 
   private val nativeDir = File(context.applicationInfo.nativeLibraryDir)
   private val proot = File(nativeDir, "libproot.so")

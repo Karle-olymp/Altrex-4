@@ -95,6 +95,29 @@ class AgentShellTest {
   }
 
   @Test
+  fun readers_thatRunOtherPrograms_askFirst() {
+    assertFalse(AgentShell.isReadOnly("rg --pre=./evil foo"))
+    assertFalse(AgentShell.isReadOnly("rg foo"))
+    assertFalse(AgentShell.isReadOnly("sort --compress-program=./evil a"))
+    assertFalse(AgentShell.isReadOnly("grep --exec x y"))
+    assertTrue(AgentShell.isReadOnly("grep -rn foo ."))
+    assertTrue(AgentShell.isReadOnly("sort a.txt"))
+  }
+
+  @Test
+  fun programsByPath_neverCountAsTheSystemOne() {
+    // A file the model wrote and named like a reader must not pass as that reader.
+    assertFalse(AgentShell.isReadOnly("./ls"))
+    assertFalse(AgentShell.isReadOnly("/root/ls -la"))
+    assertTrue(AgentShell.isReadOnly("/bin/ls -la"))
+    assertTrue(AgentShell.isReadOnly("/usr/bin/cat a.txt"))
+    assertTrue(AgentShell.needsApproval(Mode.READS_FREE, setOf("npm"), "./npm install"))
+    assertFalse(AgentShell.needsApproval(Mode.READS_FREE, setOf("npm"), "/usr/bin/npm install"))
+    assertEquals(null, AgentShell.programOf("./tool run"))
+    assertEquals("python3", AgentShell.programOf("/usr/bin/python3 a.py"))
+  }
+
+  @Test
   fun slowCommandsGetTheLongDelay() {
     for (c in
       listOf(

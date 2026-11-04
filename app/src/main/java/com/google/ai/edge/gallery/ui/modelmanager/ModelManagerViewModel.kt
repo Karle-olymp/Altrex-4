@@ -1094,8 +1094,11 @@ constructor(
         }
 
         if (modelAllowlist == null) {
-          _uiState.update { it.copy(loadingModelAllowlistError = "Failed to load model list") }
-          return@launch
+          // [ALTREX] No list (offline at the very first launch, or a version Google publishes no list
+          // for): carry on with an empty one. Imported, cloud and remote models need none; returning
+          // here left the start screen blank for ever, with no way out.
+          Log.w(TAG, "No model allowlist available: continuing with an empty one")
+          modelAllowlist = Gson().fromJson("{\"models\":[]}", ModelAllowlist::class.java)
         }
 
         Log.d(TAG, "Allowlist: $modelAllowlist")

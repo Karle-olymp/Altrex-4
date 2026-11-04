@@ -271,7 +271,7 @@ private fun DrawerHeader() {
         color = MaterialTheme.colorScheme.onSurface,
       )
       Text(
-        "IA locale · hors ligne",
+        "Local d'abord · cloud si tu le choisis",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
