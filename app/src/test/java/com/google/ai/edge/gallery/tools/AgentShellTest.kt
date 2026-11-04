@@ -93,4 +93,18 @@ class AgentShellTest {
     assertEquals(3, lines.size)
     assertEquals(2, sh(AgentShell.READ_SCRIPT, listOf("missing", "1", "5")).first)
   }
+
+  @Test
+  fun slowCommandsGetTheLongDelay() {
+    for (c in
+      listOf(
+        "altrex-setup", "altrex-setup --dev", "apk add git", "pkg install python3", "npm install",
+        "cd x && pip install requests", "git clone https://x/y", "make -j4",
+      )) {
+      assertTrue(c, RunCommandTool.isSlow(c))
+    }
+    for (c in listOf("ls -la", "cat a.txt", "echo apk add", "python3 a.py", "git status")) {
+      assertFalse(c, RunCommandTool.isSlow(c))
+    }
+  }
 }

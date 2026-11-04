@@ -93,7 +93,8 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
       echo "Installation des outils de base (git, curl, bash, python, node, gh, nano…)."
       apk update
       apk add $BASE_PACKAGES
-      if [ "${'$'}1" = "--dev" ]; then
+      case "${'$'}1" in --dev|-dev|dev) DEV=1 ;; esac
+      if [ -n "${'$'}DEV" ]; then
         echo "Ajout des compilateurs (gcc, make, cmake, go, rust)…"
         apk add $DEV_PACKAGES
       fi
@@ -105,7 +106,7 @@ break-system-packages = true
       touch /root/.altrex-setup-done
       echo
       echo "Terminé. Ferme et rouvre le terminal (bouton ↻) pour passer sous bash."
-      [ "${'$'}1" = "--dev" ] || echo "Pour compiler (gcc, make, go, rust) : altrex-setup --dev"
+      [ -n "${'$'}DEV" ] || echo "Pour compiler (gcc, make, go, rust) : altrex-setup --dev"
       """.trimIndent() + "\n"
 
     /** `apt` / `apt-get` habits, same translation. */
@@ -135,6 +136,20 @@ break-system-packages = true
 
     fun setAgentSharesFolder(context: Context, share: Boolean) {
       context.getSharedPreferences(AGENT_PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_SHARE, share).apply()
+    }
+
+    /**
+     * Stops PRoot and what it runs. A plain kill of PRoot leaves its program alive (an apk still
+     * installing kept the package database locked, and every later apk failed with "Unable to lock
+     * database"); on SIGTERM PRoot kills everything it traces first, so ask nicely, then insist.
+     */
+    fun stopTree(process: Process) {
+      process.destroy()
+      try {
+        if (!process.waitFor(3, TimeUnit.SECONDS)) process.destroyForcibly()
+      } catch (e: InterruptedException) {
+        process.destroyForcibly()
+      }
     }
 
     fun of(context: Context, name: String): LinuxEnv = LinuxEnv(context.applicationContext, name)
@@ -260,7 +275,7 @@ break-system-packages = true
       }
       reader.start()
       val finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
-      if (!finished) process.destroyForcibly()
+      if (!finished) stopTree(process)
       reader.join(2_000)
       val text = synchronized(out) { out.toString() }
       CommandResult(

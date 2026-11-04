@@ -71,9 +71,7 @@ object AgentJobs {
   fun check(id: String, stop: Boolean, maxChars: Int): Map<String, String> {
     val job = jobs[id] ?: return mapOf("error" to "No background job \"$id\". Running: ${list()}", "status" to "failed")
     if (stop && job.process.isAlive) {
-      job.process.destroy()
-      job.process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
-      if (job.process.isAlive) job.process.destroyForcibly()
+      LinuxEnv.stopTree(job.process)
     }
     val fresh =
       synchronized(job) {
@@ -104,7 +102,7 @@ object AgentJobs {
   /** Stops every job (the Linux was reset). */
   @Synchronized
   fun stopAll() {
-    for (j in jobs.values) if (j.process.isAlive) j.process.destroyForcibly()
+    for (j in jobs.values) if (j.process.isAlive) LinuxEnv.stopTree(j.process)
     jobs.clear()
   }
 }

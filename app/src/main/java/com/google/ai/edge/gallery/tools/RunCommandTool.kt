@@ -145,7 +145,10 @@ class RunCommandTool(private val context: Context) : ToolDefinition {
       )
     }
 
-    val timeoutMs = (if (timeoutS > 0) timeoutS.coerceAtMost(MAX_TIMEOUT_S) else LinuxEnv.DEFAULT_TIMEOUT_MS.toInt() / 1000) * 1000L
+    val timeoutMs =
+      (if (timeoutS > 0) timeoutS.coerceAtMost(MAX_TIMEOUT_S)
+      else if (isSlow(cmd)) MAX_TIMEOUT_S
+      else LinuxEnv.DEFAULT_TIMEOUT_MS.toInt() / 1000) * 1000L
     progress("Commande : ${cmd.take(60)}", title = "run_command", description = cmd)
     // Live: the last line written, every second and a half at most.
     var lastSent = 0L
@@ -179,6 +182,12 @@ class RunCommandTool(private val context: Context) : ToolDefinition {
         put("note", "stopped: took longer than ${timeoutMs / 1000} s. For long work, use background=true and check_job.")
       }
       put("output", tail(result.output).ifEmpty { "(no output)" })
+      if (result.output.contains("Unable to lock database")) {
+        put(
+          "hint",
+          "Another package command is still running. Wait for it (check with `ps`), or run long installs with background=true. Do not delete lock files.",
+        )
+      }
       result.cwd?.let { put("cwd", it) }
       put("status", if (result.exitCode == 0 && !result.timedOut) "succeeded" else "failed")
     }
@@ -249,6 +258,12 @@ class RunCommandTool(private val context: Context) : ToolDefinition {
   }
 
   companion object {
+    /** Installs and builds that take minutes on a phone: they get the longest delay by default. */
+    private val SLOW =
+      Regex("""(^|[;&|]\s*)(altrex-setup|pkg\s+(install|upgrade)|apk\s+(add|upgrade)|npm\s+(i|install|ci)\b|pnpm\s|yarn\s|pip3?\s+install|cargo\s+(build|install)|go\s+(build|install)|make\b|cmake\b|git\s+clone)""")
+
+    internal fun isSlow(command: String): Boolean = SLOW.containsMatchIn(command)
+
     /** The older on/off switch, now "allow everything" ([AgentShell.Mode.ALLOW_ALL]). */
     fun isAlwaysAllowed(context: Context): Boolean = AgentShell.mode(context) == AgentShell.Mode.ALLOW_ALL
 

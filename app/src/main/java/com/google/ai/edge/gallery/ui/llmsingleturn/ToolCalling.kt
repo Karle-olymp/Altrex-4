@@ -125,7 +125,27 @@ object ToolCalling {
       idx = if (end < 0) text.length else end + CALL_CLOSE.length
       calls.add(parseOne(body) ?: AgentToolCall("", JSONObject(), body))
     }
+    if (calls.isEmpty()) bareCall(text)?.let { calls.add(it) }
     return calls
+  }
+
+  /**
+   * An answer that is only {"name": …, "arguments": {…}}: some models (GPT-OSS…) write their call
+   * like that, without the tags. Needs both keys, so a JSON answer the user asked for is left alone.
+   */
+  fun bareCall(text: String): AgentToolCall? {
+    val t = text.trim()
+    if (!t.startsWith("{") || !t.endsWith("}")) return null
+    val obj = runCatching { JSONObject(t) }.getOrNull() ?: return null
+    if (!obj.has("name") || !(obj.has("arguments") || obj.has("parameters"))) return null
+    return parseOne(t)
+  }
+
+  /** Whether [prefix] (the start of an answer) can still become a bare call: it starts {"name". */
+  internal fun couldBeBareCall(prefix: String): Boolean {
+    val n = prefix.filterNot { it.isWhitespace() }
+    val expected = "{\"name\""
+    return if (n.length < expected.length) expected.startsWith(n) else n.startsWith(expected)
   }
 
   private fun parseOne(body: String): AgentToolCall? {
@@ -153,6 +173,7 @@ object ToolCalling {
 
   /** The model's text without its tool_call blocks (also removes an unterminated block). */
   fun stripToolCalls(text: String): String {
+    if (bareCall(text) != null) return ""
     val re =
       Regex(
         Regex.escape(CALL_OPEN) + ".*?(?:" + Regex.escape(CALL_CLOSE) + "|\\z)",
@@ -194,6 +215,9 @@ class StreamSplitter {
   private val pending = StringBuilder()
   private var startedText = false
 
+  /** The answer began like a bare JSON call: held back until it is complete, to drop it. */
+  private var holdingBare = true
+
   data class Out(val text: String, val thinking: String)
 
   fun feed(chunk: String): Out {
@@ -210,6 +234,21 @@ class StreamSplitter {
       val buf = pending.toString()
       when (mode) {
         Mode.TEXT -> {
+          // A bare {"name": …} call is not shown: wait for the whole answer, then drop it (or show it
+          // if it turns out to be ordinary text).
+          if (holdingBare && !startedText && text.isEmpty() && buf.trimStart().startsWith("{")) {
+            if (!ToolCalling.couldBeBareCall(buf.trimStart())) {
+              holdingBare = false
+              continue
+            }
+            if (!final) break
+            holdingBare = false
+            if (ToolCalling.bareCall(buf) != null) {
+              pending.clear()
+              break
+            }
+            continue
+          }
           val iThink = buf.indexOf(ToolCalling.THINK_OPEN)
           val iTool = buf.indexOf(ToolCalling.TOOL_CALL_OPEN)
           val iStray = buf.indexOf(ToolCalling.THINK_CLOSE)

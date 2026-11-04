@@ -23,6 +23,37 @@ import org.junit.Test
 /** Unit tests for the ChatML/Hermes tool-calling protocol used by local llama.cpp models. */
 class ToolCallingTest {
 
+  @Test
+  fun bareJsonCall_isParsedAndHidden() {
+    val raw = "{ \"name\": \"run_command\", \"arguments\": { \"command\": \"altrex-setup -dev\" } }"
+    val calls = ToolCalling.parseToolCalls(raw)
+    assertEquals(1, calls.size)
+    assertEquals("run_command", calls[0].name)
+    assertEquals("altrex-setup -dev", calls[0].arguments.getString("command"))
+    assertEquals("", ToolCalling.displayText(raw))
+  }
+
+  @Test
+  fun ordinaryJsonAnswer_isNotACall() {
+    val raw = "{\"name\": \"Alice\", \"age\": 3}"
+    assertTrue(ToolCalling.parseToolCalls(raw).isEmpty())
+    assertEquals(raw, ToolCalling.displayText(raw))
+  }
+
+  @Test
+  fun splitter_dropsABareCallButShowsOtherJson() {
+    fun run(vararg chunks: String): String {
+      val sp = StreamSplitter()
+      val sb = StringBuilder()
+      for (c in chunks) sb.append(sp.feed(c).text)
+      sb.append(sp.finish().text)
+      return sb.toString()
+    }
+    assertEquals("", run("{ \"na", "me\": \"run_command\", \"argu", "ments\": {\"command\": \"ls\"} }"))
+    assertEquals("{\"foo\": 1}", run("{\"fo", "o\": 1}"))
+    assertEquals("Bonjour", run("Bon", "jour"))
+  }
+
   private val webSearch =
     AgentToolSpec(
       name = "webSearch",
