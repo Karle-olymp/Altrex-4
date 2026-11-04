@@ -30,12 +30,8 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -49,19 +45,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ListAlt
-import androidx.compose.material.icons.outlined.Forum
-import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.Mms
-import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.Shield
-import androidx.compose.material.icons.rounded.Code
-import androidx.compose.material.icons.rounded.Flag
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.rememberDrawerState
@@ -76,7 +61,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush.Companion.linearGradient
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -110,18 +94,17 @@ import com.google.ai.edge.gallery.ui.common.ModelPageAppBar
 import com.google.ai.edge.gallery.ui.common.chat.ModelDownloadStatusInfoPanel
 import com.google.ai.edge.gallery.ui.home.AssistantGuideDialog
 import com.google.ai.edge.gallery.ui.home.AssistantSetup
-import com.google.ai.edge.gallery.ui.home.HomeScreen
-import com.google.ai.edge.gallery.ui.home.PromoScreenGm4
 import com.google.ai.edge.gallery.ui.home.SettingsDialog
 import com.google.ai.edge.gallery.ui.home.AltrexDrawer
 import com.google.ai.edge.gallery.ui.home.LastExitDialog
-import com.google.ai.edge.gallery.ui.home.SquareDrawerItem
-import com.google.ai.edge.gallery.ui.llamacpp.LlamaCppTestScreen
+import com.google.ai.edge.gallery.ui.home.MODELS_ENTRY_ID
+import com.google.ai.edge.gallery.ui.home.StartLoadingScreen
+import com.google.ai.edge.gallery.ui.home.WelcomeScreen
+import com.google.ai.edge.gallery.ui.modelmanager.MODEL_MANAGER_ACTION_CLOUD
+import com.google.ai.edge.gallery.ui.modelmanager.MODEL_MANAGER_ACTION_IMPORT
 import com.google.ai.edge.gallery.ui.modelmanager.GlobalModelManager
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
-import com.google.ai.edge.gallery.ui.modelmanager.ModelManager
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
-import com.google.ai.edge.gallery.ui.notifications.NotificationsScreen
 import com.google.ai.edge.gallery.ui.theme.customColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -129,16 +112,16 @@ import kotlinx.coroutines.launch
 
 private const val TAG = "AGGalleryNavGraph"
 private const val ROUTE_START = "start"
-private const val ROUTE_HOMESCREEN = "homepage"
-private const val ROUTE_MODEL_LIST = "model_list"
+// [ALTREX] Replaces Google's home screen when the chat has no model.
+private const val ROUTE_WELCOME = "welcome"
 private const val ROUTE_MODEL = "route_model"
 private const val ROUTE_BENCHMARK = "benchmark"
 private const val ROUTE_MODEL_MANAGER = "model_manager"
-private const val ROUTE_NOTIFICATIONS = "notifications"
-private const val ROUTE_LLAMA_CPP_TEST = "llama_cpp_test"
 private const val ROUTE_TERMINAL = "terminal"
 private const val ROUTE_CONNECTORS = "connectors"
 private const val ROUTE_NOTES = "voice_notes"
+// [ALTREX] How long the start route waits for the model list before showing the welcome screen.
+private const val START_WAIT_LIMIT_MS = 8_000L
 private const val ENTER_ANIMATION_DURATION_MS = 500
 private val ENTER_ANIMATION_EASING = EaseOutExpo
 private const val ENTER_ANIMATION_DELAY_MS = 100
@@ -186,6 +169,21 @@ private fun AnimatedContentTransitionScope<*>.slideDownExit(): ExitTransition {
   )
 }
 
+/**
+ * [ALTREX] Route opened by a menu entry that is not a model task (terminal, notes, connectors);
+ * null for Discuter and Code, which open with a model (see navigateToTaskScreen).
+ */
+internal fun drawerEntryRoute(entryId: String): String? =
+  when (entryId) {
+    com.google.ai.edge.gallery.terminal.TERMINAL_ENTRY_ID -> ROUTE_TERMINAL
+    com.google.ai.edge.gallery.connectors.CONNECTORS_ENTRY_ID -> ROUTE_CONNECTORS
+    com.google.ai.edge.gallery.notes.NOTES_ENTRY_ID -> ROUTE_NOTES
+    else -> null
+  }
+
+/** [ALTREX] Routes of the screens the menu opens directly (see [drawerEntryRoute]). */
+internal val DIRECT_ROUTES: Set<String> = setOf(ROUTE_TERMINAL, ROUTE_CONNECTORS, ROUTE_NOTES)
+
 /** Navigation routes. */
 @Composable
 fun GalleryNavHost(
@@ -194,9 +192,6 @@ fun GalleryNavHost(
   modelManagerViewModel: ModelManagerViewModel,
 ) {
   val lifecycleOwner = LocalLifecycleOwner.current
-  var showModelManager by remember { mutableStateOf(false) }
-  var pickedTask by remember { mutableStateOf<Task?>(null) }
-  var enableHomeScreenAnimation by remember { mutableStateOf(true) }
   var enableModelListAnimation by remember { mutableStateOf(true) }
   val modelManagerUiState by modelManagerViewModel.uiState.collectAsState()
   val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -215,6 +210,9 @@ fun GalleryNavHost(
       }
       ?: com.google.ai.edge.gallery.connectors.CONNECTORS_ENTRY_ID.takeIf {
         navBackStackEntry?.destination?.route == ROUTE_CONNECTORS
+      }
+      ?: MODELS_ENTRY_ID.takeIf {
+        navBackStackEntry?.destination?.route?.startsWith(ROUTE_MODEL_MANAGER) == true
       }
       // [ALTREX] Voice notes.
       ?: com.google.ai.edge.gallery.notes.NOTES_ENTRY_ID.takeIf {
@@ -235,9 +233,8 @@ fun GalleryNavHost(
     if (defaultModel != null) {
       navController.navigate("$ROUTE_MODEL/${task.id}/${defaultModel.name}")
     } else {
-      pickedTask = task
-      enableModelListAnimation = true
-      navController.navigate(ROUTE_MODEL_LIST)
+      // [ALTREX] No model yet: the welcome screen says how to add one.
+      navController.navigate(ROUTE_WELCOME) { launchSingleTop = true }
     }
   }
 
@@ -290,23 +287,30 @@ fun GalleryNavHost(
         loadedModelName = loadedModelName,
         onOpenTask = { taskId ->
           scope.launch { drawerState.close() }
-          if (taskId == com.google.ai.edge.gallery.terminal.TERMINAL_ENTRY_ID) {
-            navController.navigate(ROUTE_TERMINAL) { launchSingleTop = true }
-          } else if (taskId == com.google.ai.edge.gallery.connectors.CONNECTORS_ENTRY_ID) {
-            navController.navigate(ROUTE_CONNECTORS) { launchSingleTop = true }
-          } else if (taskId == com.google.ai.edge.gallery.notes.NOTES_ENTRY_ID) {
-            // [ALTREX] Voice notes.
-            navController.navigate(ROUTE_NOTES) { launchSingleTop = true }
+          val route = drawerEntryRoute(taskId)
+          if (route != null) {
+            navController.navigate(route) { launchSingleTop = true }
           } else {
-            modelManagerUiState.tasks.find { it.id == taskId }?.let { navigateToTaskScreen(it) }
+            val task = modelManagerUiState.tasks.find { it.id == taskId }
+            if (task != null) {
+              navigateToTaskScreen(task)
+            } else {
+              // [ALTREX] The model list is not there yet: the welcome screen waits for it.
+              navController.navigate(ROUTE_WELCOME) { launchSingleTop = true }
+            }
           }
         },
         onOpenModels = {
           scope.launch { drawerState.close() }
           scope.launch {
             delay(50)
-            navController.navigate(ROUTE_MODEL_MANAGER)
+            navController.navigate(ROUTE_MODEL_MANAGER) { launchSingleTop = true }
           }
+        },
+        // [ALTREX] Connectors are configuration: a bottom button, no longer a space.
+        onOpenConnectors = {
+          scope.launch { drawerState.close() }
+          navController.navigate(ROUTE_CONNECTORS) { launchSingleTop = true }
         },
         onOpenSettings = {
           showSettingsDialog = true
@@ -326,135 +330,67 @@ fun GalleryNavHost(
       enterTransition = { EnterTransition.None },
       exitTransition = { ExitTransition.None },
     ) {
-    // Invisible start route to avoid flashing the home screen on cold start
+    // [ALTREX] Start route: Discuter with its first model, or the welcome screen when there is no
+    // model (or no model list: offline first launch). A loader shows while the list loads, and the
+    // wait is bounded, so this route never stays blank.
     composable(route = ROUTE_START) {
-      Box(modifier = modifier.fillMaxSize())
-
-      LaunchedEffect(modelManagerUiState.tasks) {
-        if (modelManagerUiState.tasks.isNotEmpty()) {
-          val chatTask = modelManagerUiState.tasks.find { it.id == BuiltInTaskId.LLM_CHAT }
-          val defaultModel =
-            chatTask?.models?.firstOrNull { model ->
-              modelManagerUiState.modelDownloadStatus[model.name]?.status ==
-                ModelDownloadStatusType.SUCCEEDED
-            } ?: chatTask?.models?.firstOrNull()
-          if (chatTask != null && defaultModel != null) {
-            navController.navigate("$ROUTE_MODEL/${chatTask.id}/${defaultModel.name}") {
-              popUpTo(ROUTE_START) { inclusive = true }
-            }
-          } else {
-            navController.navigate(ROUTE_HOMESCREEN) {
-              popUpTo(ROUTE_START) { inclusive = true }
-            }
-          }
-        }
+      var gaveUpWaiting by remember { mutableStateOf(false) }
+      LaunchedEffect(Unit) {
+        delay(START_WAIT_LIMIT_MS)
+        gaveUpWaiting = true
       }
-    }
-
-    // Home screen.
-    composable(route = ROUTE_HOMESCREEN) {
-      // Create a state to trigger PromoScreen fade in animation.
-      val promoId = "gm4"
-      Box(modifier = modifier.fillMaxSize()) {
-        var promoDismissed by remember { mutableStateOf(false) }
-
-        val homeScreenContent: @Composable () -> Unit = {
-          HomeScreen(
-            modelManagerViewModel = modelManagerViewModel,
-            tosViewModel = hiltViewModel(),
-            enableAnimation = enableHomeScreenAnimation,
-            navigateToTaskScreen = { task ->
-              pickedTask = task
-              enableModelListAnimation = true
-              navController.navigate(ROUTE_MODEL_LIST)
-              firebaseAnalytics?.logEvent(
-                GalleryEvent.CAPABILITY_SELECT.id,
-                Bundle().apply { putString("capability_name", task.id) },
-              )
-            },
-            onModelsClicked = { navController.navigate(ROUTE_MODEL_MANAGER) },
-            onNotificationsClicked = { navController.navigate(ROUTE_NOTIFICATIONS) },
-            onLlamaCppClicked = { navController.navigate(ROUTE_LLAMA_CPP_TEST) },
-            onMenuClicked = { scope.launch { drawerState.open() } },
-            gm4 = true,
-          )
-        }
-
-        // Show home page directly if promo has been viewed.
-        if (modelManagerViewModel.dataStoreRepository.hasViewedPromo(promoId = promoId)) {
-          homeScreenContent()
-        }
-        // If the promo has not been viewed, show promo screen first.
-        else {
-          AnimatedContent(
-            targetState = promoDismissed,
-            label = "PromoToHome",
-            transitionSpec = { fadeIn() togetherWith fadeOut() },
-          ) { dismissed ->
-            if (dismissed) {
-              homeScreenContent()
-            } else {
-              var startAnimation by remember { mutableStateOf(false) }
-              LaunchedEffect(Unit) {
-                delay(0L)
-                startAnimation = true
-              }
-              AnimatedVisibility(
-                visible = startAnimation,
-                enter = scaleIn(initialScale = 1.05f, animationSpec = tween(durationMillis = 1000)),
-              ) {
-                PromoScreenGm4(
-                  onDismiss = {
-                    modelManagerViewModel.dataStoreRepository.addViewedPromoId(promoId = promoId)
-                    promoDismissed = true
-                  }
-                )
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // Model list.
-    composable(
-      route = ROUTE_MODEL_LIST,
-      enterTransition = {
-        if (initialState.destination.route == ROUTE_HOMESCREEN) {
-          slideEnter()
-        } else {
-          EnterTransition.None
-        }
-      },
-      exitTransition = {
-        if (targetState.destination.route == ROUTE_HOMESCREEN) {
-          slideExit()
-        } else {
-          ExitTransition.None
-        }
-      },
-    ) {
-      pickedTask?.let {
-        ModelManager(
-          viewModel = modelManagerViewModel,
-          task = it,
-          enableAnimation = enableModelListAnimation,
-          onModelClicked = { model ->
-            navController.navigate("$ROUTE_MODEL/${it.id}/${model.name}")
-          },
-          onBenchmarkClicked = { model ->
-            firebaseAnalytics?.logEvent(
-              GalleryEvent.CAPABILITY_SELECT.id,
-              Bundle().apply { putString("capability_name", "benchmark_${model.name}") },
-            )
-            navController.navigate("$ROUTE_BENCHMARK/${model.name}")
-          },
-          navigateUp = {
-            enableHomeScreenAnimation = false
-            navController.navigateUp()
-          },
+      val destination =
+        chooseStartDestination(
+          tasks = modelManagerUiState.tasks,
+          downloadStatus = modelManagerUiState.modelDownloadStatus,
+          loadFailed = modelManagerUiState.loadingModelAllowlistError.isNotEmpty(),
+          gaveUpWaiting = gaveUpWaiting,
         )
+      StartLoadingScreen(modifier = modifier)
+      LaunchedEffect(destination) {
+        when (destination) {
+          StartDestination.Waiting -> {}
+          StartDestination.Welcome ->
+            navController.navigate(ROUTE_WELCOME) { popUpTo(ROUTE_START) { inclusive = true } }
+          is StartDestination.Chat ->
+            navController.navigate("$ROUTE_MODEL/${destination.taskId}/${destination.modelName}") {
+              popUpTo(ROUTE_START) { inclusive = true }
+            }
+        }
       }
+    }
+
+    // [ALTREX] Welcome screen: no model to chat with yet. As soon as one is there (downloaded,
+    // added from the cloud, imported, or the list arrived), it opens Discuter in its place.
+    composable(route = ROUTE_WELCOME) {
+      val destination =
+        chooseStartDestination(
+          tasks = modelManagerUiState.tasks,
+          downloadStatus = modelManagerUiState.modelDownloadStatus,
+          loadFailed = modelManagerUiState.loadingModelAllowlistError.isNotEmpty(),
+          gaveUpWaiting = true,
+        )
+      LaunchedEffect(destination) {
+        if (destination is StartDestination.Chat) {
+          navController.navigate("$ROUTE_MODEL/${destination.taskId}/${destination.modelName}") {
+            popUpTo(ROUTE_WELCOME) { inclusive = true }
+          }
+        }
+      }
+      WelcomeScreen(
+        modifier = modifier,
+        loading = modelManagerUiState.tasks.isEmpty() && modelManagerUiState.loadingModelAllowlist,
+        catalogUnavailable = modelManagerUiState.loadingModelAllowlistError.isNotEmpty(),
+        onRetry = { modelManagerViewModel.loadModelAllowlist() },
+        onOpenMenu = { scope.launch { drawerState.open() } },
+        onOpenModels = { navController.navigate(ROUTE_MODEL_MANAGER) },
+        onAddCloudModel = {
+          navController.navigate("$ROUTE_MODEL_MANAGER?action=$MODEL_MANAGER_ACTION_CLOUD")
+        },
+        onImportModel = {
+          navController.navigate("$ROUTE_MODEL_MANAGER?action=$MODEL_MANAGER_ACTION_IMPORT")
+        },
+      )
     }
 
     // Model page.
@@ -556,7 +492,15 @@ fun GalleryNavHost(
 
     // Global model manager page.
     composable(
-      route = ROUTE_MODEL_MANAGER,
+      route = "$ROUTE_MODEL_MANAGER?action={action}",
+      arguments =
+        listOf(
+          navArgument("action") {
+            type = NavType.StringType
+            nullable = true
+            defaultValue = null
+          }
+        ),
       enterTransition = {
         if (
           initialState.destination.route?.startsWith(ROUTE_BENCHMARK) == true ||
@@ -580,10 +524,8 @@ fun GalleryNavHost(
     ) { backStackEntry ->
       GlobalModelManager(
         viewModel = modelManagerViewModel,
-        navigateUp = {
-          enableHomeScreenAnimation = false
-          navController.navigateUp()
-        },
+        initialAction = backStackEntry.arguments?.getString("action"),
+        navigateUp = { navController.navigateUp() },
         onModelSelected = { task, model ->
           navController.navigate("$ROUTE_MODEL/${task.id}/${model.name}")
         },
@@ -627,15 +569,6 @@ fun GalleryNavHost(
       )
     }
 
-    // Notifications page.
-    composable(
-      route = ROUTE_NOTIFICATIONS,
-      enterTransition = { slideUpEnter() },
-      exitTransition = { slideDownExit() },
-    ) {
-      NotificationsScreen(navigateUp = { navController.navigateUp() })
-    }
-
     // Benchmark creation page.
     composable(
       route = "$ROUTE_BENCHMARK/{modelName}",
@@ -655,20 +588,6 @@ fun GalleryNavHost(
           },
         )
       }
-    }
-
-    // llama.cpp native engine test screen.
-    composable(
-      route = ROUTE_LLAMA_CPP_TEST,
-      enterTransition = { slideEnter() },
-      exitTransition = { slideExit() },
-    ) {
-      LlamaCppTestScreen(
-        onBackClicked = {
-          enableHomeScreenAnimation = false
-          navController.navigateUp()
-        }
-      )
     }
   }
   }
@@ -721,11 +640,12 @@ fun GalleryNavHost(
   if (data != null && modelManagerUiState.tasks.isNotEmpty()) {
     intent.data = null
     val uriStr = data.toString()
-    Log.d(TAG, "navigation link clicked: $data")
+    // [ALTREX] Never log the link itself: its query carries the user's text.
+    Log.d(TAG, "navigation link clicked: ${data.scheme}://${data.host}")
     // 1. Precise model deep links: com.google.ai.edge.gallery://model/<taskId>/<modelName>
     if (uriStr.startsWith("com.google.ai.edge.gallery://model/")) {
       if (data.pathSegments.size >= 2) {
-        val taskId = data.pathSegments.get(data.pathSegments.size - 2)
+        val taskId = resolveTaskAlias(data.pathSegments.get(data.pathSegments.size - 2))
         val modelName = data.pathSegments.last()
         val queryStr = data.getQueryParameter("query")
         modelManagerViewModel.getModelByName(name = modelName)?.let { model ->
@@ -738,13 +658,14 @@ fun GalleryNavHost(
           navController.navigate(route)
         }
       } else {
-        Log.e(TAG, "Malformed deep link URI received: $data")
+        Log.e(TAG, "Malformed model deep link received")
       }
     } else if (uriStr == "com.google.ai.edge.gallery://global_model_manager") {
       navController.navigate(ROUTE_MODEL_MANAGER)
     } else {
       // 2. Dynamic task-level deep links: com.google.ai.edge.gallery://<taskId>
-      val host = data.host
+      // [ALTREX] Removed tasks (llm_agent_chat from older reminders…) open their replacement.
+      val host = data.host?.let { resolveTaskAlias(it) }
       if (host != null) {
         val queryStr = data.getQueryParameter("query")
         val task = modelManagerUiState.tasks.find { it.id == host }

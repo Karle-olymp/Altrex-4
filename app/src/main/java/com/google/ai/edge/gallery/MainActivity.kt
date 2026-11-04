@@ -22,7 +22,6 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.View
-import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -64,16 +63,10 @@ class MainActivity : ComponentActivity() {
     // and forces the app to start cleanly on the Home Screen after an OS kill.
     super.onCreate(null)
 
-    // Debug: Dump all intent extras to see what FCM unloads
-    intent.extras?.let { extras ->
-      for (key in extras.keySet()) {
-        Log.d(TAG, "onCreate Extra -> Key: $key, Value: ${extras.get(key)}")
-      }
-    }
-
+    // [ALTREX] Intent extras are not logged: shared text and links are the user's data.
     // Convert FCM Console data extras to intent data for GalleryNavGraph to pick up
     intent.getStringExtra("deeplink")?.let { link ->
-      Log.d(TAG, "onCreate: Found deeplink extra: $link")
+      Log.d(TAG, "onCreate: found a deeplink extra")
       if (link.startsWith("http://") || link.startsWith("https://")) {
         val browserIntent = Intent(Intent.ACTION_VIEW, link.toUri())
         startActivity(browserIntent)
@@ -164,23 +157,17 @@ class MainActivity : ComponentActivity() {
       // See: https://issuetracker.google.com/issues/298296168
       window.isNavigationBarContrastEnforced = false
     }
-    // Keep the screen on while the app is running for better demo experience.
-    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    // [ALTREX] No FLAG_KEEP_SCREEN_ON for the whole app any more: the chat, Code and voice notes
+    // keep the screen on only while they generate or record (see KeepScreenOn).
   }
 
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
 
-    // Debug: Dump all intent extras to see what FCM unloads
-    intent.extras?.let { extras ->
-      for (key in extras.keySet()) {
-        Log.d(TAG, "onNewIntent Extra -> Key: $key, Value: ${extras.get(key)}")
-      }
-    }
-
+    // [ALTREX] Intent extras are not logged: shared text and links are the user's data.
     intent.getStringExtra("deeplink")?.let { link ->
-      Log.d(TAG, "onNewIntent: Found deeplink extra: $link")
+      Log.d(TAG, "onNewIntent: found a deeplink extra")
       if (link.startsWith("http://") || link.startsWith("https://")) {
         val browserIntent = Intent(Intent.ACTION_VIEW, link.toUri())
         startActivity(browserIntent)

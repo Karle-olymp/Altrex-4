@@ -140,10 +140,10 @@ class RunMcpTool(
           ?.actionChannel
           ?.send(
             SkillProgressToolAction(
-              label = "Calling MCP tool \"$toolName\"",
+              label = ProgressLabels.callingMcpTool(toolName),
               inProgress = true,
-              addItemTitle = "Call MCP tool: \"$toolName\"",
-              addItemDescription = "- Input: $input",
+              addItemTitle = "Outil MCP « $toolName »",
+              addItemDescription = "- Entrée : $input",
             )
           )
         // [ALTREX] A slow or stuck server must not block the agent loop.

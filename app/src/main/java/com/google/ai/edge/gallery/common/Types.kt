@@ -19,10 +19,6 @@ package com.google.ai.edge.gallery.common
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 
-interface LatencyProvider {
-  val latencyMs: Float
-}
-
 data class Classification(val label: String, val score: Float, val color: Color)
 
 data class JsonObjAndTextContent<T>(val jsonObj: T, val textContent: String)
@@ -41,5 +37,3 @@ data class SkillInfo(
   val skillUrl: String? = null,
   val tryoutChip: SkillTryOutChip? = null,
 )
-
-data class SkillsIndex(val skills: List<SkillInfo>)

@@ -99,15 +99,6 @@ val bodySmallMediumNarrowBold =
     fontWeight = FontWeight.Bold,
   )
 
-val homePageTitleStyle =
-  baseline.displayMedium.copy(
-    fontFamily = appFontFamily,
-    fontSize = 48.sp,
-    lineHeight = 48.sp,
-    letterSpacing = -1.sp,
-    fontWeight = FontWeight.Medium,
-  )
-
 val bodyLargeNarrow = baseline.bodyLarge.copy(fontFamily = appFontFamily, letterSpacing = 0.2.sp)
 val bodyMediumMedium =
   baseline.bodyMedium.copy(fontFamily = appFontFamily, fontWeight = FontWeight.Medium)

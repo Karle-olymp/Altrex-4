@@ -48,8 +48,6 @@ private const val TAG = "AGDownloadRepository"
 private const val MODEL_NAME_TAG = "modelName"
 private const val TASK_ID_TAG = "taskId"
 
-data class AGWorkInfo(val taskId: String, val modelName: String, val workId: String)
-
 interface DownloadRepository {
   fun downloadModel(
     task: Task?,

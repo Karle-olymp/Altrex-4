@@ -1,40 +1,47 @@
 # Altrex
 
-Altrex est une application Android d'IA embarquée ("on-device") qui permet de télécharger,
-exécuter et explorer des modèles de langage **localement sur le téléphone**, sans dépendre
-d'un serveur. Elle s'appuie sur **LiteRT-LM**, **llama.cpp (GGUF)** et **AICore/Gemma**, et
-propose plusieurs espaces : discussion, code, agents, sécurité et benchmark.
+Altrex est un assistant Android en français. Il fait tourner des modèles de langage **sur le
+téléphone** (LiteRT-LM, llama.cpp/GGUF, AICore), et, si tu le choisis, des modèles cloud avec ta
+propre clé ou des Spaces Hugging Face.
 
 > Altrex est un fork de [Google AI Edge Gallery](https://github.com/google-ai-edge/gallery),
 > distribué sous licence Apache 2.0 (voir [LICENSE](LICENSE)).
 
-## Fonctionnalités
+## Ce que fait l'application
 
-- **Chat LLM** — discussion en streaming avec un modèle local (markdown, historique, dictée).
-- **Prompt Lab** ("Code") — expérimentation de prompts et de configurations de modèle.
-- **Agent Chat** — agents avec **Skills** (compétences) et **outils MCP**, gestion de secrets
-  chiffrés.
-- **Assistant de code** — ouverture d'un dossier de projet, explorateur de fichiers, lecture et
-  édition de code assistées par le modèle (diff avant/après).
-- **Sécurité (SecurCode)** — agent en **lecture seule** qui analyse un projet (secrets,
-  dépendances vulnérables, failles).
-- **Model Manager** — import de modèles depuis un fichier local ou Hugging Face, gestion du
-  stockage et des téléchargements.
-- **Benchmark** — mesure des performances des modèles on-device.
-- **Notifications** — rappels planifiés.
+Le menu propose quatre espaces et trois boutons de configuration.
+
+- **Discuter** : la discussion principale. Pièces jointes (photo, caméra, audio, fichier, PDF) et,
+  en option, des outils : skills, connecteurs MCP, actions du téléphone, recherche web et un Linux
+  propre au modèle.
+- **Code** : un dossier de projet avec éditeur, aperçu, agent de code, recherche web et scan de
+  sécurité SecurCode.
+- **Notes vocales** : dictée, liste, graphe des notes, export Obsidian.
+- **Terminal** : un Linux Alpine (PRoot) pour toi : paquets, Python, git…
+- **Modèles** : télécharger, importer (fichier, Hugging Face), ajouter un modèle cloud ou un
+  Space, benchmark des modèles LiteRT.
+- **Connecteurs** : serveurs MCP distants (OAuth) et locaux.
+- **Réglages** : apparence, modèles et clés, Linux du modèle, mémoire locale (un dossier où le
+  modèle peut piocher), confidentialité, application.
+
+Hors du menu : le panneau « Demander à Altrex » (texte sélectionné, partage, bouton assistant du
+téléphone).
+
+Sans modèle, l'application ouvre un écran de bienvenue qui propose d'en télécharger, d'en
+importer ou d'ajouter un modèle cloud.
 
 ## Stack technique
 
 - **Langage :** Kotlin, **Jetpack Compose** (Material 3)
 - **Build :** Gradle (Kotlin DSL), Android Gradle Plugin
-- **Inférence :** LiteRT-LM, TFLite (GPU/support), llama.cpp (JNI), MediaPipe
+- **Inférence :** LiteRT-LM, llama.cpp (JNI), AICore ; API cloud des fournisseurs choisis
 - **Injection de dépendances :** Hilt ; **sérialisation :** Moshi, kotlinx.serialization, Protobuf
-- **Divers :** Firebase (Analytics, Messaging), Hugging Face (OAuth), Ktor, MCP
+- **Divers :** MCP, Hugging Face, PDFBox, PRoot (Alpine Linux)
 
 ## Prérequis
 
 - **JDK 17** ou plus récent
-- **Android SDK** avec `compileSdk 36`
+- **Android SDK** avec `compileSdk 37`
 - **NDK** et **CMake 3.22.1** (compilation de la partie native `llama.cpp`)
 - Un appareil **arm64-v8a** (ABI supportée : `arm64-v8a` uniquement), **Android 12 (API 31)** minimum
 
@@ -72,12 +79,15 @@ Le workflow GitHub Actions `.github/workflows/build-debug-apk.yml` compile l'APK
 ```
 app/src/main/java/com/google/ai/edge/gallery/
   agent/            Runtime d'agent (boucle ReAct, streaming d'événements)
-  customtasks/      Agent Chat, Skills et serveurs MCP
+  customtasks/      Écran agent de Discuter, skills et serveurs MCP
   data/             Modèles, DataStore, configurations
   runtime/          Aides des moteurs (LiteRT-LM, llama.cpp, AICore)
   skills/           Chargement des Skills (SKILL.md + scripts)
   tools/            Outils exposés au modèle (fichiers, JS, MCP, intents)
-  ui/               Écrans Compose (chat, code, sécurité, modèles, benchmark…)
+  notes/            Notes vocales
+  terminal/         Linux Alpine (PRoot)
+  connectors/       Connecteurs MCP
+  ui/               Écrans Compose (menu, chat, code, modèles, réglages, benchmark…)
 app/src/main/assets/skills/    Skills d'exemple
 app/src/main/cpp/              Sources natives (llama.cpp / ggml)
 app/src/main/res/              Ressources (thème, chaînes, icônes)

@@ -31,7 +31,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
@@ -109,9 +108,8 @@ import androidx.compose.ui.window.Dialog
 import com.google.ai.edge.gallery.BuildConfig
 import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.proto.Theme
-import com.google.ai.edge.gallery.ui.common.ClickableLink
-import com.google.ai.edge.gallery.ui.common.tos.AppTosDialog
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
+import com.google.ai.edge.gallery.proto.AccessTokenData
 import com.google.ai.edge.gallery.ui.theme.ThemeSettings
 import com.google.ai.edge.gallery.ui.theme.labelSmallNarrow
 import java.time.Instant
@@ -122,11 +120,22 @@ import kotlin.math.min
 
 private val THEME_OPTIONS = listOf(Theme.THEME_AUTO, Theme.THEME_LIGHT, Theme.THEME_DARK)
 
+/** [ALTREX] The six blocks of the settings, in order. */
+val SETTINGS_BLOCKS =
+  listOf(
+    "Apparence",
+    "Modèles et clés",
+    "Linux du modèle",
+    "Mémoire locale",
+    "Confidentialité",
+    "Application",
+  )
+
 /**
- * [ALTREX] Settings as a full-screen page: grouped sections (Appearance, Models, Privacy,
- * Application) made of rows with an icon, a title and a subtitle.
+ * [ALTREX] Settings as a full-screen page, in six blocks ([SETTINGS_BLOCKS]) made of rows with an
+ * icon, a title and a subtitle. Every key (Hugging Face, cloud providers, online services) is in
+ * "Modèles et clés".
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsDialog(
   curThemeOverride: Theme,
@@ -134,8 +143,35 @@ fun SettingsDialog(
   modelManagerViewModel: ModelManagerViewModel,
   onDismissed: () -> Unit,
 ) {
+  SettingsPage(
+    curThemeOverride = curThemeOverride,
+    readHfToken = { modelManagerViewModel.getTokenStatusAndData().data },
+    saveHfToken = { token ->
+      modelManagerViewModel.saveAccessToken(
+        accessToken = token,
+        refreshToken = "",
+        expiresAt = System.currentTimeMillis() + 1000L * 60 * 60 * 24 * 365 * 10,
+      )
+    },
+    clearHfToken = { modelManagerViewModel.clearAccessToken() },
+    saveTheme = { modelManagerViewModel.saveThemeOverride(it) },
+    onDismissed = onDismissed,
+  )
+}
+
+/** The settings themselves, without the view model (so they can be drawn in tests). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun SettingsPage(
+  curThemeOverride: Theme,
+  readHfToken: () -> AccessTokenData?,
+  saveHfToken: (String) -> Unit,
+  clearHfToken: () -> Unit,
+  saveTheme: (Theme) -> Unit,
+  onDismissed: () -> Unit,
+) {
   var selectedTheme by remember { mutableStateOf(curThemeOverride) }
-  var hfToken by remember { mutableStateOf(modelManagerViewModel.getTokenStatusAndData().data) }
+  var hfToken by remember { mutableStateOf(readHfToken()) }
   val dateFormatter = remember {
     DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
       .withZone(ZoneId.systemDefault())
@@ -152,7 +188,7 @@ fun SettingsDialog(
     selectedTheme = theme
     // Updates the app's theme and saves it.
     ThemeSettings.themeOverride.value = theme
-    modelManagerViewModel.saveThemeOverride(theme)
+    saveTheme(theme)
     // Keeps other activities launched from MainActivity on the same theme.
     val uiModeManager =
       context.applicationContext.getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
@@ -205,7 +241,8 @@ fun SettingsDialog(
         verticalArrangement = Arrangement.spacedBy(6.dp),
       ) {
         // Appearance.
-        SettingsSection("Apparence") {
+        // 1. Appearance.
+        SettingsSection(SETTINGS_BLOCKS[0]) {
           SettingsRow(
             icon = Icons.Outlined.Palette,
             title = stringResource(R.string.theme_title),
@@ -247,8 +284,8 @@ fun SettingsDialog(
           }
         }
 
-        // Models.
-        SettingsSection("Modèles") {
+        // 2. Models and keys: the Hugging Face token, the cloud providers and the online services.
+        SettingsSection(SETTINGS_BLOCKS[1]) {
           val curHfToken = hfToken
           val hasToken = curHfToken != null && curHfToken.accessToken.isNotEmpty()
           SettingsRow(
@@ -267,12 +304,8 @@ fun SettingsDialog(
           )
           if (showTokenEditor) {
             val handleSaveToken = {
-              modelManagerViewModel.saveAccessToken(
-                accessToken = customHfToken,
-                refreshToken = "",
-                expiresAt = System.currentTimeMillis() + 1000L * 60 * 60 * 24 * 365 * 10,
-              )
-              hfToken = modelManagerViewModel.getTokenStatusAndData().data
+              saveHfToken(customHfToken)
+              hfToken = readHfToken()
               customHfToken = ""
               focusManager.clearFocus()
             }
@@ -331,7 +364,7 @@ fun SettingsDialog(
               if (hasToken) {
                 OutlinedButton(
                   onClick = {
-                    modelManagerViewModel.clearAccessToken()
+                    clearHfToken()
                     hfToken = null
                   }
                 ) {
@@ -340,35 +373,23 @@ fun SettingsDialog(
               }
             }
           }
+          // Keys of the cloud model providers (models added from the model list).
+          SettingsSubLabel("Modèles cloud")
+          ApiKeysSettings(CLOUD_KEYS)
+          // Keys of the online tools.
+          SettingsSubLabel("Services en ligne")
+          ApiKeysSettings(API_KEYS)
         }
 
-        // [ALTREX] API keys of the online tools, stored encrypted on the phone.
-        SettingsSection("Clés d'API") { ApiKeysSettings(API_KEYS) }
-        // [ALTREX] Keys of cloud model providers (models added from the model list).
-        SettingsSection("Modèles cloud") { ApiKeysSettings(CLOUD_KEYS) }
+        // 3. The model's own Linux (run_command tool): approvals, shared folder and reset. The
+        // user's Linux is the Terminal space.
+        SettingsSection(SETTINGS_BLOCKS[2]) { AgentLinuxSettings() }
 
-        // [ALTREX] Local memory: a folder the model draws on.
-        SettingsSection("Mémoire locale") { MemorySettings() }
+        // 4. Local memory: a folder the model draws on.
+        SettingsSection(SETTINGS_BLOCKS[3]) { MemorySettings() }
 
-        // [ALTREX] Linux terminal, first step (test screen).
-        var showLinux by remember { mutableStateOf(false) }
-        SettingsSection("Linux") {
-          SettingsRow(
-            icon = Icons.Outlined.Terminal,
-            title = "Linux (test)",
-            subtitle = "Alpine Linux dans Altrex : installer, lancer une commande",
-            showChevron = true,
-            onClick = { showLinux = true },
-          )
-        }
-        if (showLinux) {
-          com.google.ai.edge.gallery.terminal.LinuxTestDialog(onDismiss = { showLinux = false })
-        }
-        // [ALTREX] The model's own Linux (run_command tool): approvals and reset.
-        SettingsSection("Linux du modèle") { AgentLinuxSettings() }
-
-        // Privacy.
-        SettingsSection("Confidentialité") {
+        // 5. Privacy.
+        SettingsSection(SETTINGS_BLOCKS[4]) {
           SettingsRow(
             icon = Icons.Outlined.Lock,
             title = "Ce qui sort du téléphone",
@@ -378,13 +399,13 @@ fun SettingsDialog(
                 "documents joints partent chez ce fournisseur, avec ta clé. Un connecteur reçoit ce que " +
                 "le modèle lui envoie, et lui seul. Le scan de l'espace Code envoie du code à SecurCode " +
                 "après ton accord, projet par projet ; la recherche web n'envoie que tes requêtes à " +
-                "Brave ; l'import GitHub ne fait que télécharger. Aucune clé n'est jamais montrée au " +
-                "modèle.",
+                "Brave ; l'import GitHub ne fait que télécharger. La liste des modèles proposés est " +
+                "téléchargée depuis GitHub. Aucune clé n'est jamais montrée au modèle.",
           )
         }
 
-        // Application.
-        SettingsSection("Application") {
+        // 6. Application.
+        SettingsSection(SETTINGS_BLOCKS[5]) {
           SettingsRow(
             icon = Icons.Outlined.Info,
             title = "Version",
@@ -824,6 +845,17 @@ private fun SettingsSection(title: String, content: @Composable () -> Unit) {
   ) {
     content()
   }
+}
+
+/** A small heading inside a block (e.g. "Modèles cloud" in "Modèles et clés"). */
+@Composable
+private fun SettingsSubLabel(text: String) {
+  Text(
+    text,
+    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+    color = MaterialTheme.colorScheme.primary,
+    modifier = Modifier.padding(start = 14.dp, top = 10.dp, bottom = 2.dp),
+  )
 }
 
 @Composable

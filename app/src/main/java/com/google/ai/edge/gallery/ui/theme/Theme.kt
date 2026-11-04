@@ -141,7 +141,6 @@ data class CustomColors(
   val errorTextColor: Color = Color.Transparent,
   val newFeatureContainerColor: Color = Color.Transparent,
   val newFeatureTextColor: Color = Color.Transparent,
-  val bgStarColor: Color = Color.Transparent,
   val promoBannerBgBrush: Brush = Brush.verticalGradient(listOf(Color.Transparent)),
   val promoBannerIconBgBrush: Brush = Brush.verticalGradient(listOf(Color.Transparent)),
 )
@@ -204,7 +203,6 @@ val lightCustomColors =
     errorTextColor = Color(0xffd93025),
     newFeatureContainerColor = Color(0xFFEEDCFE),
     newFeatureTextColor = Color(0xFF400B84),
-    bgStarColor = Color(0x3A669AF5),
     promoBannerBgBrush =
       Brush.linearGradient(
         colorStops =
@@ -285,7 +283,6 @@ val darkCustomColors =
     errorTextColor = Color(0xffee675c),
     newFeatureContainerColor = Color(0xFFEEDCFE),
     newFeatureTextColor = Color(0xFF400B84),
-    bgStarColor = Color(0x19346BF0),
     promoBannerBgBrush =
       Brush.linearGradient(
         colorStops = arrayOf(0.0f to Color(0x82183570), 0.8077f to Color(0x820A122D)),

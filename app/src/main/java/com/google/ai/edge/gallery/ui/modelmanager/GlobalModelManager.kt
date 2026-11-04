@@ -108,6 +108,10 @@ import kotlinx.coroutines.launch
 
 private const val TAG = "AGGlobalMM"
 
+/** [ALTREX] Values of the model manager's `action` route argument. */
+const val MODEL_MANAGER_ACTION_CLOUD = "cloud"
+const val MODEL_MANAGER_ACTION_IMPORT = "import"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GlobalModelManager(
@@ -117,6 +121,8 @@ fun GlobalModelManager(
   onBenchmarkClicked: (Model) -> Unit,
   modifier: Modifier = Modifier,
   tosViewModel: TosViewModel? = null,
+  // [ALTREX] Opened from the welcome screen: go straight to "add a cloud model" or "import".
+  initialAction: String? = null,
 ) {
   val uiState by viewModel.uiState.collectAsState()
   val builtInModels = remember { mutableStateListOf<Model>() }
@@ -144,11 +150,13 @@ fun GlobalModelManager(
   val snackbarHostState = remember { SnackbarHostState() }
   val modelItemExpandedStates = remember { mutableStateMapOf<String, Boolean>() }
 
-  val promoId = "gm4_banner"
-  var showPromo by remember { mutableStateOf(false) }
-  LaunchedEffect(Unit) {
-    showPromo = !viewModel.dataStoreRepository.hasViewedPromo(promoId = promoId)
+  LaunchedEffect(initialAction) {
+    when (initialAction) {
+      MODEL_MANAGER_ACTION_CLOUD -> showCloudModelDialog = true
+      MODEL_MANAGER_ACTION_IMPORT -> showImportModelSheet = true
+    }
   }
+
 
   val processModelUri: (Uri, Boolean) -> Unit = { uri, isWebImport ->
     validateAndProcessModelUri(

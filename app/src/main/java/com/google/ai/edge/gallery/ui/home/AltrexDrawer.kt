@@ -40,8 +40,6 @@ import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Forum
-import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.Mms
 import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.TouchApp
@@ -79,19 +77,30 @@ private data class DrawerEntry(
   val gradientIndex: Int,
 )
 
+/**
+ * [ALTREX] The four spaces, in menu order. Configuration (models, connectors, settings) sits in the
+ * buttons at the bottom. Ask Image and Audio Scribe are gone: Discuter takes photos, camera and
+ * audio; Agent Skills and Sécurité were merged into Discuter and Code.
+ */
 private val SPACES =
   listOf(
-    // [ALTREX] Skills and tools are now a switch in the chat (Agent Skills merged into it).
-    DrawerEntry(BuiltInTaskId.LLM_CHAT, "Discuter", "Chat, skills et outils", Icons.Outlined.Forum, 2),
-    // [ALTREX] The Sécurité space is merged into Code (Scanner button, securcode_scan tool).
+    DrawerEntry(BuiltInTaskId.LLM_CHAT, "Discuter", "Chat, pièces jointes et outils", Icons.Outlined.Forum, 2),
     DrawerEntry(
       BuiltInTaskId.LLM_PROMPT_LAB,
       "Code",
-      "Chat, éditeur, aperçu et scan SecurCode",
+      "Projet, éditeur, aperçu et scan",
       Icons.Outlined.Code,
       3,
     ),
-    // [ALTREX] Alpine Linux in the app (PRoot): the user's terminal.
+    // Voice notes: dictate an idea, keep it as a note, see the notes as a graph.
+    DrawerEntry(
+      com.google.ai.edge.gallery.notes.NOTES_ENTRY_ID,
+      "Notes vocales",
+      "Dictée et graphe des notes",
+      Icons.Outlined.RecordVoiceOver,
+      2,
+    ),
+    // Alpine Linux in the app (PRoot): the user's terminal.
     DrawerEntry(
       com.google.ai.edge.gallery.terminal.TERMINAL_ENTRY_ID,
       "Terminal",
@@ -99,45 +108,15 @@ private val SPACES =
       Icons.Outlined.Terminal,
       1,
     ),
-    // [ALTREX] Connectors (remote MCP servers): catalog, sign-in and approvals.
-    DrawerEntry(
-      com.google.ai.edge.gallery.connectors.CONNECTORS_ENTRY_ID,
-      "Connecteurs",
-      "GitHub, Notion, Linear, Hugging Face…",
-      Icons.Outlined.Hub,
-      0,
-    ),
-    // [ALTREX] Voice notes: dictate an idea, keep it as a note, see the notes as a graph.
-    DrawerEntry(
-      com.google.ai.edge.gallery.notes.NOTES_ENTRY_ID,
-      "Notes vocales",
-      "Dicte une idée, retrouve-la dans le graphe",
-      Icons.Outlined.RecordVoiceOver,
-      2,
-    ),
   )
 
-private val TOOLS =
-  listOf(
-    DrawerEntry(
-      BuiltInTaskId.LLM_ASK_IMAGE,
-      "Ask Image",
-      "Poser des questions sur des images",
-      Icons.Outlined.Mms,
-      2,
-    ),
-    DrawerEntry(
-      BuiltInTaskId.LLM_ASK_AUDIO,
-      "Audio Scribe",
-      "Transcrire et traduire de l'audio",
-      Icons.Outlined.Mic,
-      0,
-    ),
-  )
+/** Ids of the spaces listed in the menu, in order (checked against the navigation in tests). */
+val DRAWER_SPACE_IDS: List<String> = SPACES.map { it.taskId }
 
 /**
- * Altrex side menu: logo, loaded model, then a single list of spaces and tools. The active entry
- * sits on an animated pill; rows slide in one after the other when the menu opens.
+ * Altrex side menu: logo, loaded model, the four spaces, then Modèles, Connecteurs and Réglages at
+ * the bottom. The active entry sits on an animated pill; rows slide in one after the other when the
+ * menu opens.
  */
 @Composable
 fun AltrexDrawer(
@@ -146,6 +125,7 @@ fun AltrexDrawer(
   loadedModelName: String?,
   onOpenTask: (String) -> Unit,
   onOpenModels: () -> Unit,
+  onOpenConnectors: () -> Unit,
   onOpenSettings: () -> Unit,
   onOpenAssistantGuide: () -> Unit,
 ) {
@@ -170,31 +150,17 @@ fun AltrexDrawer(
               title = entry.title,
               subtitle = entry.subtitle,
               icon = entry.icon,
-              active = entry.taskId == currentTaskId || (entry.taskId == BuiltInTaskId.LLM_CHAT && currentTaskId == BuiltInTaskId.LLM_AGENT_CHAT) ||
-                  (entry.taskId == BuiltInTaskId.LLM_PROMPT_LAB && currentTaskId == BuiltInTaskId.LLM_SECURITY),
-              onClick = { onOpenTask(entry.taskId) },
-            )
-          }
-        }
-
-        // [ALTREX] Indices follow the number of spaces, so the stagger stays in order.
-        StaggerIn(index = 3 + SPACES.size, trigger = isOpen) { SectionLabel("Outils") }
-        TOOLS.forEachIndexed { i, entry ->
-          StaggerIn(index = 4 + SPACES.size + i, trigger = isOpen) {
-            NavRow(
-              title = entry.title,
-              subtitle = entry.subtitle,
-              icon = entry.icon,
               active = entry.taskId == currentTaskId,
               onClick = { onOpenTask(entry.taskId) },
             )
           }
         }
+
         Spacer(modifier = Modifier.height(12.dp))
       }
 
-      // Models and settings stay at the bottom, always visible.
-      StaggerIn(index = 4 + SPACES.size + TOOLS.size, trigger = isOpen) {
+      // Models, connectors and settings stay at the bottom, always visible.
+      StaggerIn(index = 3 + SPACES.size, trigger = isOpen) {
         Column(modifier = Modifier.padding(bottom = 16.dp)) {
           Box(
             modifier =
@@ -207,11 +173,19 @@ fun AltrexDrawer(
             AssistantCard(onClick = onOpenAssistantGuide)
             Spacer(Modifier.height(10.dp))
           }
-          Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BottomButton(
               label = "Modèles",
               icon = Icons.AutoMirrored.Rounded.ListAlt,
               onClick = onOpenModels,
+              active = currentTaskId == MODELS_ENTRY_ID,
+              modifier = Modifier.weight(1f),
+            )
+            BottomButton(
+              label = "Connecteurs",
+              icon = Icons.Outlined.Hub,
+              onClick = onOpenConnectors,
+              active = currentTaskId == com.google.ai.edge.gallery.connectors.CONNECTORS_ENTRY_ID,
               modifier = Modifier.weight(1f),
             )
             BottomButton(
@@ -476,34 +450,44 @@ private fun AssistantCard(onClick: () -> Unit) {
   }
 }
 
+/** Id the navigation reports while the model manager is open (highlights the Modèles button). */
+const val MODELS_ENTRY_ID = "models"
+
+/** A bottom button: icon above its label, so three of them fit the menu's width. */
 @Composable
 private fun BottomButton(
   label: String,
   icon: ImageVector,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
+  active: Boolean = false,
 ) {
-  Row(
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.Center,
+  Column(
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.Center,
     modifier =
       modifier
         .clip(RoundedCornerShape(14.dp))
-        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+        .background(
+          if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+          else MaterialTheme.colorScheme.surfaceContainerLow
+        )
         .clickable(onClick = onClick)
-        .padding(vertical = 12.dp),
+        .padding(vertical = 10.dp, horizontal = 4.dp),
   ) {
     Icon(
       icon,
       contentDescription = null,
-      tint = MaterialTheme.colorScheme.onSurfaceVariant,
-      modifier = Modifier.size(18.dp),
+      tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier = Modifier.size(20.dp),
     )
     Text(
       label,
-      style = MaterialTheme.typography.labelLarge,
-      color = MaterialTheme.colorScheme.onSurface,
-      modifier = Modifier.padding(start = 8.dp),
+      style = MaterialTheme.typography.labelMedium,
+      color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+      modifier = Modifier.padding(top = 4.dp),
     )
   }
 }

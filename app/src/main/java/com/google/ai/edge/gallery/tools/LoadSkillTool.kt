@@ -38,16 +38,17 @@ class LoadSkillTool(private val skillsProvider: SkillsProvider) : ToolDefinition
     return runBlocking(Dispatchers.Default) {
       val skill = skillsProvider.loadSkill(skillName)
       val skillContent = skill?.getSkillContent() ?: "Skill not found"
-      Log.d(TAG, "load skill. Skill content:\n$skillContent")
+      // [ALTREX] The skill's content is not logged (it may hold the user's data).
+      Log.d(TAG, "load skill: found=${skill != null}")
       if (skill != null) {
         executionContext
           ?.actionChannel
           ?.send(
             SkillProgressToolAction(
-              label = "Loading skill \"$skillName\"",
+              label = ProgressLabels.loadingSkill(skillName),
               inProgress = true,
-              addItemTitle = "Load \"${skill.name}\"",
-              addItemDescription = "Description: ${skill.description}",
+              addItemTitle = "Skill « ${skill.name} »",
+              addItemDescription = "Description : ${skill.description}",
               customData = skill,
             )
           )

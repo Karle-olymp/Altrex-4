@@ -175,6 +175,8 @@ fun LlmSingleTurnScreen(
   LaunchedEffect(openedFile?.uri, openedFile?.content) { draft = null }
   // A generation (typed request or scan) shows its answer in the Chat view.
   LaunchedEffect(uiState.inProgress) { if (uiState.inProgress) view = CodeView.CHAT }
+  // [ALTREX] The screen stays on while an answer or a scan is running.
+  com.google.ai.edge.gallery.ui.common.KeepScreenOn(active = uiState.inProgress)
 
   val modelDownloaded = curDownloadStatus?.status == ModelDownloadStatusType.SUCCEEDED
   val openedUri = openedFile?.uri

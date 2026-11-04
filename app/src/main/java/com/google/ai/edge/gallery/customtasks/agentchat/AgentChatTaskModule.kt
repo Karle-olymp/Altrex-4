@@ -17,38 +17,24 @@
 package com.google.ai.edge.gallery.customtasks.agentchat
 
 import android.content.Context
-import androidx.compose.runtime.Composable
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.DataStoreFactory
 import androidx.datastore.dataStoreFile
-import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.agent.AgentChatExecutor
-import com.google.ai.edge.gallery.agent.AgentRuntimeConfig
 import com.google.ai.edge.gallery.agent.AgentRuntimeExecutor
 import com.google.ai.edge.gallery.agent.DefaultAgentRuntimeExecutor
 import com.google.ai.edge.gallery.agent.PromptExpander
-import com.google.ai.edge.gallery.customtasks.common.CustomTask
-import com.google.ai.edge.gallery.customtasks.common.CustomTaskDataForBuiltinTask
-import com.google.ai.edge.gallery.data.BuiltInTaskId
-import com.google.ai.edge.gallery.data.Category
-import com.google.ai.edge.gallery.data.Model
-import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.proto.McpServers
 import com.google.ai.edge.gallery.skills.SkillManager
 import com.google.ai.edge.gallery.skills.SkillsProvider
 import com.google.ai.edge.gallery.skills.formatSelectedSkills
 import com.google.ai.edge.gallery.tools.RuntimeToolDispatcher
-import com.google.ai.edge.litertlm.Contents
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import dagger.multibindings.IntoSet
-import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
@@ -109,82 +95,6 @@ val DEFAULT_SYSTEM_PROMPT_SKILLS_ONLY =
 
 val DEFAULT_SYSTEM_PROMPT_SKILLS_ONLY_TRIMMED = DEFAULT_SYSTEM_PROMPT_SKILLS_ONLY.trim()
 
-class AgentChatTask
-@Inject
-constructor(
-  @ApplicationContext private val context: Context,
-  private val skillsProvider: SkillsProvider,
-  private val agentTools: AgentTools,
-  @AgentChatExecutor private val executor: AgentRuntimeExecutor,
-) : CustomTask {
-  override val task: Task by lazy {
-    Task(
-      id = BuiltInTaskId.LLM_AGENT_CHAT,
-      label = context.getString(R.string.task_label_agent_skills),
-      category = Category.LLM,
-      iconVectorResourceId = R.drawable.agent,
-      newFeature = true,
-      models = mutableListOf(),
-      description = context.getString(R.string.task_desc_agent_skills),
-      shortDescription = context.getString(R.string.task_short_desc_agent_skills),
-      docUrl = "https://github.com/google-ai-edge/LiteRT-LM/blob/main/kotlin/README.md",
-      sourceCodeUrl =
-        "https://github.com/google-ai-edge/gallery/blob/main/Android/src/app/src/main/java/com/google/ai/edge/gallery/customtasks/agentchat/",
-      textInputPlaceHolderRes = R.string.text_input_placeholder_llm_chat,
-      defaultSystemPrompt = DEFAULT_SYSTEM_PROMPT_TRIMMED,
-    )
-  }
-
-  override fun initializeModelFn(
-    context: Context,
-    coroutineScope: CoroutineScope,
-    model: Model,
-    systemInstruction: Contents?,
-    onDone: (String) -> Unit,
-  ) {
-    val initialSystemPrompt = systemInstruction?.toString() ?: task.defaultSystemPrompt
-    coroutineScope.launch(Dispatchers.Default) {
-      agentTools.toolsEnabled = true
-      val finalSystemPrompt = buildAgentSystemPrompt(agentTools, skillsProvider, initialSystemPrompt)
-
-      val config =
-        AgentRuntimeConfig(
-          model = model,
-          taskId = task.id,
-          actionChannel = agentTools.sendActionChannel,
-          supportImage = model.llmSupportImage,
-          supportAudio = model.llmSupportAudio,
-          enableConversationConstrainedDecoding = true,
-          systemInstruction = finalSystemPrompt,
-        )
-
-      executor.initialize(context = context, config = config, onDone = onDone)
-    }
-  }
-
-  override fun cleanUpModelFn(
-    context: Context,
-    coroutineScope: CoroutineScope,
-    model: Model,
-    onDone: () -> Unit,
-  ) {
-    executor.cleanUpModel(model = model, onDone = onDone)
-  }
-
-  @Composable
-  override fun MainScreen(data: Any) {
-    val myData = data as CustomTaskDataForBuiltinTask
-    AgentChatScreen(
-      task = task,
-      modelManagerViewModel = myData.modelManagerViewModel,
-      navigateUp = myData.onNavUp,
-      agentTools = agentTools,
-      onMenuClicked = myData.onMenuClicked,
-      initialQuery = myData.initialQuery,
-    )
-  }
-}
-
 @Module
 @InstallIn(SingletonComponent::class)
 internal object AgentChatTaskModule {
@@ -209,17 +119,6 @@ internal object AgentChatTaskModule {
   }
 
   @Provides
-  @IntoSet
-  fun provideTask(
-    @ApplicationContext context: Context,
-    skillManager: SkillManager,
-    agentTools: AgentTools,
-    @AgentChatExecutor executor: AgentRuntimeExecutor,
-  ): CustomTask {
-    return AgentChatTask(context, skillManager, agentTools, executor)
-  }
-
-  @Provides
   @Singleton
   fun provideMcpServersDataStore(@ApplicationContext context: Context): DataStore<McpServers> {
     return DataStoreFactory.create(
@@ -231,8 +130,8 @@ internal object AgentChatTaskModule {
 
 /**
  * [ALTREX] The agent's system prompt: [template] with the selected skills and the MCP tools put
- * in (the default template depends on whether MCP tools are on). Shared by the main chat with
- * "Skills et outils" on and the Agent Skills task.
+ * in (the default template depends on whether MCP tools are on). Used by the main chat with
+ * "Skills et outils" on.
  */
 suspend fun buildAgentSystemPrompt(
   agentTools: AgentTools,

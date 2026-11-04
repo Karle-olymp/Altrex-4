@@ -172,6 +172,8 @@ fun ChatView(
   val context = LocalContext.current
 
   val currentMessages = uiState.messagesByModel[selectedModel.name] ?: emptyList()
+  // [ALTREX] The screen stays on while an answer is being generated.
+  com.google.ai.edge.gallery.ui.common.KeepScreenOn(active = uiState.inProgress)
   LaunchedEffect(uiState.inProgress) {
     if (!uiState.inProgress && currentMessages.isNotEmpty()) {
       viewModel.saveSession(

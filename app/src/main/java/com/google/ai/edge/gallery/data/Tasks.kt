@@ -138,7 +138,6 @@ object BuiltInTaskId {
   const val LLM_PROMPT_LAB = "llm_prompt_lab"
   const val LLM_ASK_IMAGE = "llm_ask_image"
   const val LLM_ASK_AUDIO = "llm_ask_audio"
-  const val MP_SCRAPBOOK = "mp_scrapbook"
   const val LLM_AGENT_CHAT = "llm_agent_chat"
   const val LLM_SECURITY = "llm_security"
 }

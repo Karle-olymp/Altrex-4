@@ -1,6 +1,6 @@
 {
   "name": "Altrex",
-  "description": "On-device AI model showcase and skill platform, featuring LLM Chat, Prompt Lab, Agent Chat with Skills & MCP tools, and Benchmarking.",
+  "description": "Assistant Android en français : modèles locaux (LiteRT-LM, llama.cpp) ou cloud, discussion avec outils, espace Code, notes vocales et terminal Linux.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

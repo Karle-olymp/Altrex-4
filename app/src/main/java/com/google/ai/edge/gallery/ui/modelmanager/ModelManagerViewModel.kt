@@ -182,7 +182,6 @@ private val PREDEFINED_LLM_TASK_ORDER =
     BuiltInTaskId.LLM_AGENT_CHAT,
     BuiltInTaskId.LLM_PROMPT_LAB,
     BuiltInTaskId.LLM_SECURITY,
-    BuiltInTaskId.MP_SCRAPBOOK,
   )
 
 /**
@@ -1093,7 +1092,10 @@ constructor(
           }
         }
 
+        // [ALTREX] Told to the welcome screen, which offers to retry.
+        var allowlistError = ""
         if (modelAllowlist == null) {
+          allowlistError = "Liste des modèles indisponible"
           // [ALTREX] No list (offline at the very first launch, or a version Google publishes no list
           // for): carry on with an empty one. Imported, cloud and remote models need none; returning
           // here left the start screen blank for ever, with no way out.
@@ -1184,6 +1186,7 @@ constructor(
           createUiState()
             .copy(
               loadingModelAllowlist = false,
+              loadingModelAllowlistError = allowlistError,
               tasks = curTasks,
               tasksByCategory = groupTasksByCategory(),
             )
@@ -1199,6 +1202,18 @@ constructor(
         Log.d(TAG, "loadModelAllowlist: Done")
       } catch (e: Exception) {
         Log.e(TAG, "Failed to load model allowlist", e)
+        // [ALTREX] Leave the loading state with the tasks (and the imported, cloud and remote
+        // models) in place, so the start screen offers a way out instead of waiting for ever.
+        val tasks = getActiveCustomTasks().map { it.task }
+        val base =
+          runCatching { createUiState().copy(tasks = tasks) }
+            .getOrElse { _uiState.value.copy(tasks = tasks) }
+        _uiState.update {
+          base.copy(
+            loadingModelAllowlist = false,
+            loadingModelAllowlistError = "Liste des modèles indisponible",
+          )
+        }
       } finally {
         allowlistLoading = false
       }
@@ -1349,8 +1364,8 @@ constructor(
       }
     }
 
+    // [ALTREX] Not logged: it is what the user typed.
     val textInputHistory = dataStoreRepository.readTextInputHistory()
-    Log.d(TAG, "text input history: $textInputHistory")
 
     Log.d(TAG, "model download status: $modelDownloadStatus")
     return ModelManagerUiState(

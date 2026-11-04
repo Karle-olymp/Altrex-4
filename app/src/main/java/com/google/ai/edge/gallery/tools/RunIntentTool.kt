@@ -92,17 +92,20 @@ class RunIntentTool(private val context: Context, private val skillsProvider: Sk
       ?.actionChannel
       ?.send(
         SkillProgressToolAction(
-          label = "Executing intent \"$intent\"",
+          label = ProgressLabels.runningAction(intent),
           inProgress = true,
-          addItemTitle = "Execute intent \"$intent\"",
-          addItemDescription = "Parameters: $parameters",
+          addItemTitle = "Action « $intent »",
+          addItemDescription = "Paramètres : $parameters",
         )
       )
 
     val res =
       IntentHandler.handleAction(context, intent, parameters) { permission ->
+        // [ALTREX] No chat screen to ask the user (no action channel): refuse instead of waiting
+        // for ever for an answer that cannot come.
+        val channel = executionContext?.actionChannel ?: return@handleAction false
         val permissionAction = RequestPermissionToolAction(permission = permission)
-        executionContext?.actionChannel?.send(permissionAction)
+        channel.send(permissionAction)
         permissionAction.result.await()
       }
 

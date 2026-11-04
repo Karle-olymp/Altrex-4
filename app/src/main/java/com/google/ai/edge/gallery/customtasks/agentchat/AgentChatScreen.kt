@@ -404,7 +404,7 @@ fun AgentChatScreen(
                 // Execute JS.
                 Log.d(TAG, "Start to run js")
                 chatViewJavascriptInterface.onResultListener = { result ->
-                  Log.d(TAG, "Got result:\n$result")
+                  // [ALTREX] The raw result is not logged (it may hold the user's data).
                   action.result.complete(result)
                   val isSuccess = !result.contains("\"error\":")
                   val errorType = if (isSuccess) "" else "js_error"
@@ -764,32 +764,13 @@ private fun updateProgressPanel(viewModel: LlmChatViewModel, model: Model, agent
     lastProgressPanelMessage != null &&
       lastProgressPanelMessage is ChatMessageCollapsableProgressPanel
   ) {
-    if (lastProgressPanelMessage.title.startsWith("Loading")) {
-      agentTools.sendToolAction(
-        SkillProgressToolAction(
-          label = lastProgressPanelMessage.title.replace("Loading", "Loaded"),
-          inProgress = false,
-        )
+    // [ALTREX] French "done" label (it was "Loaded / Called / Executed").
+    agentTools.sendToolAction(
+      SkillProgressToolAction(
+        label = com.google.ai.edge.gallery.tools.ProgressLabels.done(lastProgressPanelMessage.title),
+        inProgress = false,
       )
-    } else if (lastProgressPanelMessage.title.startsWith("Calling")) {
-      agentTools.sendToolAction(
-        SkillProgressToolAction(
-          label = lastProgressPanelMessage.title.replace("Calling", "Called"),
-          inProgress = false,
-        )
-      )
-    } else if (lastProgressPanelMessage.title.startsWith("Executing")) {
-      agentTools.sendToolAction(
-        SkillProgressToolAction(
-          label = lastProgressPanelMessage.title.replace("Executing", "Executed"),
-          inProgress = false,
-        )
-      )
-    } else {
-      agentTools.sendToolAction(
-        SkillProgressToolAction(label = lastProgressPanelMessage.title, inProgress = false)
-      )
-    }
+    )
   }
 }
 
