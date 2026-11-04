@@ -39,6 +39,9 @@ object CrashLog {
    * throws on the library's timer thread, where nothing can catch it). Nothing of ours is in a
    * broken state then, so the app keeps running; every other crash still goes through.
    */
+  // [ALTREX] CompletionHandlerException is marked internal by kotlinx.coroutines: opt in, or the
+  // build fails (OPT_IN_USAGE_ERROR).
+  @OptIn(kotlinx.coroutines.InternalCoroutinesApi::class)
   internal fun isIgnorable(threadName: String, error: Throwable): Boolean =
     threadName.startsWith("kotlinx.coroutines.DefaultExecutor") &&
       generateSequence(error) { it.cause }.take(8).any { it is kotlinx.coroutines.CompletionHandlerException }
