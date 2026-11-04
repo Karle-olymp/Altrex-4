@@ -572,6 +572,9 @@ constructor(
       } catch (e: Throwable) {
         // A local server that did not start (missing package, crash): its process goes too.
         localProcesses.remove(url)?.destroy()
+        // The attempt is given up (timeout, refusal): its connection is closed now, else the SDK's own
+        // 60 s timer would end it later, with an error thrown where nothing can catch it.
+        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { runCatching { client.close() } }
         throw e
       }
     val mcpTools =

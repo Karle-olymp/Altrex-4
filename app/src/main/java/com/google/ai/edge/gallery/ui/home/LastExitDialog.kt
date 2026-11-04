@@ -97,7 +97,7 @@ private fun describeLastAbnormalExit(context: Context): Pair<String, Long>? {
               ?.takeIf { (_, at) -> kotlin.math.abs(info.timestamp - at) < 60_000L }
               ?.first
           "Plantage de l'application$detail." +
-            (trace?.let { "\n\nDétails (copie-les et envoie-les-moi) :\n" + it.lines().take(30).joinToString("\n") } ?: "")
+            (trace?.let { "\n\nDétails (copie-les et envoie-les-moi) :\n" + CrashLog.summarize(it) } ?: "")
         }
         ApplicationExitInfo.REASON_ANR -> "L'application ne répondait plus$detail."
         ApplicationExitInfo.REASON_SIGNALED ->
