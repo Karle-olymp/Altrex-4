@@ -470,15 +470,21 @@ object RemoteModelHelper : LlmModelHelper {
         }
         show(answer)
         resultListener("", true, null)
-      } catch (e: Exception) {
-        if (stopGen.get() != myGen) {
-          cleanUpListener()
-        } else {
-          Log.w(TAG, "Cloud request failed (${e.javaClass.simpleName})")
-          onError(
-            (e as? CloudApi.CloudException)?.message
-              ?: "${cloud.provider.label} injoignable (${e.javaClass.simpleName}). Vérifie ta connexion."
-          )
+      } catch (e: Throwable) {
+        // [ALTREX] Anything (a provider answer nobody expected, memory…) ends as a message in the
+        // chat: this thread has no handler of its own, so an escaped error closed the whole app.
+        if (e is kotlinx.coroutines.CancellationException) throw e
+        Log.w(TAG, "Cloud request failed (${e.javaClass.simpleName})", e)
+        runCatching {
+          if (stopGen.get() != myGen) {
+            cleanUpListener()
+          } else {
+            onError(
+              (e as? CloudApi.CloudException)?.message
+                ?: "${cloud.provider.label} : réponse inattendue (${e.javaClass.simpleName}" +
+                  (e.message?.let { ": " + it.take(120) } ?: "") + ")."
+            )
+          }
         }
       }
     }
