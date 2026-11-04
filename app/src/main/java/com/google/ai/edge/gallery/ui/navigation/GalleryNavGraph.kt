@@ -138,6 +138,7 @@ private const val ROUTE_NOTIFICATIONS = "notifications"
 private const val ROUTE_LLAMA_CPP_TEST = "llama_cpp_test"
 private const val ROUTE_TERMINAL = "terminal"
 private const val ROUTE_CONNECTORS = "connectors"
+private const val ROUTE_NOTES = "voice_notes"
 private const val ENTER_ANIMATION_DURATION_MS = 500
 private val ENTER_ANIMATION_EASING = EaseOutExpo
 private const val ENTER_ANIMATION_DELAY_MS = 100
@@ -215,6 +216,10 @@ fun GalleryNavHost(
       ?: com.google.ai.edge.gallery.connectors.CONNECTORS_ENTRY_ID.takeIf {
         navBackStackEntry?.destination?.route == ROUTE_CONNECTORS
       }
+      // [ALTREX] Voice notes.
+      ?: com.google.ai.edge.gallery.notes.NOTES_ENTRY_ID.takeIf {
+        navBackStackEntry?.destination?.route == ROUTE_NOTES
+      }
   val loadedModelName =
     modelManagerUiState.tasks
       .flatMap { it.models }
@@ -289,6 +294,9 @@ fun GalleryNavHost(
             navController.navigate(ROUTE_TERMINAL) { launchSingleTop = true }
           } else if (taskId == com.google.ai.edge.gallery.connectors.CONNECTORS_ENTRY_ID) {
             navController.navigate(ROUTE_CONNECTORS) { launchSingleTop = true }
+          } else if (taskId == com.google.ai.edge.gallery.notes.NOTES_ENTRY_ID) {
+            // [ALTREX] Voice notes.
+            navController.navigate(ROUTE_NOTES) { launchSingleTop = true }
           } else {
             modelManagerUiState.tasks.find { it.id == taskId }?.let { navigateToTaskScreen(it) }
           }
@@ -605,6 +613,18 @@ fun GalleryNavHost(
       exitTransition = { slideExit() },
     ) {
       com.google.ai.edge.gallery.connectors.ConnectorsScreen(navigateUp = { navController.navigateUp() })
+    }
+
+    // [ALTREX] Voice notes: dictation, list and graph.
+    composable(
+      route = ROUTE_NOTES,
+      enterTransition = { slideEnter() },
+      exitTransition = { slideExit() },
+    ) {
+      com.google.ai.edge.gallery.notes.NotesScreen(
+        navigateUp = { navController.navigateUp() },
+        modelManagerViewModel = modelManagerViewModel,
+      )
     }
 
     // Notifications page.

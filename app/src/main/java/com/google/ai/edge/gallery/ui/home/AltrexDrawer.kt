@@ -42,6 +42,7 @@ import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Mms
+import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material3.Icon
@@ -106,6 +107,14 @@ private val SPACES =
       Icons.Outlined.Hub,
       0,
     ),
+    // [ALTREX] Voice notes: dictate an idea, keep it as a note, see the notes as a graph.
+    DrawerEntry(
+      com.google.ai.edge.gallery.notes.NOTES_ENTRY_ID,
+      "Notes vocales",
+      "Dicte une idée, retrouve-la dans le graphe",
+      Icons.Outlined.RecordVoiceOver,
+      2,
+    ),
   )
 
 private val TOOLS =
@@ -168,9 +177,10 @@ fun AltrexDrawer(
           }
         }
 
-        StaggerIn(index = 6, trigger = isOpen) { SectionLabel("Outils") }
+        // [ALTREX] Indices follow the number of spaces, so the stagger stays in order.
+        StaggerIn(index = 3 + SPACES.size, trigger = isOpen) { SectionLabel("Outils") }
         TOOLS.forEachIndexed { i, entry ->
-          StaggerIn(index = 7 + i, trigger = isOpen) {
+          StaggerIn(index = 4 + SPACES.size + i, trigger = isOpen) {
             NavRow(
               title = entry.title,
               subtitle = entry.subtitle,
@@ -184,7 +194,7 @@ fun AltrexDrawer(
       }
 
       // Models and settings stay at the bottom, always visible.
-      StaggerIn(index = 10, trigger = isOpen) {
+      StaggerIn(index = 4 + SPACES.size + TOOLS.size, trigger = isOpen) {
         Column(modifier = Modifier.padding(bottom = 16.dp)) {
           Box(
             modifier =
