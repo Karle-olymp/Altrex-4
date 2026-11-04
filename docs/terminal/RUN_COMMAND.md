@@ -156,3 +156,14 @@ Le bouton « Toujours » d'une demande s'applique au programme concerné, par ex
 - lire un fichier avant de le modifier ;
 - utiliser `edit_file` pour les petites modifications et `write_file` pour un nouveau fichier ;
 - lancer en arrière-plan les serveurs et les tâches longues, puis les suivre avec `check_job`.
+
+## Modèles cloud : appel d'outils natif (2026-11)
+
+Les modèles cloud (Claude, GPT, Gemini, Grok, Mistral, DeepSeek, OpenRouter, Groq) reçoivent désormais les outils dans le format natif de leur API (`tools` + `tool_calls`/`tool` chez OpenAI et compatibles, `tools` + blocs `tool_use`/`tool_result` chez Anthropic). La conversion se fait uniquement dans `runtime/CloudTools.kt`, à l'entrée et à la sortie de l'API :
+- les définitions sont relues dans le bloc `# Tools` du prompt système, puis ce bloc est retiré du texte système envoyé (les instructions de l'agent et la liste des skills restent) ;
+- les paires `<tool_call>` / `<tool_response>` de l'historique deviennent des appels et résultats natifs ; ce qui ne s'apparie pas proprement reste en texte ;
+- les appels natifs renvoyés par le modèle sont réécrits en blocs `<tool_call>` à la fin de la réponse, exactement comme ceux qu'écrit un modèle local.
+
+**Le format texte vu par la boucle d'agent, les modèles locaux et Argora ne change pas** : mêmes specs, même bloc `# Tools`, mêmes balises `<tool_call>` et `<tool_response>`, mêmes résultats. Les exemples du dataset Argora restent valables tels quels.
+
+Si un fournisseur refuse les outils natifs (par exemple un modèle gratuit d'OpenRouter : « No endpoints found that support tool use »), la requête est relancée une fois au format texte, et ce modèle reste au format texte jusqu'à la fermeture de l'appli.
