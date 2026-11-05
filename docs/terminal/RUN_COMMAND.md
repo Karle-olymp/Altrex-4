@@ -167,3 +167,7 @@ Les modèles cloud (Claude, GPT, Gemini, Grok, Mistral, DeepSeek, OpenRouter, Gr
 **Le format texte vu par la boucle d'agent, les modèles locaux et Argora ne change pas** : mêmes specs, même bloc `# Tools`, mêmes balises `<tool_call>` et `<tool_response>`, mêmes résultats. Les exemples du dataset Argora restent valables tels quels.
 
 Si un fournisseur refuse les outils natifs (par exemple un modèle gratuit d'OpenRouter : « No endpoints found that support tool use »), la requête est relancée une fois au format texte, et ce modèle reste au format texte jusqu'à la fermeture de l'appli.
+
+## Projets de Forge (2026-11)
+
+Le dossier des projets d'Altrex Forge est monté en `/root/projets` dans les deux Linux (le terminal de l'utilisateur et celui du modèle). L'agent de Discuter le voit donc aussi, avec ses propres règles d'accord (`run_command`). Forge, lui, utilise ses propres outils (Read, Write, Edit, Glob, Grep, Bash…) décrits dans `docs/forge/OUTILS.md` ; les outils de Discuter (`run_command`, `read_file`…) ne changent pas.

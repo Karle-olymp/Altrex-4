@@ -46,7 +46,7 @@ Forge est une œuvre originale d'Altrex. Les prompts, les descriptions d'outils,
 
 **Sécurité d'écriture, issue de l'étude :** puisque toi et le modèle travaillez dans les mêmes fichiers, `Edit` et `Write` **refusent si le fichier n'a pas été lu** ou a changé depuis la lecture (jeton de version), et écrivent de façon atomique.
 
-Le format exact (schémas et descriptions) sera figé à la fin de l'étape 1 et transmis à la session Argora.
+Le format exact (schémas, descriptions, résultats, prompts) est **figé** dans `docs/forge/OUTILS.md` (version 1, fin de l'étape 1) pour la session Argora.
 
 ## 4. Le moteur
 
@@ -137,7 +137,7 @@ Un onglet du projet où le modèle et toi concevez : architecture, flux, schéma
 | Étape | Contenu | Taille |
 |---|---|---|
 | **0. Le look** | Fait : B + C choisis (maquettes dans `docs/forge/maquettes/`) | S |
-| **1. Fondations** | Dossier de travail commun ; nouvel écran (projets, flux à cartes, ligne d'état) ; outils `Glob`, `Grep`, `TodoWrite`, `ExitPlanMode`, `AskUserQuestion` aux noms de Claude Code ; sélecteur de modes et mode Plan ; refus avec motif ; lecture avant écriture ; limites, rappel anti-boucle ; journal de session avec reprise après interruption ; `ALTREX.md` et `/init` ; `/doctor` ; commandes `/` de base ; service de premier plan et notifications ; moteur ré-entrant | L |
+| **1. Fondations** | Dossier de travail commun ; nouvel écran (projets, flux à cartes, ligne d'état) ; outils `Glob`, `Grep`, `TodoWrite`, `ExitPlanMode`, `AskUserQuestion` aux noms de Claude Code ; sélecteur de modes et mode Plan ; refus avec motif ; lecture avant écriture ; limites, rappel anti-boucle ; journal de session avec reprise après interruption ; `ALTREX.md` et `/init` ; `/doctor` ; commandes `/` de base ; service de premier plan et notifications ; moteur ré-entrant. **Code fait le 2026-11-05 (voir § 14), à essayer sur le téléphone** | L |
 | **2. Confort** | Diff et retours Git (`/undo`, `/diff`) ; `@fichier` ; sessions complètes ; compaction à deux niveaux ; `WebFetch`, `MultiEdit` ; rangée de livrables ; connecteurs et skills ; modes Apprentissage et Build (première version) | L |
 | **3. Aperçu, scan, Blueprint** | Aperçu vérifié ; `/scan` ; terminal du projet ; Blueprint (première version) | M à L |
 | **4. Plus loin** | Sous-agents, hooks à notre format, commandes `/` à toi, modes personnalisés, Blueprint avancé, relecteur d'approbations | L |
@@ -213,3 +213,33 @@ Idées seulement, réécrites à notre façon. Étape entre parenthèses.
 - Carte du dépôt v1 par motifs `rg`, tree-sitter ensuite (2-3).
 
 **À éviter** : bac à sable par espaces de noms / Landlock / Docker (indisponibles sous PRoot) ; dépendances lourdes ; faire classer les commandes « sûres » par le modèle ; commits automatiques sur ta branche ; piloter le binaire Claude Code ; noms de hooks façon Claude Code.
+
+## 14. Statut de l'étape 1 (2026-11-05)
+
+Fait dans le code (paquet `com.google.ai.edge.gallery.forge`), compilé et couvert par des tests unitaires ; **rien n'a encore été essayé sur le téléphone**.
+
+**Moteur et outils** (`forge/engine`, `forge/tools`, `forge/journal`)
+- `ForgeEngine` : boucle d'agent par session, ré-entrante (aucun état global ; modèle, Linux, écran et contexte passent par des interfaces). Même protocole texte que Discuter (`agent/ToolCalling.kt`, déplacé hors de l'ancien Code) : llama.cpp et Spaces en direct, modèles cloud via les appels natifs de `CloudTools`, LiteRT-LM avec une conversation reconstruite à chaque étape.
+- 11 outils aux noms de Claude Code, descriptions à nous : Read, Write, Edit, Glob, Grep, Bash, BashOutput, KillShell, TodoWrite, ExitPlanMode, AskUserQuestion. Liste constante dans tous les modes. Schémas et prompts figés : `docs/forge/OUTILS.md`.
+- Read/Write/Edit faits par l'appli sur le dossier du projet (rapide, testable) : lecture avant écriture avec jeton de version (empreinte), écriture atomique (fichier temporaire + renommage), refus de tout chemin ou lien qui sort du projet ; erreur d'Edit avec les lignes réelles les plus proches. Glob et Grep écrits en Kotlin (bornés : fichiers, résultats, temps). Bash = le shell du modèle (`AgentShell`, `AgentJobs`) avec un état propre au projet ; sorties longues écrites dans `.altrex/sorties/`.
+- Autorisations : 2 axes (bac à sable × approbation), 4 puces, « Personnalisé » sinon ; décision Oui / Toujours / Non, plutôt… (motif renvoyé au modèle) / Arrêter ; refus par défaut (5 min) ; une seule escalade justifiée ; `.git` et `.altrex` protégés ; commandes dangereuses toujours demandées. Règle unique et testée : `PermissionPolicy`.
+- Mode Plan : lecture seule, écritures limitées à `blueprint/` et `.altrex/plans/`, rappel à chaque tour, sortie seulement par ExitPlanMode validé avec le bouton ; le plan validé est enregistré dans `.altrex/plans/`.
+- Limites (étapes, jetons, durée, Arrêter), rappel anti-boucle 3/5/8, compteur de blocage (échecs, répétitions, alternance A B A B, monologue) avec replanification puis arrêt.
+- Journal de session JSON Lines à ajout seul, hors du projet ; tour ouvert marqué « interrompu » au chargement ; écran, historique, tâches, mode et autorisations recalculés depuis le journal.
+
+**Espace de travail** (`forge/workspace`)
+- Dossier commun : `files/forge/projets` du téléphone, monté par PRoot en `/root/projets` dans le terminal de l'utilisateur **et** dans le Linux du modèle (le Linux de Discuter le voit donc aussi).
+- Projets créés, importés (dossier du téléphone, copié), clonés (git dans le Linux du modèle ; jeton GitHub des Réglages pour un dépôt privé) ; ceux venus de l'extérieur sont « non approuvés » : leur ALTREX.md n'est pas lu avant « Faire confiance ».
+- Migration : l'ancien projet de l'écran Code (dossier choisi avec le sélecteur d'Android) est proposé à l'import sur l'accueil de Forge ; l'original n'est pas touché.
+- `ALTREX.md` : global, `/root/projets`, projet (repli AGENTS.md / CLAUDE.md), sous-dossiers à la première visite ; doublons écartés ; balises neutralisées. `/init` le fait écrire par l'agent.
+- `/doctor` lance vraiment chaque outil (absent / cassé / trop lent) et donne la réparation, sans rien installer.
+- Commandes : `/aide`, `/init`, `/doctor`, `/plan`, `/mode`, `/scan`, `/apercu`, `/nouvelle`, `/sessions`, `/confiance`, `/limites`, `/arreter`.
+
+**Écran et service** (`forge/ui`, `forge/service`)
+- Accueil (Build, Importer un dossier, Cloner un dépôt, projets, sessions récentes), session (ligne d'état branche · modèle · contexte · t/s en local, tâches épinglées à segments, flux à cartes d'outils repliables avec `+N −M` et diff numéroté, carte d'autorisation, carte de plan au look C, questions à choix, fichiers produits, puce de mode et feuille « Mode de travail », honnêteté sur PRoot). Look B au quotidien, C (papier quadrillé) en mode Plan.
+- `ForgeService` (premier plan, type dataSync) pendant un tour, notification avec « Arrêter » ; alerte « Forge attend ton accord » et « terminé » quand l'appli n'est pas à l'écran.
+- L'ancien Code est supprimé (`ui/llmsingleturn`, import GitHub par zip, outils de sécurité dédiés). Gardés : l'**aperçu** (fichiers HTML/SVG/Markdown/JS/Python, plus page d'un serveur `http://localhost:PORT`) et le **scan SecurCode** (`/scan`, avec l'accord par projet).
+
+**Non vérifié sans téléphone** : montage `/root/projets` sous PRoot réel (droits, liens) ; Bash et tâches de fond dans le projet ; clonage git ; service de premier plan et notifications (Android 14/15) ; aperçu d'un serveur local dans la WebView ; comportement des modèles locaux (llama.cpp, LiteRT-LM) avec 11 outils et un prompt d'environ 2 000 jetons ; import d'un dossier du téléphone et migration ; rendu réel des écrans (seulement dessinés sous Robolectric).
+
+**Reste pour l'étape 2** : `MultiEdit`, `WebFetch`/`WebSearch` dans Forge, `@fichier`, pièces jointes, compaction à deux niveaux, Git (`/undo`, `/diff`, instantanés), saisie pendant que l'agent travaille, modes Apprentissage et Build complets (la carte Build ouvre pour l'instant un projet en mode Plan), édition de l'ALTREX.md global dans l'appli, réglage des limites.

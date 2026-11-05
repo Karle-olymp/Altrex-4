@@ -14,8 +14,9 @@ Le menu propose quatre espaces et trois boutons de configuration.
 - **Discuter** : la discussion principale. Pièces jointes (photo, caméra, audio, fichier, PDF) et,
   en option, des outils : skills, connecteurs MCP, actions du téléphone, recherche web et un Linux
   propre au modèle.
-- **Code** : un dossier de projet avec éditeur, aperçu, agent de code, recherche web et scan de
-  sécurité SecurCode.
+- **Forge** (Altrex Forge) : un agent de programmation façon Claude Code, dans des projets partagés
+  avec le Terminal (`/root/projets`) : outils Read, Write, Edit, Glob, Grep, Bash…, modes Demander /
+  Éditions auto / Plan / Tout autoriser, aperçu et scan de sécurité SecurCode (`docs/forge/`).
 - **Notes vocales** : dictée, liste, graphe des notes, export Obsidian.
 - **Terminal** : un Linux Alpine (PRoot) pour toi : paquets, Python, git…
 - **Modèles** : télécharger, importer (fichier, Hugging Face), ajouter un modèle cloud ou un
