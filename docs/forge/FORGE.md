@@ -127,13 +127,16 @@ Un onglet du projet où le modèle et toi concevez : architecture, flux, schéma
 - **Intuitif et fluide, mais complet :** les fonctions avancées sont à portée de main sans surcharger le premier écran.
 - **Accueil :** tes projets, les sessions récentes, un gros bouton « Nouveau projet » (avec le mode Build).
 - **Panneau latéral :** fichiers, aperçu, terminal du projet, Blueprint.
-- **Look propre à Forge**, distinct de Claude Code. **Étape 0 : trois directions en maquettes** (ambiance « atelier » avec braises, ambiance « sobre technique », ambiance « plan d'architecte »), tu en choisis une avant que l'écran soit codé. La marque Altrex (fond nuit, bouclier d'accolades) reste le fil commun.
+- **Look propre à Forge**, distinct de Claude Code. **Décision du 2026-11-05 : « B + C »** (maquettes dans `docs/forge/maquettes/`, jetons dans `B-technique/tokens.md` et `C-plan/tokens.md`) :
+  - **Au quotidien (accueil, session, réglages) : B « Technique sobre »** : fond nuit Altrex #0C151B, surfaces #101B22 / #15232B, filets 1 px #1F2F38, un seul accent cyan #72D6DB, vert #5FD4A0 pour le sens (réussite, ajouts), rouge #F08F8F (suppressions), jaune #E6C46A (indices, interrompu, Tout autoriser). Manrope + JetBrains Mono, rayons 8/6/4, aucune ombre, animations 120–180 ms sans rebond.
+  - **Pour concevoir (mode Plan et Blueprint) : C « Plan d'architecte »** : papier #0A1C2E quadrillé, cadres à repères d'angle cyan, cartouche, pointillés pour le provisoire, crayon jaune #F2D27C pour les annotations ; le tracé des liens et cadres se dessine quand le modèle propose un plan (400–600 ms), mouvement réduit = apparition directe.
+  - Passage de B à C : changer de mode (Plan) ou ouvrir Blueprint fait « passer sur la planche à dessin » ; le reste de l'appli garde B. La marque Altrex (bouclier d'accolades) reste le fil commun.
 
 ## 9. Étapes
 
 | Étape | Contenu | Taille |
 |---|---|---|
-| **0. Le look** | Trois maquettes de l'écran Forge, tu choisis | S |
+| **0. Le look** | Fait : B + C choisis (maquettes dans `docs/forge/maquettes/`) | S |
 | **1. Fondations** | Dossier de travail commun ; nouvel écran (projets, flux à cartes, ligne d'état) ; outils `Glob`, `Grep`, `TodoWrite`, `ExitPlanMode`, `AskUserQuestion` aux noms de Claude Code ; sélecteur de modes et mode Plan ; refus avec motif ; lecture avant écriture ; limites, rappel anti-boucle ; journal de session avec reprise après interruption ; `ALTREX.md` et `/init` ; `/doctor` ; commandes `/` de base ; service de premier plan et notifications ; moteur ré-entrant | L |
 | **2. Confort** | Diff et retours Git (`/undo`, `/diff`) ; `@fichier` ; sessions complètes ; compaction à deux niveaux ; `WebFetch`, `MultiEdit` ; rangée de livrables ; connecteurs et skills ; modes Apprentissage et Build (première version) | L |
 | **3. Aperçu, scan, Blueprint** | Aperçu vérifié ; `/scan` ; terminal du projet ; Blueprint (première version) | M à L |
@@ -152,7 +155,7 @@ Chaque étape se vérifie par les tests et la compilation, puis tu l'essaies sur
 
 ## 11. À décider
 
-1. **Le look** (étape 0) : je prépare les trois maquettes quand tu me dis go.
+1. **Le look** : décidé (B + C), voir section 8.
 2. **Mermaid et Excalidraw** pour Blueprint : on les étudie à l'étape 3 (vérifier leur licence et leur poids dans l'appli).
 3. **Le nom** : décidé (Altrex Forge) ; reste la vérification de marque avant publication.
 
@@ -174,3 +177,39 @@ Décision du 2026-11-05 : on s'appuie sur ces projets comme sources d'idées (ja
 | CodeMirror 6 | Éditeur de code léger dans une WebView | 2-3 |
 | tree-sitter | Structure du code pour la carte du dépôt | 2 |
 | Open Interpreter | Licence plus contraignante (AGPL) : idées seulement | - |
+
+Étude détaillée des agents de code : `docs/forge/recherche/coding-agents.md`. Dépôts déplacés : goose → `aaif-goose/goose`, opencode → `anomalyco/opencode`, OpenHands (code de l'agent) → `OpenHands/software-agent-sdk`. Codex CLI contient un `vendor/bubblewrap` sous LGPL : on ne le reprend pas. Pas de lecture du dossier `enterprise/` d'OpenHands. Local-ai-runner : pas de licence, donc rien à reprendre.
+
+## 13. Idées retenues de l'étude des agents de code
+
+Idées seulement, réécrites à notre façon. Étape entre parenthèses.
+
+**Autorisations et sûreté**
+- Décision d'approbation riche : refus par défaut, avec motif renvoyé au modèle (1).
+- Règles par action / ressource / effet ; sous-dossiers protégés (`.git`, `.altrex`) (1).
+- Mode Plan : seules les écritures dans `blueprint/` et `.altrex/plans/` sont permises (1).
+- Projet non fiable : `ALTREX.md` d'un projet importé n'est lu qu'après ton accord (1).
+- Listes d'autorisation par connecteur MCP et drapeau lecture seule (2).
+
+**Moteur**
+- Détecteur de blocage : répétition d'un même outil, monologue, alternance entre deux actions (1).
+- Moteur dans un service de premier plan, journal rejouable (1).
+- Erreur d'`Edit` : montrer les lignes réelles les plus proches (1).
+- Appels d'outils natifs ou émulés pour le modèle local (Argora) (1-2).
+- Compaction « pierre tombale » : l'ancien contenu est remplacé par une trace récupérable (2).
+- Saisie pendant que l'agent travaille : orienter ou mettre en file (2).
+
+**Écran**
+- Cartes d'outils construites depuis les métadonnées, `+N −M`, repli au-delà de 5 lignes (1).
+- `/doctor` qui teste aussi le modèle (outils, taille de contexte) (1).
+
+**Sécurité des modifications**
+- Points de retour dans un dépôt fantôme avec restauration transactionnelle ; `/undo` protégé (2).
+- Revue finale à cases à cocher façon Plandex, avant d'appliquer (2-3).
+
+**Build et au-delà**
+- Recette Build : objectif, nombre de tours max, vérifications, essais max, juge d'achèvement (2).
+- Modes personnalisés au format Roo, recettes comme commandes `/`, relecteur d'approbations, orchestrateur séquentiel `new_task`, séparation architecte / éditeur (4).
+- Carte du dépôt v1 par motifs `rg`, tree-sitter ensuite (2-3).
+
+**À éviter** : bac à sable par espaces de noms / Landlock / Docker (indisponibles sous PRoot) ; dépendances lourdes ; faire classer les commandes « sûres » par le modèle ; commits automatiques sur ta branche ; piloter le binaire Claude Code ; noms de hooks façon Claude Code.
