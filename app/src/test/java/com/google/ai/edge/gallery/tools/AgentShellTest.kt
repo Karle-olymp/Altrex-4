@@ -1,0 +1,175 @@
+package com.google.ai.edge.gallery.tools
+
+import com.google.ai.edge.gallery.tools.AgentShell.Mode
+import java.io.File
+import java.nio.file.Files
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AgentShellTest {
+  @Test
+  fun readOnly_commands() {
+    assertTrue(AgentShell.isReadOnly("ls -la"))
+    assertTrue(AgentShell.isReadOnly("cat a.txt | grep foo | wc -l"))
+    assertTrue(AgentShell.isReadOnly("git status"))
+    assertFalse(AgentShell.isReadOnly("git push"))
+    assertFalse(AgentShell.isReadOnly("git branch -D main"))
+    assertFalse(AgentShell.isReadOnly("rm -rf /"))
+    assertFalse(AgentShell.isReadOnly("ls; rm x"))
+    assertFalse(AgentShell.isReadOnly("cat a > b"))
+    assertFalse(AgentShell.isReadOnly("echo $(rm x)"))
+    assertFalse(AgentShell.isReadOnly("find . -delete"))
+    assertFalse(AgentShell.isReadOnly("sort -o out in"))
+    assertFalse(AgentShell.isReadOnly("ls && rm x"))
+  }
+
+  @Test
+  fun approvals_followModeAndPrefixes() {
+    assertFalse(AgentShell.needsApproval(Mode.READS_FREE, emptySet(), "ls"))
+    assertTrue(AgentShell.needsApproval(Mode.ASK_ALL, emptySet(), "ls"))
+    assertTrue(AgentShell.needsApproval(Mode.READS_FREE, emptySet(), "npm install x"))
+    assertFalse(AgentShell.needsApproval(Mode.READS_FREE, setOf("npm"), "npm install x"))
+    assertFalse(AgentShell.needsApproval(Mode.ASK_ALL, setOf("npm"), "npm install x"))
+    // "always npm" never covers a chained command.
+    assertTrue(AgentShell.needsApproval(Mode.READS_FREE, setOf("npm"), "npm i x; rm -rf /"))
+    assertTrue(AgentShell.needsApproval(Mode.READS_FREE, setOf("npm"), "npm i | sh"))
+    assertFalse(AgentShell.needsApproval(Mode.ALLOW_ALL, emptySet(), "rm -rf /tmp/x && reboot"))
+    assertEquals("npm", AgentShell.programOf("npm install x"))
+    assertEquals("python3", AgentShell.programOf("/usr/bin/python3 a.py"))
+  }
+
+  @Test
+  fun edits_exactAndUnique() {
+    assertEquals(AgentShell.Edit.Ok("a X c", 1), AgentShell.applyEdit("a b c", "b", "X", false))
+    assertTrue(AgentShell.applyEdit("b b", "b", "X", false) is AgentShell.Edit.Fail)
+    assertEquals(AgentShell.Edit.Ok("X X", 2), AgentShell.applyEdit("b b", "b", "X", true))
+    assertTrue(AgentShell.applyEdit("abc", "zz", "X", false) is AgentShell.Edit.Fail)
+  }
+
+  // ---- The scripts, run by the host's sh with the state folder and /root moved to a temp dir.
+
+  private val home: File = Files.createTempDirectory("agentshell").toFile()
+
+  private fun local(script: String) =
+    script.replace("/root/.altrex", File(home, ".altrex").path).replace("cd /root", "cd ${home.path}")
+
+  private fun sh(script: String, args: List<String> = emptyList(), stdin: String = ""): Pair<Int, String> {
+    // AGENT_SH / AGENT_PATH: run them with another shell (Alpine's BusyBox, as on the phone).
+    val shell = System.getenv("AGENT_SH")?.split(' ')?.filter { it.isNotEmpty() } ?: listOf("sh")
+    val pb = ProcessBuilder(shell + listOf("-c", local(script), "sh") + args).directory(home).redirectErrorStream(true)
+    System.getenv("AGENT_PATH")?.let { pb.environment()["PATH"] = it + ":" + pb.environment()["PATH"] }
+    val p = pb.start()
+    p.outputStream.use { it.write(stdin.toByteArray()) }
+    val out = p.inputStream.bufferedReader().readText()
+    return p.waitFor() to out
+  }
+
+  @Test
+  fun wrapper_keepsDirectoryAndVariables() {
+    File(home, "proj").mkdirs()
+    val (rc1, out1) = sh(AgentShell.WRAPPER, stdin = "cd proj && export FOO=bar && echo hi")
+    assertEquals(0, rc1)
+    val (text1, cwd1) = AgentShell.splitCwd(out1)
+    assertEquals("hi", text1.trim())
+    assertEquals(File(home, "proj").canonicalPath, File(cwd1!!).canonicalPath)
+    val (rc2, out2) = sh(AgentShell.WRAPPER, stdin = "echo \"\$FOO\"; pwd; exit 3")
+    assertEquals(3, rc2)
+    assertTrue(out2, out2.contains("bar"))
+    assertTrue(out2, out2.contains("proj"))
+  }
+
+  @Test
+  fun write_then_read_withLineNumbers() {
+    val (rcw, outw) = sh(AgentShell.WRITE_SCRIPT, listOf("sub/dir/f.txt"), stdin = "one\ntwo \$HOME `x`\nthree\n")
+    assertEquals(outw, 0, rcw)
+    assertEquals("one\ntwo \$HOME `x`\nthree\n", File(home, "sub/dir/f.txt").readText())
+    val (rcr, outr) = sh(AgentShell.READ_SCRIPT, listOf("sub/dir/f.txt", "2", "5"))
+    assertEquals(0, rcr)
+    val lines = outr.trimEnd().lines()
+    assertEquals("TOTAL=3", lines[0].replace(" ", ""))
+    assertEquals("     2\ttwo \$HOME `x`", lines[1])
+    assertEquals(3, lines.size)
+    assertEquals(2, sh(AgentShell.READ_SCRIPT, listOf("missing", "1", "5")).first)
+  }
+
+  @Test
+  fun readers_thatRunOtherPrograms_askFirst() {
+    assertFalse(AgentShell.isReadOnly("rg --pre=./evil foo"))
+    assertFalse(AgentShell.isReadOnly("rg foo"))
+    assertFalse(AgentShell.isReadOnly("sort --compress-program=./evil a"))
+    assertFalse(AgentShell.isReadOnly("grep --exec x y"))
+    assertTrue(AgentShell.isReadOnly("grep -rn foo ."))
+    assertTrue(AgentShell.isReadOnly("sort a.txt"))
+  }
+
+  @Test
+  fun programsByPath_neverCountAsTheSystemOne() {
+    // A file the model wrote and named like a reader must not pass as that reader.
+    assertFalse(AgentShell.isReadOnly("./ls"))
+    assertFalse(AgentShell.isReadOnly("/root/ls -la"))
+    assertTrue(AgentShell.isReadOnly("/bin/ls -la"))
+    assertTrue(AgentShell.isReadOnly("/usr/bin/cat a.txt"))
+    assertTrue(AgentShell.needsApproval(Mode.READS_FREE, setOf("npm"), "./npm install"))
+    assertFalse(AgentShell.needsApproval(Mode.READS_FREE, setOf("npm"), "/usr/bin/npm install"))
+    assertEquals(null, AgentShell.programOf("./tool run"))
+    assertEquals("python3", AgentShell.programOf("/usr/bin/python3 a.py"))
+  }
+
+  @Test
+  fun slowCommandsGetTheLongDelay() {
+    for (c in
+      listOf(
+        "altrex-setup", "altrex-setup --dev", "apk add git", "pkg install python3", "npm install",
+        "cd x && pip install requests", "git clone https://x/y", "make -j4",
+      )) {
+      assertTrue(c, RunCommandTool.isSlow(c))
+    }
+    for (c in listOf("ls -la", "cat a.txt", "echo apk add", "python3 a.py", "git status")) {
+      assertFalse(c, RunCommandTool.isSlow(c))
+    }
+  }
+
+  @Test
+  fun forgeWrapper_alwaysStartsInTheProject() {
+    // The state folder without a saved folder yet: the former script stayed in /root (cd "").
+    val proj = File(home, "projets/demo").apply { mkdirs() }
+    File(proj, "sub").mkdirs()
+    val state = File(home, ".altrex/forge/demo").path
+    fun pwd(cmd: String = "pwd"): String = AgentShell.splitCwd(sh(AgentShell.FORGE_WRAPPER, listOf(state, proj.path), stdin = cmd).second).first.trim()
+    assertEquals(proj.canonicalPath, File(pwd()).canonicalPath)
+    // A folder inside the project is kept from one command to the next…
+    pwd("cd sub")
+    assertEquals(File(proj, "sub").canonicalPath, File(pwd()).canonicalPath)
+    // …a folder outside it (a /root saved by the old script, or cd ..) is not: back to the project.
+    File(state, "cwd").writeText(home.path + "\n")
+    assertEquals(proj.canonicalPath, File(pwd()).canonicalPath)
+    pwd("cd /")
+    assertEquals(proj.canonicalPath, File(pwd()).canonicalPath)
+    // Background jobs (a server) start there too.
+    val (_, bg) = sh(AgentShell.FORGE_WRAPPER_BG, listOf(state, proj.path), stdin = "pwd")
+    assertEquals(proj.canonicalPath, File(bg.trim()).canonicalPath)
+  }
+
+  @Test
+  fun commandWait_byKindOfCommand() {
+    assertEquals(CommandWait.SLOW_IDLE_S * 1000L, CommandWait.policy("apk update && apk add nodejs python3", null).idleMs)
+    assertEquals(CommandWait.SERVER_IDLE_S * 1000L, CommandWait.policy("python3 -m http.server 3000", null).idleMs)
+    assertEquals(CommandWait.SERVER_IDLE_S * 1000L, CommandWait.policy("npm run dev", null).idleMs)
+    assertEquals(CommandWait.DEFAULT_IDLE_S * 1000L, CommandWait.policy("ls -la", null).idleMs)
+    assertEquals(45_000L, CommandWait.policy("ls", 45).idleMs)
+    assertEquals(CommandWait.MAX_IDLE_S * 1000L, CommandWait.policy("ls", 9_999).idleMs)
+    assertEquals(CommandWait.CAP_MS, CommandWait.policy("ls", null, capMs = Long.MAX_VALUE).capMs)
+    assertEquals(120_000L, CommandWait.policy("ls", null, capMs = 120_000L).capMs)
+    val p = CommandWait.Policy(idleMs = 1_000, capMs = 10_000)
+    assertEquals(CommandWait.Verdict.WAIT, CommandWait.verdict(now = 1_500, startedAt = 0, lastOutputAt = 900, p))
+    assertEquals(CommandWait.Verdict.IDLE, CommandWait.verdict(now = 2_000, startedAt = 0, lastOutputAt = 900, p))
+    assertEquals(CommandWait.Verdict.CAP, CommandWait.verdict(now = 10_000, startedAt = 0, lastOutputAt = 9_999, p))
+    assertTrue(CommandWait.usesApk("apk add git"))
+    assertTrue(CommandWait.usesApk("cd x && pkg install python"))
+    assertTrue(CommandWait.usesApk("altrex-setup"))
+    assertFalse(CommandWait.usesApk("echo apkadd"))
+    assertFalse(CommandWait.usesApk("npm install"))
+  }
+}

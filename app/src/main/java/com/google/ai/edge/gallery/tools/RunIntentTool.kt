@@ -77,7 +77,7 @@ class RunIntentTool(private val context: Context, private val skillsProvider: Sk
       val ask = AskActionPermissionAction(label = label, parameters = parameters)
       channel.send(ask)
       // An unanswered dialog counts as a refusal.
-      when (withTimeoutOrNull(USER_REPLY_TIMEOUT_MS) { ask.result.await() } ?: PermissionResult.DENY) {
+      when (withTimeoutOrNull(USER_REPLY_TIMEOUT_MS) { ask.result.await() } ?: PermissionResult.DENY.also { ask.result.complete(it) }) {
         PermissionResult.DENY ->
           return mapOf(
             "action" to intent,
@@ -92,17 +92,20 @@ class RunIntentTool(private val context: Context, private val skillsProvider: Sk
       ?.actionChannel
       ?.send(
         SkillProgressToolAction(
-          label = "Executing intent \"$intent\"",
+          label = ProgressLabels.runningAction(intent),
           inProgress = true,
-          addItemTitle = "Execute intent \"$intent\"",
-          addItemDescription = "Parameters: $parameters",
+          addItemTitle = "Action « $intent »",
+          addItemDescription = "Paramètres : $parameters",
         )
       )
 
     val res =
       IntentHandler.handleAction(context, intent, parameters) { permission ->
+        // [ALTREX] No chat screen to ask the user (no action channel): refuse instead of waiting
+        // for ever for an answer that cannot come.
+        val channel = executionContext?.actionChannel ?: return@handleAction false
         val permissionAction = RequestPermissionToolAction(permission = permission)
-        executionContext?.actionChannel?.send(permissionAction)
+        channel.send(permissionAction)
         permissionAction.result.await()
       }
 

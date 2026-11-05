@@ -33,6 +33,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -106,6 +108,10 @@ import kotlinx.coroutines.launch
 
 private const val TAG = "AGGlobalMM"
 
+/** [ALTREX] Values of the model manager's `action` route argument. */
+const val MODEL_MANAGER_ACTION_CLOUD = "cloud"
+const val MODEL_MANAGER_ACTION_IMPORT = "import"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GlobalModelManager(
@@ -115,6 +121,8 @@ fun GlobalModelManager(
   onBenchmarkClicked: (Model) -> Unit,
   modifier: Modifier = Modifier,
   tosViewModel: TosViewModel? = null,
+  // [ALTREX] Opened from the welcome screen: go straight to "add a cloud model" or "import".
+  initialAction: String? = null,
 ) {
   val uiState by viewModel.uiState.collectAsState()
   val builtInModels = remember { mutableStateListOf<Model>() }
@@ -125,6 +133,7 @@ fun GlobalModelManager(
   var showImportModelSheet by remember { mutableStateOf(false) }
   var showHuggingFaceUrlDialog by remember { mutableStateOf(false) }
   var showRemoteSpaceDialog by remember { mutableStateOf(false) }
+  var showCloudModelDialog by remember { mutableStateOf(false) }
   var huggingFaceUrlInput by remember { mutableStateOf("") }
   var showUnsupportedModelDialog by remember { mutableStateOf(false) }
   var unsupportedModelErrorMessage by remember { mutableStateOf("") }
@@ -141,11 +150,13 @@ fun GlobalModelManager(
   val snackbarHostState = remember { SnackbarHostState() }
   val modelItemExpandedStates = remember { mutableStateMapOf<String, Boolean>() }
 
-  val promoId = "gm4_banner"
-  var showPromo by remember { mutableStateOf(false) }
-  LaunchedEffect(Unit) {
-    showPromo = !viewModel.dataStoreRepository.hasViewedPromo(promoId = promoId)
+  LaunchedEffect(initialAction) {
+    when (initialAction) {
+      MODEL_MANAGER_ACTION_CLOUD -> showCloudModelDialog = true
+      MODEL_MANAGER_ACTION_IMPORT -> showImportModelSheet = true
+    }
   }
+
 
   val processModelUri: (Uri, Boolean) -> Unit = { uri, isWebImport ->
     validateAndProcessModelUri(
@@ -514,15 +525,50 @@ fun GlobalModelManager(
           Text("Modèle distant (Space Hugging Face)")
         }
       }
+      // [ALTREX] A cloud model through its provider's API (Claude, Gemini, GPT, Grok…).
+      Box(
+        modifier =
+          Modifier.clickable {
+            scope.launch {
+              delay(200)
+              showImportModelSheet = false
+              showCloudModelDialog = true
+            }
+          }
+      ) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+          modifier = Modifier.fillMaxWidth().padding(16.dp),
+        ) {
+          Icon(Icons.AutoMirrored.Outlined.NoteAdd, contentDescription = null)
+          Text("Modèle cloud (Claude, Gemini, GPT, Grok…)")
+        }
+      }
     }
+  }
+
+  if (showCloudModelDialog) {
+    CloudModelDialog(
+      onDismiss = { showCloudModelDialog = false },
+      onAdd = { provider, modelId ->
+        showCloudModelDialog = false
+        viewModel.addCloudModel(provider, modelId)
+        scope.launch {
+          snackbarHostState.showSnackbar(
+            "« $modelId » ajouté. Il tourne chez ${provider.label} : tes messages y sont envoyés avec ta clé."
+          )
+        }
+      },
+    )
   }
 
   if (showRemoteSpaceDialog) {
     RemoteSpaceDialog(
       onDismiss = { showRemoteSpaceDialog = false },
-      onAdd = { spaceId ->
+      onAdd = { spaceId, manifestJson ->
         showRemoteSpaceDialog = false
-        viewModel.addRemoteSpaceModel(spaceId)
+        viewModel.addRemoteSpaceModel(spaceId, manifestJson)
         scope.launch {
           snackbarHostState.showSnackbar(
             "« $spaceId » ajouté. Il tourne dans le Space, pas sur le téléphone : tes messages y sont envoyés."
@@ -713,9 +759,43 @@ private fun getFileName(context: Context, uri: Uri): String? {
  * not local: the conversation is sent to the Space.
  */
 @Composable
-private fun RemoteSpaceDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
+private fun RemoteSpaceDialog(onDismiss: () -> Unit, onAdd: (spaceId: String, manifestJson: String) -> Unit) {
   var input by remember { mutableStateOf("") }
   val spaceId = com.google.ai.edge.gallery.runtime.RemoteSpace.parseSpaceId(input)
+  val context = LocalContext.current
+  // Optional argora-manifest.json: the trained system prompt and modes of the model in the Space.
+  var manifestJson by remember { mutableStateOf("") }
+  var manifestInfo by remember { mutableStateOf<String?>(null) }
+  val manifestPicker =
+    androidx.activity.compose.rememberLauncherForActivityResult(
+      androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { picked ->
+      if (picked == null) return@rememberLauncherForActivityResult
+      val text =
+        try {
+          context.contentResolver.openInputStream(picked)?.use { stream ->
+            val limit = 512 * 1024
+            val buffer = java.io.ByteArrayOutputStream()
+            val chunk = ByteArray(16 * 1024)
+            while (buffer.size() <= limit) {
+              val n = stream.read(chunk)
+              if (n < 0) break
+              buffer.write(chunk, 0, n)
+            }
+            buffer.toByteArray().takeIf { it.size <= limit }?.toString(Charsets.UTF_8)
+          }
+        } catch (e: Exception) {
+          null
+        }
+      val manifest = text?.let { com.google.ai.edge.gallery.data.ArgoraManifest.parse(it) }
+      if (manifest == null) {
+        manifestJson = ""
+        manifestInfo = "Ce fichier n'est pas un manifeste Argora reconnu."
+      } else {
+        manifestJson = text
+        manifestInfo = "Manifeste joint : prompt système et ${manifest.modes.size} mode(s)."
+      }
+    }
   androidx.compose.material3.AlertDialog(
     onDismissRequest = onDismiss,
     title = { Text("Modèle distant") },
@@ -738,12 +818,134 @@ private fun RemoteSpaceDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
           placeholder = { Text("Autaris/argora-api") },
           isError = input.isNotBlank() && spaceId == null,
         )
+        androidx.compose.material3.TextButton(onClick = { manifestPicker.launch(arrayOf("application/json", "*/*")) }) {
+          Text(if (manifestJson.isEmpty()) "Joindre un manifeste Argora (facultatif)" else "Changer de manifeste")
+        }
+        manifestInfo?.let {
+          Text(it, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+        }
       }
     },
     confirmButton = {
       androidx.compose.material3.TextButton(
         enabled = spaceId != null,
-        onClick = { spaceId?.let(onAdd) },
+        onClick = { spaceId?.let { onAdd(it, manifestJson) } },
+      ) {
+        Text("Ajouter")
+      }
+    },
+    dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Annuler") } },
+  )
+}
+
+/**
+ * [ALTREX] Picks a cloud model: a provider whose key is saved (Réglages → Modèles cloud), then a
+ * model from the list its API returns (or typed by hand). States that messages leave the phone.
+ */
+@Composable
+private fun CloudModelDialog(
+  onDismiss: () -> Unit,
+  onAdd: (com.google.ai.edge.gallery.runtime.CloudApi.Provider, String) -> Unit,
+) {
+  val context = LocalContext.current
+  val scope = androidx.compose.runtime.rememberCoroutineScope()
+  val providers = com.google.ai.edge.gallery.runtime.CloudApi.Provider.entries
+  val withKey = remember { providers.filter { com.google.ai.edge.gallery.runtime.CloudApi.getKey(context, it) != null } }
+  var provider by remember { mutableStateOf(withKey.firstOrNull()) }
+  var modelId by remember { mutableStateOf("") }
+  var models by remember { mutableStateOf<List<String>>(emptyList()) }
+  var loading by remember { mutableStateOf(false) }
+  var error by remember { mutableStateOf<String?>(null) }
+
+  fun load(p: com.google.ai.edge.gallery.runtime.CloudApi.Provider) {
+    val key = com.google.ai.edge.gallery.runtime.CloudApi.getKey(context, p) ?: return
+    loading = true
+    error = null
+    models = emptyList()
+    scope.launch {
+      try {
+        models =
+          kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.google.ai.edge.gallery.runtime.CloudApi.listModels(p, key)
+          }
+      } catch (e: Exception) {
+        error = e.message ?: "Liste des modèles indisponible."
+      } finally {
+        loading = false
+      }
+    }
+  }
+  androidx.compose.runtime.LaunchedEffect(provider) {
+    modelId = provider?.suggestions?.firstOrNull().orEmpty()
+    provider?.let { load(it) }
+  }
+
+  androidx.compose.material3.AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("Modèle cloud") },
+    text = {
+      androidx.compose.foundation.layout.Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.heightIn(max = 520.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()),
+      ) {
+        if (withKey.isEmpty()) {
+          Text(
+            "Ajoute d'abord la clé d'API d'un fournisseur dans Réglages → Modèles cloud (Claude, " +
+              "Gemini, GPT, Grok, Mistral, DeepSeek, OpenRouter, Groq).",
+            style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+          )
+          return@Column
+        }
+        Text(
+          "Ce modèle tourne chez le fournisseur, pas sur ton téléphone : tes messages, les résultats " +
+            "des outils et les documents joints lui sont envoyés, facturés sur ton compte.",
+          style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+        )
+        for (p in withKey) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().clickable { provider = p },
+          ) {
+            androidx.compose.material3.RadioButton(selected = provider == p, onClick = { provider = p })
+            Text(p.label)
+          }
+        }
+        androidx.compose.material3.OutlinedTextField(
+          value = modelId,
+          onValueChange = { modelId = it },
+          singleLine = true,
+          label = { Text("Identifiant du modèle") },
+          modifier = Modifier.fillMaxWidth(),
+        )
+        if (loading) {
+          androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+        error?.let {
+          Text(it, color = androidx.compose.material3.MaterialTheme.colorScheme.error, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+        }
+        val filtered = models.filter { modelId.isBlank() || it.contains(modelId.trim(), ignoreCase = true) || it == modelId }.take(40)
+        for (m in filtered) {
+          Text(
+            m,
+            style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+            color =
+              if (m == modelId) androidx.compose.material3.MaterialTheme.colorScheme.primary
+              else androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.fillMaxWidth().clickable { modelId = m }.padding(vertical = 6.dp),
+          )
+        }
+        if (models.isNotEmpty() && filtered.isEmpty()) {
+          Text(
+            "Aucun modèle de la liste ne correspond ; l'identifiant tapé sera utilisé tel quel.",
+            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+          )
+        }
+      }
+    },
+    confirmButton = {
+      androidx.compose.material3.TextButton(
+        enabled = provider != null && modelId.isNotBlank(),
+        onClick = { provider?.let { onAdd(it, modelId.trim()) } },
       ) {
         Text("Ajouter")
       }

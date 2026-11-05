@@ -20,7 +20,6 @@ import android.app.Application
 import com.google.ai.edge.gallery.data.DataStoreRepository
 import com.google.ai.edge.gallery.notifications.NotificationScheduleManager
 import com.google.ai.edge.gallery.ui.theme.ThemeSettings
-import com.google.firebase.FirebaseApp
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -32,6 +31,8 @@ class GalleryApplication : Application() {
 
   override fun onCreate() {
     super.onCreate()
+    // [ALTREX] Keep the details of a crash, shown at the next launch.
+    com.google.ai.edge.gallery.ui.home.CrashLog.install(this)
     // [ALTREX] Must be set before the llama.cpp library is loaded.
     org.nehuatl.llamacpp.NativeCpuOptions.forceBasicCpu =
       getSharedPreferences(org.nehuatl.llamacpp.NativeCpuOptions.PREFS, MODE_PRIVATE)
@@ -45,8 +46,5 @@ class GalleryApplication : Application() {
 
     // [ALTREX] Local memory: loads its index and refreshes it in the background if it is old.
     com.google.ai.edge.gallery.search.LocalMemory.warmUp(this)
-
-    FirebaseApp.initializeApp(this)
-    firebaseAnalytics?.setAnalyticsCollectionEnabled(dataStoreRepository.readFirebaseAnalytics())
   }
 }

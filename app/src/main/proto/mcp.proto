@@ -41,6 +41,21 @@ message McpServer {
   string version = 5;
   // A description of the server.
   string description = 6;
+  // [ALTREX] Which tool calls need the user's approval.
+  McpPermissionPolicy permission_policy = 7;
+  // [ALTREX] Id of the catalog connector this server comes from (empty: added by URL).
+  string connector_id = 8;
+}
+
+// [ALTREX] Approval policy of a connector. Read-only tools are the ones the server marks so
+// (readOnlyHint); a tool marked destructive is always confirmed, except "always allow" on it.
+enum McpPermissionPolicy {
+  // Reads run freely, actions are confirmed (default).
+  MCP_PERMISSION_READS_FREE = 0;
+  // Every call is confirmed.
+  MCP_PERMISSION_ASK_ALL = 1;
+  // Every call runs, except destructive ones.
+  MCP_PERMISSION_ALLOW_ALL = 2;
 }
 
 // Represents a tool available on an MCP server.
@@ -55,4 +70,10 @@ message McpTool {
   bool enabled = 4;
   // Whether the user has selected "Always allow" for calling this tool.
   bool always_allow = 5;
+  // [ALTREX] The server says the tool only reads (annotations.readOnlyHint).
+  bool read_only = 6;
+  // [ALTREX] The server says the tool may destroy or overwrite data (annotations.destructiveHint).
+  bool destructive = 7;
+  // [ALTREX] Human-readable title from the server, if any.
+  string title = 8;
 }

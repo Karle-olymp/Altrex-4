@@ -34,7 +34,17 @@ fun formatSelectedSkills(skills: List<Skill>): String {
     }
 }
 
+/** A script name is a plain relative path inside the skill's scripts folder: no "..", no absolute path. */
+internal fun isSafeScriptName(name: String): Boolean =
+  name.isNotBlank() &&
+    !name.startsWith("/") &&
+    !name.contains('\\') &&
+    !name.contains("%2e", ignoreCase = true) &&
+    !name.contains("%2f", ignoreCase = true) &&
+    name.split('/').none { it == ".." }
+
 fun Skill.getJsSkillUrl(scriptName: String): String? {
+  if (!isSafeScriptName(scriptName)) return null
   var baseUrl = ""
   // Construct a local URL for imported skill and built-in skills.
   if (importDirName.isNotEmpty()) {

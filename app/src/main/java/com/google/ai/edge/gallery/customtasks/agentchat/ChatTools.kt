@@ -7,32 +7,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * [ALTREX] "Skills et outils" in the main chat. Off by default: a small model answers better and
- * faster without ~600 tokens of tool descriptions in its prompt. On, the chat becomes the agent
- * (skills, MCP servers, phone actions, web search).
+ * [ALTREX] Skills and tools of the main chat. They used to be a switch ("Skills et outils"); the chat
+ * and the agent are now one screen, so they are always on. Kept as an object so that the callers
+ * (model loading, chat screen) stay unchanged.
  */
 object ChatTools {
-  private const val PREFS = "altrex_chat_tools"
-  private const val KEY_ENABLED = "enabled"
+  private val _enabled = MutableStateFlow<Boolean?>(true)
 
-  private val _enabled = MutableStateFlow<Boolean?>(null)
+  fun isEnabled(@Suppress("UNUSED_PARAMETER") context: Context): Boolean = true
 
-  fun isEnabled(context: Context): Boolean =
-    _enabled.value
-      ?: context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, false).also {
-        _enabled.value = it
-      }
-
-  fun enabled(context: Context): StateFlow<Boolean?> {
-    isEnabled(context)
-    return _enabled.asStateFlow()
-  }
-
-  fun setEnabled(context: Context, enabled: Boolean) {
-    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_ENABLED, enabled).apply()
-    _enabled.value = enabled
-  }
+  fun enabled(@Suppress("UNUSED_PARAMETER") context: Context): StateFlow<Boolean?> = _enabled.asStateFlow()
 }
 
-/** Whether the chat input shows the skills and MCP buttons. */
 val LocalShowToolPickers = compositionLocalOf { false }

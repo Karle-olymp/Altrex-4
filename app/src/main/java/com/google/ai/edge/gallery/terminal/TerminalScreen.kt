@@ -75,8 +75,9 @@ object UserTerminal {
       return it
     }
     val env = LinuxEnv.of(context, LinuxEnv.USER)
-    // argv[0] first, then the shell: a login shell reads /etc/profile (prompt, PATH).
-    val launch = env.launch(listOf("/bin/sh", "-l"))
+    // A login shell reads /etc/profile (prompt, PATH): bash once altrex-setup installed it.
+    val launch =
+      env.launch(listOf("/bin/sh", "-c", "[ -x /bin/bash ] && exec /bin/bash -l; exec /bin/sh -l"))
     val s =
       TerminalSession(
         launch.executable,

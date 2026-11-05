@@ -16,8 +16,7 @@
 
 package com.google.ai.edge.gallery.customtasks.agentchat
 
-import android.os.Bundle
-import android.util.Log
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -63,13 +62,10 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.R
-import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.proto.McpAuth
 import java.net.URI
 
-private const val TAG = "AGAddMcpServerDialog"
 private val APPROVED_MCP_HOSTS = listOf("googleapis.com")
 
 /** A dialog composable for adding a new MCP server by entering its URL. */
@@ -97,6 +93,53 @@ fun AddMcpServerFromUrlDialog(
   val safeDismiss: () -> Unit = {
     mcpManagerViewModel.clearError()
     onDismissRequest()
+  }
+
+  // [ALTREX] OAuth sign-in (connectors): discovery and registration, browser tab, then the server is
+  // added with its tokens.
+  val context = androidx.compose.ui.platform.LocalContext.current
+  val oauthScope = androidx.compose.runtime.rememberCoroutineScope()
+  var oauthPending by remember { mutableStateOf<com.google.ai.edge.gallery.connectors.McpOAuth.Pending?>(null) }
+  var oauthBusy by remember { mutableStateOf(false) }
+  var oauthError by remember { mutableStateOf<String?>(null) }
+  val oauthLauncher =
+    androidx.activity.compose.rememberLauncherForActivityResult(
+      androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+      val pending = oauthPending ?: return@rememberLauncherForActivityResult
+      oauthScope.launch {
+        try {
+          com.google.ai.edge.gallery.connectors.McpOAuth.complete(context, pending, result.data)
+          isAdding = true
+          mcpManagerViewModel.addMcpServer(pending.serverUrl, McpAuth.AuthMethodCase.OAUTH, "", "")
+        } catch (e: Exception) {
+          oauthError = e.message ?: "Connexion impossible."
+        } finally {
+          oauthBusy = false
+          oauthPending = null
+        }
+      }
+    }
+
+  /** Adds the server; with OAuth, signs in first. */
+  fun submit(url: String) {
+    if (authType != McpAuth.AuthMethodCase.OAUTH) {
+      isAdding = true
+      mcpManagerViewModel.addMcpServer(url, authType, headerName.text, headerValue.text)
+      return
+    }
+    oauthBusy = true
+    oauthError = null
+    oauthScope.launch {
+      try {
+        val pending = com.google.ai.edge.gallery.connectors.McpOAuth.prepare(context, url)
+        oauthPending = pending
+        oauthLauncher.launch(com.google.ai.edge.gallery.connectors.McpOAuth.authorizationIntent(context, pending))
+      } catch (e: Exception) {
+        oauthError = e.message ?: "Connexion impossible."
+        oauthBusy = false
+      }
+    }
   }
 
   // Effect to handle the result of adding an MCP server when the loading state changes.
@@ -167,6 +210,18 @@ fun AddMcpServerFromUrlDialog(
               }
             },
           )
+          oauthError?.let { msg ->
+            Text(text = msg, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+          }
+          if (authType == McpAuth.AuthMethodCase.OAUTH) {
+            Text(
+              text =
+                if (oauthBusy) "Connexion en cours… (une page du service va s'ouvrir)"
+                else "Une page du service s'ouvrira pour te connecter ; Altrex ne voit jamais ton mot de passe.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
           // Error message if adding the server failed.
           error?.let { errorMsg ->
             Text(
@@ -234,7 +289,6 @@ fun AddMcpServerFromUrlDialog(
                   authType = McpAuth.AuthMethodCase.OAUTH
                   dropdownExpanded = false
                 },
-                enabled = false,
               )
             }
           }
@@ -297,28 +351,14 @@ fun AddMcpServerFromUrlDialog(
             OutlinedButton(onClick = safeDismiss) { Text(stringResource(R.string.cancel)) }
             Spacer(modifier = Modifier.width(4.dp))
             Button(
-              enabled = textFieldValue.text.trim().isNotEmpty(),
+              enabled = textFieldValue.text.trim().isNotEmpty() && !oauthBusy,
               onClick = {
-                Log.d(TAG, "Analytics: mcp_management, action=add_server, status=attempt")
-                firebaseAnalytics?.logEvent(
-                  GalleryEvent.MCP_MANAGEMENT.id,
-                  Bundle().apply {
-                    putString("action", "add_server")
-                    putString("status", "attempt")
-                  },
-                )
                 val url = textFieldValue.text.trim()
                 if (url.isNotEmpty()) {
                   if (mcpManagerViewModel.hasMcpServer(url)) {
                     showDuplicateWarningDialog = true
                   } else if (isMcpHostApproved(url)) {
-                    isAdding = true
-                    mcpManagerViewModel.addMcpServer(
-                      url,
-                      authType,
-                      headerName.text,
-                      headerValue.text,
-                    )
+                    submit(url)
                   } else {
                     showDisclaimerDialog = true
                   }
@@ -354,8 +394,7 @@ fun AddMcpServerFromUrlDialog(
         showDisclaimerDialog = false
         val url = textFieldValue.text.trim()
         if (url.isNotEmpty()) {
-          isAdding = true
-          mcpManagerViewModel.addMcpServer(url, authType, headerName.text, headerValue.text)
+          submit(url)
         }
       },
     )

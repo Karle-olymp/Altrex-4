@@ -9,10 +9,14 @@ import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
-import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPInputStream
+import com.google.ai.edge.gallery.tools.ProcessTree
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import java.util.concurrent.TimeUnit
 
 private const val TAG = "AGLinuxEnv"
 
@@ -44,15 +48,159 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
     /** Output kept from one command (the rest is cut). */
     const val MAX_OUTPUT_CHARS = 200_000
 
+    /** `pkg` as in Termux, run by `apk` (Alpine's package manager). */
+    internal val PKG_SCRIPT =
+      """
+      #!/bin/sh
+      # Altrex : la commande pkg de Termux, traduite pour apk (le gestionnaire de paquets d'Alpine).
+      cmd="${'$'}1"
+      [ ${'$'}# -gt 0 ] && shift
+      case "${'$'}cmd" in
+        install|in|add)
+          [ ${'$'}# -eq 0 ] && { echo "Usage : pkg install <paquet> [paquet…]" >&2; exit 1; }
+          exec apk add "${'$'}@" ;;
+        uninstall|remove|rm|del|purge) exec apk del "${'$'}@" ;;
+        update|up) exec apk update ;;
+        upgrade|ug|full-upgrade) apk update && exec apk upgrade "${'$'}@" ;;
+        search|se) exec apk search "${'$'}@" ;;
+        list-installed|list|li) exec apk list --installed "${'$'}@" ;;
+        list-all|la) exec apk list "${'$'}@" ;;
+        show|sh|info) exec apk info -a "${'$'}@" ;;
+        files) exec apk info -L "${'$'}@" ;;
+        ""|help|-h|--help)
+          echo "pkg (Altrex) : raccourci vers apk, le gestionnaire de paquets d'Alpine."
+          echo "  pkg install <paquet>    = apk add <paquet>"
+          echo "  pkg uninstall <paquet>  = apk del <paquet>"
+          echo "  pkg update / upgrade    = apk update / apk upgrade"
+          echo "  pkg search <mot>        = apk search <mot>"
+          echo "  pkg list-installed      = apk list --installed"
+          echo "  pkg show <paquet>       = apk info -a <paquet>"
+          [ -z "${'$'}cmd" ] && exit 1 || exit 0 ;;
+        *) echo "pkg : commande inconnue « ${'$'}cmd ». Tape pkg help." >&2; exit 1 ;;
+      esac
+      """.trimIndent() + "\n"
+
+    /** Packages of `altrex-setup`: what a usual terminal has (≈ 300 Mo with Node and Python). */
+    private const val BASE_PACKAGES =
+      "bash bash-completion coreutils findutils grep sed gawk procps-ng util-linux ncurses " +
+        "ca-certificates curl wget git git-lfs openssh-client-default gnupg rsync " +
+        "nano vim less tar gzip xz zip unzip file tree htop jq " +
+        "python3 py3-pip nodejs npm github-cli gcompat libstdc++ man-pages"
+    private const val DEV_PACKAGES = "build-base cmake linux-headers pkgconf python3-dev go rust cargo"
+
+    /** `altrex-setup`: installs the usual tools in one go (`--dev` adds compilers). */
+    internal val SETUP_SCRIPT =
+      """
+      #!/bin/sh
+      # Altrex : installe d'un coup les outils d'un terminal complet.
+      set -e
+      echo "Installation des outils de base (git, curl, bash, python, node, gh, nano…)."
+      apk update
+      apk add $BASE_PACKAGES
+      case "${'$'}1" in --dev|-dev|dev) DEV=1 ;; esac
+      if [ -n "${'$'}DEV" ]; then
+        echo "Ajout des compilateurs (gcc, make, cmake, go, rust)…"
+        apk add $DEV_PACKAGES
+      fi
+      # pip installe aussi hors environnement virtuel (Alpine l'interdit par défaut).
+      mkdir -p /root/.config/pip
+      printf '[global]
+break-system-packages = true
+' > /root/.config/pip/pip.conf
+      touch /root/.altrex-setup-done
+      echo
+      echo "Terminé. Ferme et rouvre le terminal (bouton ↻) pour passer sous bash."
+      [ -n "${'$'}DEV" ] || echo "Pour compiler (gcc, make, go, rust) : altrex-setup --dev"
+      """.trimIndent() + "\n"
+
+    /** `apt` / `apt-get` habits, same translation. */
+    internal val APT_SCRIPT =
+      """
+      #!/bin/sh
+      # Altrex : apt n'existe pas sous Alpine, on passe par pkg (donc apk).
+      exec pkg "${'$'}@"
+      """.trimIndent() + "\n"
+
+    /** Shown once per interactive shell of the user's terminal (the model's commands are not). */
+    internal val PROFILE_HINT =
+      """
+      case ${'$'}- in *i*)
+        echo "Alpine Linux (Altrex). Paquets : pkg install <nom> ou apk add <nom>. Aide : pkg help"
+        [ -f /root/.altrex-setup-done ] || echo "Premier lancement ? Tape altrex-setup pour installer git, curl, bash, python, node, gh…"
+        [ -d /root/partage ] && echo "Dossier partagé avec le téléphone : ~/partage (Android/media/…/Linux)"
+        [ -d /root/projets ] && echo "Projets de Forge : ~/projets (le même dossier que celui de l'agent)"
+      ;; esac
+      """.trimIndent() + "\n"
+
+    private const val AGENT_PREFS = "altrex_run_command"
+    private const val KEY_SHARE = "share_folder"
+
+    /** Whether the model's Linux also sees ~/partage (off by default). */
+    fun agentSharesFolder(context: Context): Boolean =
+      context.getSharedPreferences(AGENT_PREFS, Context.MODE_PRIVATE).getBoolean(KEY_SHARE, false)
+
+    fun setAgentSharesFolder(context: Context, share: Boolean) {
+      context.getSharedPreferences(AGENT_PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_SHARE, share).apply()
+    }
+
+    /**
+     * Stops PRoot and what it runs. A plain kill of PRoot left its program alive (an apk still
+     * installing kept the package database locked, and every later apk failed with "Unable to lock
+     * database"), and its children kept the output pipe open. The whole tree is stopped now
+     * ([ProcessTree.kill]: SIGTERM, then SIGKILL after a short grace, pipes closed), without
+     * blocking the caller.
+     */
+    fun stopTree(process: Process) {
+      ProcessTree.kill(process)
+    }
+
+    /** Processes started by [start] and not yet ended (their trees are never "strays"). */
+    private val live = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Process, Boolean>())
+
+    internal fun livePids(): Set<Int> {
+      live.removeAll { !it.isAlive }
+      return live.mapNotNull { ProcessTree.pidOf(it) }.toSet()
+    }
+
+    /** Environment variable every program of the model's Linux gets (see [ProcessTree.strays]). */
+    const val MARKER_VAR = "ALTREX_ENV"
+
+    /**
+     * Kills package managers of environment [envName] left running by a command that was stopped
+     * (their tracer gone): the apk database lock is theirs. Returns how many were killed.
+     */
+    fun reapStrays(envName: String, programs: Set<String> = setOf("apk")): Int {
+      val pids = runCatching { ProcessTree.strays("$MARKER_VAR=$envName", programs, livePids()) }.getOrDefault(emptyList())
+      if (pids.isNotEmpty()) {
+        Log.w(TAG, "[$envName] killing ${pids.size} stray process(es) $programs")
+        ProcessTree.signal(pids, ProcessTree.SIGKILL)
+      }
+      return pids.size
+    }
+
     fun of(context: Context, name: String): LinuxEnv = LinuxEnv(context.applicationContext, name)
+
+    /** [ALTREX] Where Forge's projects are seen inside both Linux environments. */
+    const val PROJECTS_PATH = "/root/projets"
+
+    /** [ALTREX] Forge's working folder on the phone (the app's storage). */
+    fun forgeHostDir(context: Context): File = File(context.applicationContext.filesDir, "forge")
+
+    /** [ALTREX] The projects folder bound as [PROJECTS_PATH]. */
+    fun projectsHostDir(context: Context): File = File(forgeHostDir(context), "projets")
   }
 
   private val baseDir = File(context.filesDir, "linux/$name")
   val rootfs = File(baseDir, "rootfs")
-  private val marker = File(baseDir, ".installed-$ALPINE_VERSION")
+  // [ALTREX] One marker whatever the Alpine version: it carried the version, so changing ALPINE_VERSION
+  // made every installed Linux look absent and the next install erased its packages and /root. The
+  // old versioned markers still count.
+  private val marker = File(baseDir, ".installed")
 
   val isInstalled: Boolean
-    get() = marker.exists() && File(rootfs, "bin/busybox").exists()
+    get() =
+      (marker.exists() || baseDir.listFiles { f -> f.name.startsWith(".installed-") }.orEmpty().isNotEmpty()) &&
+        File(rootfs, "bin/busybox").exists()
 
   private val nativeDir = File(context.applicationInfo.nativeLibraryDir)
   private val proot = File(nativeDir, "libproot.so")
@@ -87,6 +235,7 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
         File(tmp, "etc/hosts").writeText("127.0.0.1 localhost\n::1 localhost\n")
         File(tmp, "root").mkdirs()
         File(tmp, "tmp").mkdirs()
+        writeHelpers(tmp)
         rootfs.deleteRecursively()
         if (!tmp.renameTo(rootfs)) throw IOException("Installation impossible (renommage).")
         baseDir.listFiles { f -> f.name.startsWith(".installed-") }?.forEach { it.delete() }
@@ -94,6 +243,21 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
         progress("Prêt.")
       }
     }
+
+  /**
+   * Termux habits in Alpine: `pkg` (and `apt`) translated to `apk`, and a one-line hint when the
+   * user's terminal opens. Rewritten when missing or outdated, so older installs get them too.
+   */
+  private fun writeHelpers(root: File) {
+    val bin = File(root, "usr/local/bin").apply { mkdirs() }
+    for ((file, text) in listOf("pkg" to PKG_SCRIPT, "apt" to APT_SCRIPT, "apt-get" to APT_SCRIPT, "altrex-setup" to SETUP_SCRIPT).map { (n, t) -> File(bin, n) to t }) {
+      if (!file.exists() || file.readText() != text) file.writeText(text)
+      file.setExecutable(true, false)
+    }
+    val profile = File(root, "etc/profile.d").apply { mkdirs() }
+    val hint = File(profile, "altrex.sh")
+    if (!hint.exists() || hint.readText() != PROFILE_HINT) hint.writeText(PROFILE_HINT)
+  }
 
   /** Removes the environment (everything installed in it). */
   suspend fun uninstall() = withContext(Dispatchers.IO) { baseDir.deleteRecursively() }
@@ -109,10 +273,30 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
     command: String,
     timeoutMs: Long = DEFAULT_TIMEOUT_MS,
     onOutput: (String) -> Unit = {},
+  ): CommandResult = exec(listOf("/bin/sh", "-lc", command), null, timeoutMs, onOutput)
+
+  /**
+   * Runs [argv] in the environment with [stdin] as its input (closed after), so that commands and
+   * file contents reach it without any shell quoting. Same output and time limit as [run].
+   */
+  suspend fun exec(
+    argv: List<String>,
+    stdin: String?,
+    timeoutMs: Long = DEFAULT_TIMEOUT_MS,
+    onOutput: (String) -> Unit = {},
   ): CommandResult =
     withContext(Dispatchers.IO) {
       check(isInstalled) { "Environnement Linux non installé." }
-      val process = start(listOf("/bin/sh", "-lc", command))
+      val process = start(argv)
+      Thread {
+          try {
+            process.outputStream.use { out -> stdin?.let { out.write(it.toByteArray()) } }
+          } catch (e: IOException) {
+            // The program ended without reading everything.
+          }
+        }
+        .apply { isDaemon = true }
+        .start()
       val out = StringBuilder()
       val reader = Thread {
         try {
@@ -130,10 +314,27 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
           // Process killed.
         }
       }
+      reader.isDaemon = true
       reader.start()
-      val finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
-      if (!finished) process.destroyForcibly()
-      reader.join(2_000)
+      // Waits by short steps so that a cancelled coroutine (the Stop button) ends at once: the
+      // process tree is killed on the way out, never waited for here.
+      val deadline = System.currentTimeMillis() + timeoutMs
+      var finished = false
+      try {
+        while (true) {
+          if (process.waitFor(100, TimeUnit.MILLISECONDS)) {
+            finished = true
+            break
+          }
+          currentCoroutineContext().ensureActive()
+          if (System.currentTimeMillis() >= deadline) break
+        }
+      } catch (e: CancellationException) {
+        stopTree(process)
+        throw e
+      }
+      if (!finished) ProcessTree.killAndWait(process)
+      reader.join(if (finished) 2_000 else 500)
       val text = synchronized(out) { out.toString() }
       CommandResult(
         exitCode = if (finished) process.exitValue() else -1,
@@ -147,6 +348,7 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
 
   /** [argv] run by PRoot with the Alpine files as its root, from /root. */
   fun launch(argv: List<String>): Launch {
+    if (isInstalled) runCatching { writeHelpers(rootfs) }
     val tmp = File(context.cacheDir, "proot-tmp-$name").apply { mkdirs() }
     val args =
       listOf(
@@ -158,7 +360,7 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
         "-b", "/proc",
         "-b", "/sys",
         "-w", "/root",
-      ) + argv
+      ) + sharedFolderBind() + projectsBind() + argv
     val env =
       linkedMapOf(
         "PROOT_LOADER" to loader.absolutePath,
@@ -169,20 +371,49 @@ class LinuxEnv private constructor(private val context: Context, val name: Strin
         "TERM" to "xterm-256color",
         "LANG" to "C.UTF-8",
         "TMPDIR" to "/tmp",
+        MARKER_VAR to name,
       )
     return Launch(proot.absolutePath, args, env)
   }
 
-  /** Starts [argv] inside the environment (stdin/stdout/stderr pipes, stderr merged). */
-  fun start(argv: List<String>): Process {
+  /**
+   * The user's terminal sees a folder of the phone as ~/partage: Android/media/<app>/Linux, which
+   * file managers show and the app writes without any storage permission. The model's environment
+   * sees it only when the user allows it in the settings ([agentSharesFolder]).
+   */
+  private fun sharedFolderBind(): List<String> {
+    if (name != USER && !(name == AGENT && agentSharesFolder(context))) return emptyList()
+    @Suppress("DEPRECATION")
+    val media = context.externalMediaDirs.firstOrNull() ?: return emptyList()
+    val shared = File(media, "Linux")
+    if (!shared.isDirectory && !shared.mkdirs()) return emptyList()
+    File(rootfs, "root/partage").mkdirs()
+    return listOf("-b", "${shared.absolutePath}:/root/partage")
+  }
+
+  /**
+   * [ALTREX] Forge's projects, the same folder in both environments: `/root/projets` in the
+   * user's terminal and in the model's Linux (docs/forge/FORGE.md, « dossier de travail commun »).
+   * The folder lives in the app's storage ([projectsHostDir]); PRoot only binds it.
+   */
+  private fun projectsBind(): List<String> {
+    val host = projectsHostDir(context)
+    if (!host.isDirectory && !host.mkdirs()) return emptyList()
+    File(rootfs, "root/projets").mkdirs()
+    return listOf("-b", "${host.absolutePath}:$PROJECTS_PATH")
+  }
+
+  /** Starts [argv] inside the environment (stdin/stdout/stderr pipes, stderr merged unless asked). */
+  fun start(argv: List<String>, mergeStderr: Boolean = true): Process {
     val l = launch(argv)
-    val pb = ProcessBuilder(listOf(l.executable) + l.args).redirectErrorStream(true).directory(rootfs)
+    // A protocol on stdout (MCP over stdio) needs stderr apart.
+    val pb = ProcessBuilder(listOf(l.executable) + l.args).redirectErrorStream(mergeStderr).directory(rootfs)
     pb.environment().apply {
       clear()
       putAll(l.env)
     }
     Log.d(TAG, "[$name] start ${argv.firstOrNull()}")
-    return pb.start()
+    return ProcessTree.startTracked(pb).also { live.add(it) }
   }
 
   private fun download(url: String, target: File) {

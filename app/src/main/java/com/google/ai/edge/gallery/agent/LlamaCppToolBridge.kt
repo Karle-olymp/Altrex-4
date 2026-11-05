@@ -22,9 +22,9 @@ import com.google.ai.edge.gallery.tools.RunJsTool
 import com.google.ai.edge.gallery.tools.RunMcpTool
 import com.google.ai.edge.gallery.tools.ToolsProvider
 import com.google.ai.edge.gallery.tools.WebSearchTool
-import com.google.ai.edge.gallery.ui.llmsingleturn.AgentToolCall
-import com.google.ai.edge.gallery.ui.llmsingleturn.AgentToolParam
-import com.google.ai.edge.gallery.ui.llmsingleturn.AgentToolSpec
+import com.google.ai.edge.gallery.agent.AgentToolCall
+import com.google.ai.edge.gallery.agent.AgentToolParam
+import com.google.ai.edge.gallery.agent.AgentToolSpec
 import com.google.gson.Gson
 import org.json.JSONObject
 
@@ -104,6 +104,68 @@ object LlamaCppToolBridge {
             AgentToolParam("query", "string", "The search query."),
           ),
       ),
+      // [ALTREX] The model's own Alpine Linux (separate from the user's terminal).
+      AgentToolSpec(
+        name = "run_command",
+        description =
+          "Run a shell command in your own Alpine Linux environment (apk add, python3, git, curl…). " +
+            "The user sees and approves every command. Returns the exit code and the output.",
+        params =
+          listOf(
+            AgentToolParam(
+              "command",
+              "string",
+              "The shell command to run (sh syntax). The working directory and exported variables carry over from your previous command.",
+            ),
+            AgentToolParam("timeout", "integer", "Seconds to wait, up to 600 (default 120).", required = false),
+            AgentToolParam(
+              "background",
+              "boolean",
+              "true for servers and long tasks: returns a job_id at once, read it with check_job.",
+              required = false,
+            ),
+          ),
+      ),
+      // [ALTREX] Exact file tools in the same Linux (Claude Code's Read / Write / Edit).
+      AgentToolSpec(
+        name = "read_file",
+        description = "Read a text file of your Linux, with line numbers.",
+        params =
+          listOf(
+            AgentToolParam("path", "string", "Path of the file (absolute, or relative to the current directory)."),
+            AgentToolParam("offset", "integer", "First line to read (default 1).", required = false),
+            AgentToolParam("limit", "integer", "Number of lines (default 300).", required = false),
+          ),
+      ),
+      AgentToolSpec(
+        name = "write_file",
+        description = "Create or overwrite a text file of your Linux with the given content.",
+        params =
+          listOf(
+            AgentToolParam("path", "string", "Path of the file."),
+            AgentToolParam("content", "string", "The whole new content of the file."),
+          ),
+      ),
+      AgentToolSpec(
+        name = "edit_file",
+        description = "Replace an exact piece of text in a file of your Linux. Read the file first; old_string must appear only once unless replace_all is true.",
+        params =
+          listOf(
+            AgentToolParam("path", "string", "Path of the file."),
+            AgentToolParam("old_string", "string", "The exact text to replace, copied from read_file without the line numbers."),
+            AgentToolParam("new_string", "string", "The new text."),
+            AgentToolParam("replace_all", "boolean", "Replace every occurrence (default false).", required = false),
+          ),
+      ),
+      AgentToolSpec(
+        name = "check_job",
+        description = "Read the new output of a background job started with run_command, or stop it.",
+        params =
+          listOf(
+            AgentToolParam("job_id", "string", "The job_id given by run_command."),
+            AgentToolParam("stop", "boolean", "true to stop the job.", required = false),
+          ),
+      ),
     )
 
   private val gson = Gson()
@@ -117,6 +179,10 @@ object LlamaCppToolBridge {
     }
     return ""
   }
+
+  /** A boolean argument, also accepted as "true" text. */
+  private fun flag(args: JSONObject, name: String): Boolean =
+    args.optBoolean(name, false) || args.optString(name, "").equals("true", ignoreCase = true)
 
   private fun ok(value: Any?): String = gson.toJson(value)
 
@@ -135,8 +201,11 @@ object LlamaCppToolBridge {
         "load_skill" -> tools.any { it is LoadSkillTool }
         "run_js" -> tools.any { it is RunJsTool }
         "run_intent" -> tools.any { it is RunIntentTool }
-        "runMcpTool" -> tools.any { it is RunMcpTool }
+        // [ALTREX] Only when an MCP tool is really active: no tool boilerplate for nothing.
+        "runMcpTool" -> tools.filterIsInstance<RunMcpTool>().any { it.hasActiveTools() }
         "webSearch" -> tools.any { it is WebSearchTool }
+        "run_command", "read_file", "write_file", "edit_file", "check_job" ->
+          tools.any { it is com.google.ai.edge.gallery.tools.RunCommandTool }
         else -> false
       }
     return specs.filter { has(it.name) }
@@ -192,6 +261,41 @@ object LlamaCppToolBridge {
             return err("The webSearch tool requires a non-empty \"query\" argument.")
           }
           ok(tool.webSearch(query))
+        }
+        "runcommand" -> {
+          val tool = tools.filterIsInstance<com.google.ai.edge.gallery.tools.RunCommandTool>().firstOrNull()
+            ?: return err("Tool run_command is not available.")
+          val command = arg(args, "command", "cmd", "shell")
+          if (command.isEmpty()) {
+            return err("The run_command tool requires a non-empty \"command\" argument.")
+          }
+          ok(tool.execute(command, args.optInt("timeout", 0), flag(args, "background")))
+        }
+        "readfile", "writefile", "editfile", "checkjob" -> {
+          val tool = tools.filterIsInstance<com.google.ai.edge.gallery.tools.RunCommandTool>().firstOrNull()
+            ?: return err("Tool ${call.name} is not available.")
+          val path = arg(args, "path", "file_path", "file")
+          when (normalize(call.name)) {
+            "readfile" -> ok(tool.read(path, args.optInt("offset", 1), args.optInt("limit", 0)))
+            "writefile" -> ok(tool.write(path, args.optString("content", "")))
+            "editfile" ->
+              ok(
+                tool.edit(
+                  path,
+                  arg(args, "old_string", "oldString", "old"),
+                  args.optString("new_string", args.optString("newString", "")),
+                  flag(args, "replace_all"),
+                )
+              )
+            else ->
+              ok(
+                com.google.ai.edge.gallery.tools.AgentJobs.check(
+                  arg(args, "job_id", "jobId", "id"),
+                  stop = flag(args, "stop"),
+                  maxChars = 8_000,
+                )
+              )
+          }
         }
         else -> err("Unknown tool \"${call.name}\".")
       }

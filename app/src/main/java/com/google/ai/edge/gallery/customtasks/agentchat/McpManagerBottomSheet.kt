@@ -16,8 +16,6 @@
 
 package com.google.ai.edge.gallery.customtasks.agentchat
 
-import android.os.Bundle
-import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalOverscrollFactory
@@ -90,10 +88,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.common.clearFocusOnKeyboardDismiss
-import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.mcp.McpServerState
 import com.google.ai.edge.gallery.ui.common.ClickableLink
 import com.google.ai.edge.gallery.ui.common.SmallFilledTonalButton
@@ -101,8 +97,6 @@ import com.google.ai.edge.gallery.ui.common.SmallOutlinedButton
 import com.google.ai.edge.gallery.ui.theme.customColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-private const val TAG = "AGMcpManagerBottomSheet"
 
 /**
  * A bottom sheet that allows users to manage configured MCP servers, search through them, add new
@@ -171,11 +165,6 @@ fun McpManagerBottomSheet(
       else if (uiState.mcpServers.isEmpty()) {
         EmptyMcpServerView(
           onAddClick = {
-            Log.d(TAG, "Analytics: mcp_management, action=open_add_server")
-            firebaseAnalytics?.logEvent(
-              GalleryEvent.MCP_MANAGEMENT.id,
-              Bundle().apply { putString("action", "open_add_server") },
-            )
             showAddMcpServerDialog = true
           },
           onDismiss = {
@@ -271,11 +260,6 @@ fun McpManagerBottomSheet(
                   .clip(CircleShape)
                   .clickable {
                     searchQuery = ""
-                    Log.d(TAG, "Analytics: mcp_management, action=open_add_server")
-                    firebaseAnalytics?.logEvent(
-                      GalleryEvent.MCP_MANAGEMENT.id,
-                      Bundle().apply { putString("action", "open_add_server") },
-                    )
                     showAddMcpServerDialog = true
                   }
                   .background(MaterialTheme.colorScheme.primary),

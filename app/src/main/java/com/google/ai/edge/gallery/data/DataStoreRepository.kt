@@ -21,8 +21,6 @@ import com.google.ai.edge.gallery.proto.AccessTokenData
 import com.google.ai.edge.gallery.security.SecretCipher
 import com.google.ai.edge.gallery.proto.BenchmarkResult
 import com.google.ai.edge.gallery.proto.BenchmarkResults
-import com.google.ai.edge.gallery.proto.Cutout
-import com.google.ai.edge.gallery.proto.CutoutCollection
 import com.google.ai.edge.gallery.proto.ImportedModel
 import com.google.ai.edge.gallery.proto.Settings
 import com.google.ai.edge.gallery.proto.Skill
@@ -41,27 +39,6 @@ interface DataStoreRepository {
   fun saveTheme(theme: Theme)
 
   fun readTheme(): Theme
-
-  /**
-   * Saves the user's preference for whether Firebase Analytics data collection is enabled (`true`)
-   * or disabled (`false`).
-   *
-   * Note that this preference is stored internally on the Settings proto as
-   * `disable_firebase_analytics = !enabled`. This ensures that when the proto field is unset (its
-   * default value being `false`), data collection remains enabled by default across new installs
-   * and upgrades until explicitly toggled off by the user.
-   *
-   * @param enabled `true` to enable Firebase Analytics data collection; `false` to disable it.
-   */
-  fun saveFirebaseAnalytics(enabled: Boolean)
-
-  /**
-   * Reads that current setting for whether Firebase Analytics data collection is enabled.
-   *
-   * @return `true` if analytics is enabled or has not been explicitly disabled by the user; `false`
-   *   otherwise.
-   */
-  fun readFirebaseAnalytics(): Boolean
 
   fun saveSecret(key: String, value: String)
 
@@ -86,14 +63,6 @@ interface DataStoreRepository {
   fun isGemmaTermsOfUseAccepted(): Boolean
 
   fun acceptGemmaTermsOfUse()
-
-  fun addCutout(cutout: Cutout)
-
-  fun getAllCutouts(): List<Cutout>
-
-  fun setCutout(newCutout: Cutout)
-
-  fun setCutouts(cutouts: List<Cutout>)
 
   fun setHasSeenBenchmarkComparisonHelp(seen: Boolean)
 
@@ -133,7 +102,6 @@ interface DataStoreRepository {
 class DefaultDataStoreRepository(
   private val dataStore: DataStore<Settings>,
   private val userDataDataStore: DataStore<UserData>,
-  private val cutoutDataStore: DataStore<CutoutCollection>,
   private val benchmarkResultsDataStore: DataStore<BenchmarkResults>,
   private val skillsDataStore: DataStore<Skills>,
 ) : DataStoreRepository {
@@ -164,29 +132,6 @@ class DefaultDataStoreRepository(
       val curTheme = settings.theme
       // Use "auto" as the default theme.
       if (curTheme == Theme.THEME_UNSPECIFIED) Theme.THEME_AUTO else curTheme
-    }
-  }
-
-  /**
-   * Persists the inverted value (`!enabled`) into `settings.disableFirebaseAnalytics` within proto
-   * DataStore.
-   */
-  override fun saveFirebaseAnalytics(enabled: Boolean) {
-    runBlocking {
-      dataStore.updateData { settings ->
-        settings.toBuilder().setDisableFirebaseAnalytics(!enabled).build()
-      }
-    }
-  }
-
-  /**
-   * Reads `settings.disableFirebaseAnalytics` from proto DataStore and returns the inverted value
-   * so that `false` (default uninitialized value) evaluates to `true` (enabled).
-   */
-  override fun readFirebaseAnalytics(): Boolean {
-    return runBlocking {
-      val settings = dataStore.data.first()
-      !settings.disableFirebaseAnalytics
     }
   }
 
@@ -298,42 +243,6 @@ class DefaultDataStoreRepository(
       dataStore.updateData { settings ->
         settings.toBuilder().setIsGemmaTermsAccepted(true).build()
       }
-    }
-  }
-
-  override fun addCutout(cutout: Cutout) {
-    runBlocking {
-      cutoutDataStore.updateData { cutouts -> cutouts.toBuilder().addCutout(cutout).build() }
-    }
-  }
-
-  override fun getAllCutouts(): List<Cutout> {
-    return runBlocking { cutoutDataStore.data.first().cutoutList }
-  }
-
-  override fun setCutout(newCutout: Cutout) {
-    runBlocking {
-      cutoutDataStore.updateData { cutouts ->
-        var index = -1
-        for (i in 0..<cutouts.cutoutCount) {
-          val cutout = cutouts.cutoutList.get(i)
-          if (cutout.id == newCutout.id) {
-            index = i
-            break
-          }
-        }
-        if (index >= 0) {
-          cutouts.toBuilder().setCutout(index, newCutout).build()
-        } else {
-          cutouts
-        }
-      }
-    }
-  }
-
-  override fun setCutouts(cutouts: List<Cutout>) {
-    runBlocking {
-      cutoutDataStore.updateData { CutoutCollection.newBuilder().addAllCutout(cutouts).build() }
     }
   }
 

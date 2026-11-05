@@ -640,23 +640,3 @@ constructor(
   @AiChatExecutor runtimeExecutor: AgentRuntimeExecutor,
 ) :
 LlmChatViewModelBase(systemPromptRepository, userDataDataStore, null, runtimeExecutor)
-
-@HiltViewModel
-class LlmAskImageViewModel
-@Inject
-constructor(
-  systemPromptRepository: SystemPromptRepository,
-  userDataDataStore: DataStore<UserData>,
-  @AiChatExecutor runtimeExecutor: AgentRuntimeExecutor,
-) :
-LlmChatViewModelBase(systemPromptRepository, userDataDataStore, null, runtimeExecutor)
-
-@HiltViewModel
-class LlmAskAudioViewModel
-@Inject
-constructor(
-  systemPromptRepository: SystemPromptRepository,
-  userDataDataStore: DataStore<UserData>,
-  @AiChatExecutor runtimeExecutor: AgentRuntimeExecutor,
-) :
-LlmChatViewModelBase(systemPromptRepository, userDataDataStore, null, runtimeExecutor)

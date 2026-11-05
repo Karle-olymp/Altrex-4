@@ -43,4 +43,16 @@ class RemoteSpaceTest {
   fun parseOutput_readsFirstValue() {
     assertEquals("<think>\nok\n</think>\n\nBonjour", RemoteSpace.parseOutput("[\"<think>\\nok\\n</think>\\n\\nBonjour\"]"))
   }
+
+  @Test
+  fun parseGenerating_fullText() {
+    assertEquals("Bonjour à", RemoteSpace.parseGenerating("[\"Bonjour à\"]", "Bon"))
+  }
+
+  @Test
+  fun parseGenerating_diffs() {
+    assertEquals("Bonjour", RemoteSpace.parseGenerating("[[[\"append\", [], \"jour\"]]]", "Bon"))
+    assertEquals("Salut", RemoteSpace.parseGenerating("[[[\"replace\", [], \"Salut\"]]]", "Bon"))
+    assertEquals("Bon", RemoteSpace.parseGenerating("[[]]", "Bon"))
+  }
 }

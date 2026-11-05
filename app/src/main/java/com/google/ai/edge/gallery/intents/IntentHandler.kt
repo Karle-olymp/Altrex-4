@@ -1,6 +1,7 @@
 package com.google.ai.edge.gallery.intents
 
 import android.Manifest
+import android.os.Build
 import android.app.SearchManager
 import android.content.ActivityNotFoundException
 import android.content.ContentUris
@@ -20,6 +21,7 @@ import android.util.Log
 import android.view.KeyEvent
 import androidx.core.content.ContextCompat.checkSelfPermission
 import androidx.core.net.toUri
+import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.notifications.NotificationScheduleManagerEntryPoint
 import com.google.ai.edge.gallery.proto.ScheduledNotification
 import com.squareup.moshi.Json
@@ -166,11 +168,11 @@ object IntentHandler {
             context.startActivity(intent)
             "succeeded"
           } else {
-            Log.e(TAG, "Failed to parse send_email parameters or missing email: $parameters")
+            Log.e(TAG, "Failed to parse send_email parameters or missing email")
             "failed"
           }
         } catch (e: Exception) {
-          Log.e(TAG, "Failed to parse send_email parameters: $parameters", e)
+          Log.e(TAG, "Failed to parse send_email parameters", e)
           "failed"
         }
       }
@@ -188,11 +190,11 @@ object IntentHandler {
             context.startActivity(intent)
             "succeeded"
           } else {
-            Log.e(TAG, "Failed to parse send_sms parameters: $parameters")
+            Log.e(TAG, "Failed to parse send_sms parameters")
             "failed"
           }
         } catch (e: Exception) {
-          Log.e(TAG, "Failed to parse send_sms parameters: $parameters", e)
+          Log.e(TAG, "Failed to parse send_sms parameters", e)
           "failed"
         }
       }
@@ -217,11 +219,11 @@ object IntentHandler {
             context.startActivity(intent)
             "succeeded"
           } else {
-            Log.e(TAG, "Failed to parse create_calendar_event parameters: $parameters")
+            Log.e(TAG, "Failed to parse create_calendar_event parameters")
             "failed"
           }
         } catch (e: Exception) {
-          Log.e(TAG, "Failed to parse create_calendar_event parameters: $parameters", e)
+          Log.e(TAG, "Failed to parse create_calendar_event parameters", e)
           "failed"
         }
       }
@@ -238,7 +240,19 @@ object IntentHandler {
         currentDateAndTime
       }
       IntentAction.SCHEDULE_NOTIFICATION -> {
-        scheduleNotification(context, parameters)
+        // [ALTREX] On Android 13+, a reminder only shows with POST_NOTIFICATIONS: ask first, as for
+        // the calendar, instead of scheduling a reminder that would never appear.
+        if (
+          Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+              PackageManager.PERMISSION_GRANTED &&
+            !requestPermission(Manifest.permission.POST_NOTIFICATIONS)
+        ) {
+          Log.e(TAG, "POST_NOTIFICATIONS permission denied by user")
+          "failed: POST_NOTIFICATIONS permission denied by user, the reminder could not be shown"
+        } else {
+          scheduleNotification(context, parameters)
+        }
       }
       IntentAction.SEARCH_WEB -> {
         try {
@@ -253,11 +267,11 @@ object IntentHandler {
             context.startActivity(intent)
             "succeeded"
           } else {
-            Log.e(TAG, "Failed to parse search_web parameters or missing query: $parameters")
+            Log.e(TAG, "Failed to parse search_web parameters or missing query")
             "failed"
           }
         } catch (e: Exception) {
-          Log.e(TAG, "Failed to parse search_web parameters: $parameters", e)
+          Log.e(TAG, "Failed to parse search_web parameters", e)
           "failed"
         }
       }
@@ -273,7 +287,7 @@ object IntentHandler {
     try {
       val params = Moshi.Builder().build().adapter(CreateContactParams::class.java).fromJson(parameters)
       if (params == null || (params.name.isNullOrBlank() && params.phone.isNullOrBlank())) {
-        Log.e(TAG, "Failed to parse create_contact parameters or missing name: $parameters")
+        Log.e(TAG, "Failed to parse create_contact parameters or missing name")
         return "failed: name or phone required"
       }
       val intent =
@@ -287,7 +301,7 @@ object IntentHandler {
       context.startActivity(intent)
       return "succeeded"
     } catch (e: Exception) {
-      Log.e(TAG, "Failed to run create_contact: $parameters", e)
+      Log.e(TAG, "Failed to run create_contact", e)
       return "failed: ${e.message}"
     }
   }
@@ -297,7 +311,7 @@ object IntentHandler {
     try {
       val params = Moshi.Builder().build().adapter(SetAlarmParams::class.java).fromJson(parameters)
       if (params == null || params.hour !in 0..23 || params.minute !in 0..59) {
-        Log.e(TAG, "Invalid set_alarm parameters: $parameters")
+        Log.e(TAG, "Invalid set_alarm parameters")
         return "failed: hour must be 0-23 and minute 0-59"
       }
       val intent =
@@ -313,7 +327,7 @@ object IntentHandler {
       Log.e(TAG, "No clock app for set_alarm", e)
       return "failed: no clock app"
     } catch (e: Exception) {
-      Log.e(TAG, "Failed to run set_alarm: $parameters", e)
+      Log.e(TAG, "Failed to run set_alarm", e)
       return "failed: ${e.message}"
     }
   }
@@ -348,12 +362,12 @@ object IntentHandler {
           if (torchOn) "succeeded: flashlight on" else "succeeded: flashlight off"
         }
         else -> {
-          Log.e(TAG, "Unknown device_control action: $parameters")
+          Log.e(TAG, "Unknown device_control action")
           "failed: action must be toggle_music or toggle_flashlight"
         }
       }
     } catch (e: Exception) {
-      Log.e(TAG, "Failed to run device_control: $parameters", e)
+      Log.e(TAG, "Failed to run device_control", e)
       return "failed: ${e.message}"
     }
   }
@@ -443,15 +457,16 @@ object IntentHandler {
           return "failed"
         }
       } else {
-        Log.e(TAG, "Failed to parse read_calendar_events parameters: $parameters")
+        Log.e(TAG, "Failed to parse read_calendar_events parameters")
         return "failed"
       }
     } catch (e: Exception) {
-      Log.e(TAG, "Failed to read calendar events: $parameters", e)
+      Log.e(TAG, "Failed to read calendar events", e)
       return "failed: ${e.message}"
     }
   }
 
+  // [ALTREX] Logs never carry the parameters or links: they hold the user's text.
   fun scheduleNotification(context: Context, parameters: String): String {
     try {
       val moshi = Moshi.Builder().build()
@@ -477,7 +492,7 @@ object IntentHandler {
               .appendQueryParameter("query", params.message)
               .build()
               .toString()
-          Log.d(TAG, "Setting constructed deeplink to: $uri")
+          Log.d(TAG, "Setting constructed deeplink")
           notificationProtoBuilder.setDeeplink(uri)
         } else if (params.task_id != null) {
           val uri =
@@ -487,17 +502,18 @@ object IntentHandler {
               .appendQueryParameter("query", params.message)
               .build()
               .toString()
-          Log.d(TAG, "Setting constructed deeplink to: $uri")
+          Log.d(TAG, "Setting constructed deeplink")
           notificationProtoBuilder.setDeeplink(uri)
         } else {
           val fallbackUri =
-            "com.google.ai.edge.gallery://llm_agent_chat/"
+            // [ALTREX] Discuter (the former "Agent Skills" task, llm_agent_chat, is gone).
+            "com.google.ai.edge.gallery://${BuiltInTaskId.LLM_CHAT}/"
               .toUri()
               .buildUpon()
               .appendQueryParameter("query", params.message)
               .build()
               .toString()
-          Log.d(TAG, "Setting fallback deeplink to: $fallbackUri")
+          Log.d(TAG, "Setting fallback deeplink")
           notificationProtoBuilder.setDeeplink(fallbackUri)
         }
         if (params.year != null) {
@@ -527,11 +543,11 @@ object IntentHandler {
         }
         return "succeeded"
       } else {
-        Log.e(TAG, "Failed to parse schedule_notification parameters: $parameters")
+        Log.e(TAG, "Failed to parse schedule_notification parameters")
         return "failed"
       }
     } catch (e: Exception) {
-      Log.e(TAG, "Failed to parse schedule_notification parameters: $parameters", e)
+      Log.e(TAG, "Failed to parse schedule_notification parameters", e)
       return "failed"
     }
   }

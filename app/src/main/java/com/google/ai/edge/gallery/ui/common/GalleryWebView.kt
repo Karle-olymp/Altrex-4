@@ -62,6 +62,19 @@ private val iframeWrapper =
  * A base [WebViewClient] for [GalleryWebView] that handles local asset loading and logs page
  * finishing.
  */
+/**
+ * The file a skill page asks for ([path], e.g. "/skills/my-skill/scripts/index.html"), only if it is
+ * a regular file inside `<filesDir>/skills` once symlinks and ".." are resolved; else null.
+ */
+internal fun safeSkillFile(filesDir: File, path: String): File? =
+  try {
+    val root = File(filesDir, "skills").canonicalFile
+    val file = File(filesDir, path).canonicalFile
+    if (file.path.startsWith(root.path + File.separator) && file.isFile) file else null
+  } catch (e: java.io.IOException) {
+    null
+  }
+
 open class BaseGalleryWebViewClient(private val context: Context) : WebViewClient() {
   private val localFileAssetsLoader =
     WebViewAssetLoader.Builder()
@@ -77,8 +90,9 @@ open class BaseGalleryWebViewClient(private val context: Context) : WebViewClien
       // Returns 404 if file not exist for imported skills.
       if (!request.url.toString().startsWith("$LOCAL_URL_BASE/assets/")) {
         val path = request.url.path ?: ""
-        val localFile = File(context.filesDir, path)
-        if (!localFile.exists() || localFile.isDirectory) {
+        // [ALTREX] Only the skills folder is served: the app's private files (chat history, memory
+        // index, the Linux folders, API-key stores) sit next to it and a skill page must not read them.
+        if (safeSkillFile(context.filesDir, path) == null) {
           return WebResourceResponse("text/plain", "UTF-8", null)
         }
       }
