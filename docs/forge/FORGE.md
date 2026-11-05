@@ -12,7 +12,7 @@ Forge est le mode de programmation d'Altrex. Il remplace l'ancien écran Code. V
 | Espace de travail | Aucun | Un projet, dans le Linux d'Altrex |
 
 **Décisions prises :**
-- **Nom :** « Forge » dans l'appli ; « Altrex Forge » pour toute communication publique. Le nom seul est déjà utilisé ailleurs (Laravel Forge, Atlassian Forge, Minecraft Forge, un agent de code nommé Forge, une maquette « LocalForge »). **Vérification de marque à faire avant toute publication**, comme pour le logo.
+- **Nom (décidé le 2026-11-05) :** le nom complet est **Altrex Forge** ; « Forge » n'est que le diminutif, utilisé dans l'appli là où le contexte est clair (entrée du menu, écrans). Toute communication publique dit « Altrex Forge ». Le mot « Forge » seul est déjà utilisé ailleurs (Laravel Forge, Atlassian Forge, Minecraft Forge, un agent de code nommé Forge, une maquette « LocalForge ») : d'où le nom complet. **Vérification de marque à faire avant toute publication**, comme pour le logo.
 - **Projets :** dans le Linux d'Altrex, dans un dossier commun avec ton Terminal.
 - **Ancien Code :** remplacé, en gardant l'aperçu des pages web et le scan de sécurité.
 - **Noms des outils :** ceux de Claude Code, dans Forge seulement (voir 3). Discuter garde les siens.
@@ -154,4 +154,23 @@ Chaque étape se vérifie par les tests et la compilation, puis tu l'essaies sur
 
 1. **Le look** (étape 0) : je prépare les trois maquettes quand tu me dis go.
 2. **Mermaid et Excalidraw** pour Blueprint : on les étudie à l'étape 3 (vérifier leur licence et leur poids dans l'appli).
-3. **Le nom** : Forge te convient-il toujours après la vérification de marque ? Sinon : Atelier, Fonderie.
+3. **Le nom** : décidé (Altrex Forge) ; reste la vérification de marque avant publication.
+
+## 12. Projets open source de référence
+
+Décision du 2026-11-05 : on s'appuie sur ces projets comme sources d'idées (jamais de copie de code ni de prompt). Licences données de mémoire, **vérifiées dans chaque dépôt par l'étude** (`docs/forge/recherche/`).
+
+| Projet | Ce qu'on en attend | Étape |
+|---|---|---|
+| Aider | Carte du dépôt (tree-sitter), commit Git par modification, `/undo`, boucle tests puis corrections | 1-2 |
+| Cline | Modes Plan et Action, points de retour, présentation des outils | 1-2 |
+| Roo Code | Modes personnalisés (prompt + outils + autorisations), sous-tâches | 4 |
+| OpenAI Codex CLI | Règles de bac à sable et d'approbation, mémoire de projet, présentation des diffs | 1 |
+| Plandex | Changements en attente de ta validation (revue avant application) | 2 |
+| Goose | Extensions et « recettes » (enchaînements réutilisables) | 4 |
+| OpenCode | Séparation moteur / écran, sessions | 2-4 |
+| OpenHands | Environnement d'exécution isolé, journal d'événements (hors dossier `enterprise/`) | 2-4 |
+| Mermaid, Excalidraw | Diagrammes et tableaux de Blueprint (licence MIT à confirmer, poids dans l'appli) | 3 |
+| CodeMirror 6 | Éditeur de code léger dans une WebView | 2-3 |
+| tree-sitter | Structure du code pour la carte du dépôt | 2 |
+| Open Interpreter | Licence plus contraignante (AGPL) : idées seulement | - |
