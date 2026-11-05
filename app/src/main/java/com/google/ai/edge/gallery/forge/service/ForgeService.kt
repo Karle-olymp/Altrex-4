@@ -81,6 +81,13 @@ class ForgeService : Service() {
   }
 }
 
+/** [ALTREX] « Arrêter » in Forge's notification: stops every running turn (see [ForgeSessionController.stop]). */
+class ForgeStopReceiver : android.content.BroadcastReceiver() {
+  override fun onReceive(context: Context, intent: Intent) {
+    if (intent.action == ForgeService.ACTION_STOP) ForgeRuntime.stopAll()
+  }
+}
+
 /** [ALTREX] Forge's notifications: working (foreground), waiting for the user, finished. */
 object ForgeNotifications {
   private const val CHANNEL_WORK = "forge_travail"
@@ -110,11 +117,13 @@ object ForgeNotifications {
     )
 
   fun working(context: Context, s: ForgeRuntime.Status): Notification {
+    // A broadcast, not a service start: always delivered, even when Android refuses to start a
+    // service from the background, and handled at once on the main thread.
     val stop =
-      PendingIntent.getService(
+      PendingIntent.getBroadcast(
         context,
         1,
-        Intent(context, ForgeService::class.java).setAction(ForgeService.ACTION_STOP),
+        Intent(context, ForgeStopReceiver::class.java).setAction(ForgeService.ACTION_STOP),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
       )
     val text =

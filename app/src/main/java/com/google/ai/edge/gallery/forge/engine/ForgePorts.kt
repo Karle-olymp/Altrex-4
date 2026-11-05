@@ -27,17 +27,36 @@ interface ModelPort {
 
 /** The model's shell for this project (see [com.google.ai.edge.gallery.tools.AgentShell]). */
 interface ShellPort {
-  data class Result(val exitCode: Int, val output: String, val cwd: String?, val timedOut: Boolean)
+  /**
+   * How a foreground command ended. [jobId] set: it was still running when [wait] said to stop
+   * waiting ([detached] = "idle" or "cap"), and it goes on as that background job; [output] is
+   * what it wrote so far and [exitCode] is meaningless.
+   */
+  data class Result(
+    val exitCode: Int,
+    val output: String,
+    val cwd: String?,
+    val timedOut: Boolean,
+    val jobId: String? = null,
+    val detached: String? = null,
+  )
 
   /** Null when the Linux is ready (installed if needed), else why it is not. */
   suspend fun ensureReady(onProgress: (String) -> Unit): String?
 
-  suspend fun run(command: String, timeoutMs: Long, onOutput: (String) -> Unit): Result
+  /**
+   * Runs [command] in the foreground, following it as long as [wait] allows (silence, ceiling).
+   * Cancellable at any time: the command's whole process tree is then killed.
+   */
+  suspend fun run(command: String, wait: com.google.ai.edge.gallery.tools.CommandWait.Policy, onOutput: (String) -> Unit): Result
 
   /** A job id, or a message starting with "error:". */
   fun startJob(command: String): String
 
   fun checkJob(id: String, stop: Boolean, maxChars: Int): Map<String, String>
+
+  /** The last lines a background job wrote (live progress of a detached command), or null. */
+  fun jobTail(id: String): String? = null
 }
 
 /** A question to the user about one action (see [PermissionPolicy]). */

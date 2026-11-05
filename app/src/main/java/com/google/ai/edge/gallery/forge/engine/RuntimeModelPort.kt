@@ -12,6 +12,8 @@ import com.google.ai.edge.gallery.runtime.SharedModelSession
 import com.google.ai.edge.gallery.runtime.runtimeHelper
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Message
+import android.content.Context
+import com.google.ai.edge.gallery.runtime.CloudApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import org.nehuatl.llamacpp.LlamaHelper
@@ -26,7 +28,12 @@ import org.nehuatl.llamacpp.LlamaHelper
  *   history (system prompt with the tools block, earlier messages), then the last message is sent.
  *   Their native automatic tool calling is not used, so the tool format is the same everywhere.
  */
-class RuntimeModelPort(private val model: Model) : ModelPort {
+class RuntimeModelPort(private val model: Model, private val appContext: Context? = null) : ModelPort {
+  /** The answer being written (completed by [stop]: Stop never waits for the runtime). */
+  @Volatile private var current: CompletableDeferred<String>? = null
+  @Volatile private var partial: StringBuilder? = null
+  @Volatile private var abort: CloudApi.Abort? = null
+
   override val name: String
     get() = model.displayName.ifEmpty { model.name }
 
@@ -45,6 +52,8 @@ class RuntimeModelPort(private val model: Model) : ModelPort {
 
   override suspend fun generate(system: String, messages: List<AgentMsg>, onChunk: (String) -> Unit): String {
     if (model.instance == null) throw IllegalStateException("Le modèle n'est pas chargé. Recharge-le depuis le sélecteur de modèle.")
+    val cloud = model.instance as? CloudModelInstance
+    if (cloud != null && appContext != null) return generateCloud(cloud, appContext, system, messages, onChunk)
     val helper = model.runtimeHelper
     val input: String
     if (model.runtimeType.usesTextProtocol) {
@@ -57,6 +66,8 @@ class RuntimeModelPort(private val model: Model) : ModelPort {
     }
     val done = CompletableDeferred<String>()
     val answer = StringBuilder()
+    current = done
+    partial = answer
     helper.runInference(
       model = model,
       input = input,
@@ -75,10 +86,84 @@ class RuntimeModelPort(private val model: Model) : ModelPort {
     } catch (e: CancellationException) {
       helper.stopResponse(model)
       throw e
+    } finally {
+      current = null
+    }
+  }
+
+  /**
+   * [ALTREX] Cloud models, called directly ([CloudApi.chat]) rather than through the chat helper:
+   * Forge needs the error itself (a 429 becomes a [RateLimitedException], retried by the engine)
+   * and a request it can abort (Stop or cancellation close the connection at once).
+   */
+  private suspend fun generateCloud(
+    cloud: CloudModelInstance,
+    context: Context,
+    system: String,
+    messages: List<AgentMsg>,
+    onChunk: (String) -> Unit,
+  ): String {
+    val key = CloudApi.getKey(context, cloud.provider) ?: throw IllegalStateException("Aucune clé ${cloud.provider.label} : ajoute-la dans Réglages → Modèles cloud.")
+    val json = LlamaHelper.chatRequest(listOf("system" to system) + messages.map { it.role to it.content }).removePrefix(LlamaHelper.CHAT_REQUEST_PREFIX)
+    val maxTokens = model.llmMaxToken.takeIf { it > 0 }?.coerceIn(256, 64_000) ?: 8192
+    val done = CompletableDeferred<String>()
+    val answer = StringBuilder()
+    val a = CloudApi.Abort()
+    current = done
+    partial = answer
+    abort = a
+    Thread {
+        try {
+          val text =
+            CloudApi.chat(
+              provider = cloud.provider,
+              modelId = cloud.modelId,
+              key = key,
+              messagesJson = json,
+              thinking = false,
+              maxTokens = maxTokens,
+              isCancelled = { a.aborted },
+              onText = { full ->
+                synchronized(answer) {
+                  if (!a.aborted && full.startsWith(answer) && full.length > answer.length) {
+                    val piece = full.substring(answer.length)
+                    answer.append(piece)
+                    onChunk(piece)
+                  }
+                }
+              },
+              abort = a,
+            )
+          done.complete(text)
+        } catch (e: CloudApi.RateLimited) {
+          done.completeExceptionally(RateLimitedException(e.message ?: "429", e.retryAfterMs, cloud.provider.label))
+        } catch (e: Throwable) {
+          done.completeExceptionally(
+            if (e is CloudApi.CloudException) e
+            else IllegalStateException("${cloud.provider.label} : réponse inattendue (${e.javaClass.simpleName}" + (e.message?.let { ": " + it.take(120) } ?: "") + ").")
+          )
+        }
+      }
+      .apply {
+        isDaemon = true
+        name = "forge-cloud"
+      }
+      .start()
+    return try {
+      done.await()
+    } catch (e: CancellationException) {
+      a.abort()
+      throw e
+    } finally {
+      current = null
+      abort = null
     }
   }
 
   override fun stop() {
-    model.runtimeHelper.stopResponse(model)
+    abort?.abort()
+    // The engine goes on at once with what was written; the runtime stops in its own time.
+    current?.let { d -> d.complete(partial?.let { synchronized(it) { it.toString() } }.orEmpty()) }
+    runCatching { model.runtimeHelper.stopResponse(model) }
   }
 }

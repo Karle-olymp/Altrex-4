@@ -48,7 +48,7 @@ class ForgeEngineTest {
 
     override suspend fun ensureReady(onProgress: (String) -> Unit): String? = null
 
-    override suspend fun run(command: String, timeoutMs: Long, onOutput: (String) -> Unit): ShellPort.Result {
+    override suspend fun run(command: String, wait: com.google.ai.edge.gallery.tools.CommandWait.Policy, onOutput: (String) -> Unit): ShellPort.Result {
       commands.add(command)
       return ShellPort.Result(0, "ok: $command", "/root/projets/demo", false)
     }

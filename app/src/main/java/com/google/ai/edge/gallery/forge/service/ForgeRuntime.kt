@@ -16,7 +16,10 @@ import com.google.ai.edge.gallery.forge.workspace.ProjectContext
 import com.google.ai.edge.gallery.terminal.LinuxEnv
 import com.google.ai.edge.gallery.tools.USER_REPLY_TIMEOUT_MS
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -117,7 +120,7 @@ class ForgeSessionController(
     }
 
   private fun buildEngine(m: Model) =
-    ForgeEngine(journal, RuntimeModelPort(m), workspace.paths(project), LinuxShellPort(appContext, project), interactions, context)
+    ForgeEngine(journal, RuntimeModelPort(m, appContext), workspace.paths(project), LinuxShellPort(appContext, project), interactions, context)
 
   private val _engine = MutableStateFlow(buildEngine(model))
   val engine: StateFlow<ForgeEngine> = _engine.asStateFlow()
@@ -133,27 +136,67 @@ class ForgeSessionController(
 
   fun setMode(mode: ForgeMode) = _engine.value.setMode(mode)
 
+  @Volatile private var turnJob: Job? = null
+  /** Number of the current turn: a stuck turn that ends late never closes the next one. */
+  @Volatile private var turnSeq = 0
+
   /** Sends [text] as the next turn (ignored while a turn runs). */
   fun send(text: String) {
     if (_running.value || text.isBlank()) return
     _running.value = true
     ForgeRuntime.turnStarted(appContext, this)
-    ForgeRuntime.scope.launch {
-      try {
-        _engine.value.runTurn(text.trim())
-      } finally {
-        _running.value = false
-        ForgeRuntime.turnEnded(appContext, this@ForgeSessionController)
+    val engine = _engine.value
+    val seq = synchronized(this) { ++turnSeq }
+    turnJob =
+      ForgeRuntime.scope.launch {
+        try {
+          engine.runTurn(text.trim())
+        } catch (e: CancellationException) {
+          // Stop: the engine has closed the turn in the journal.
+        } finally {
+          finishTurn(seq)
+        }
       }
-    }
   }
 
-  /** Stop: the answer being written stops, what waits for the user is refused. */
+  private fun finishTurn(seq: Int) {
+    synchronized(this) {
+      if (seq != turnSeq || !_running.value) return
+      _running.value = false
+    }
+    turnJob = null
+    clearPending()
+    ForgeRuntime.turnEnded(appContext, this@ForgeSessionController)
+  }
+
+  private fun clearPending() {
+    _pendingApproval.value = null
+    _pendingQuestion.value = null
+    _pendingPlan.value = null
+  }
+
+  /**
+   * Stop (the screen's button, `/arreter`, the notification): always answers within 2 s. The
+   * answer being written stops, what waits for the user is refused, the turn's coroutine is
+   * cancelled (a running command's process tree is killed with it), and if it is still not over
+   * after [STOP_GRACE_MS], the turn is closed anyway ([ForgeEngine.forceStop]).
+   */
   fun stop() {
-    _engine.value.requestStop()
+    val engine = _engine.value
+    engine.requestStop()
     _pendingApproval.value?.answer?.complete(ApprovalAnswer(ApprovalAnswer.Choice.ARRETER))
     _pendingQuestion.value?.answer?.complete(null)
     _pendingPlan.value?.answer?.complete(PlanReview(PlanReview.Outcome.REFUSE))
+    val job = turnJob ?: return
+    val seq = turnSeq
+    job.cancel(CancellationException("Arrêté par l'utilisateur."))
+    ForgeRuntime.scope.launch {
+      delay(STOP_GRACE_MS)
+      if (job.isActive && seq == turnSeq) {
+        engine.forceStop()
+        finishTurn(seq)
+      }
+    }
   }
 
   /** A note in the feed (a /doctor or /scan report); [forModel] adds it to the next request. */
@@ -167,6 +210,11 @@ class ForgeSessionController(
 
   val waitingForUser: Boolean
     get() = _pendingApproval.value != null || _pendingQuestion.value != null || _pendingPlan.value != null
+
+  companion object {
+    /** After Stop, how long the turn's coroutine has to end before the turn is closed anyway. */
+    const val STOP_GRACE_MS = 1_200L
+  }
 }
 
 /**

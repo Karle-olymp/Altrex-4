@@ -87,10 +87,10 @@ object ForgeToolSpecs {
       ),
       AgentToolSpec(
         BASH,
-        "Lance une commande shell (sh) dans le Linux d'Altrex (Alpine), depuis le dossier du projet. Le dossier courant et les variables exportées sont gardés d'une commande à l'autre. Pour un serveur ou une tâche longue, mets run_in_background à true puis lis la sortie avec BashOutput.",
+        "Lance une commande shell (sh) dans le Linux d'Altrex (Alpine), depuis le dossier du projet. Le dossier courant et les variables exportées sont gardés d'une commande à l'autre. Pour un serveur ou une tâche longue (installation, compilation), mets run_in_background à true puis lis la sortie avec BashOutput. Une commande restée trop longtemps sans sortie passe d'elle-même en arrière-plan (job_id dans le résultat).",
         listOf(
           AgentToolParam("command", "string", "La commande."),
-          AgentToolParam("timeout", "integer", "Secondes d'attente, 600 au plus (120 par défaut).", required = false),
+          AgentToolParam("timeout", "integer", "Secondes sans nouvelle sortie avant de passer la commande en arrière-plan, 600 au plus (120 par défaut, 300 pour une installation, 20 pour un serveur).", required = false),
           AgentToolParam("run_in_background", "boolean", "true pour un serveur ou une tâche longue : renvoie tout de suite un job_id.", required = false),
           AgentToolParam("description", "string", "Ce que fait la commande, en quelques mots.", required = false),
           AgentToolParam("justification", "string", "Seulement pour redemander une commande refusée : pourquoi elle est nécessaire.", required = false),

@@ -259,10 +259,7 @@ class RunCommandTool(private val context: Context) : ToolDefinition {
 
   companion object {
     /** Installs and builds that take minutes on a phone: they get the longest delay by default. */
-    private val SLOW =
-      Regex("""(^|[;&|]\s*)(altrex-setup|pkg\s+(install|upgrade)|apk\s+(add|upgrade)|npm\s+(i|install|ci)\b|pnpm\s|yarn\s|pip3?\s+install|cargo\s+(build|install)|go\s+(build|install)|make\b|cmake\b|git\s+clone)""")
-
-    internal fun isSlow(command: String): Boolean = SLOW.containsMatchIn(command)
+    internal fun isSlow(command: String): Boolean = CommandWait.isSlow(command)
 
     /** The older on/off switch, now "allow everything" ([AgentShell.Mode.ALLOW_ALL]). */
     fun isAlwaysAllowed(context: Context): Boolean = AgentShell.mode(context) == AgentShell.Mode.ALLOW_ALL

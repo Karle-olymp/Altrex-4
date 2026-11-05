@@ -275,6 +275,9 @@ object RemoteModelHelper : LlmModelHelper {
   /** Bumped by Stop: a request compares it with the value it started with. */
   private val stopGen = AtomicInteger(0)
 
+  /** [ALTREX] Cloud requests in flight: Stop closes their connections (a silent stream ends at once). */
+  private val aborts = java.util.concurrent.ConcurrentHashMap.newKeySet<CloudApi.Abort>()
+
   private lateinit var appContext: Context
 
   override fun initialize(
@@ -414,6 +417,7 @@ object RemoteModelHelper : LlmModelHelper {
 
   override fun stopResponse(model: Model) {
     stopGen.incrementAndGet()
+    for (a in aborts) a.abort()
   }
 
   /** [ALTREX] Same request and streaming as a Space, through the provider's API ([CloudApi]). */
@@ -449,6 +453,8 @@ object RemoteModelHelper : LlmModelHelper {
     val thinking = extraContext?.get("enable_thinking") == "true"
     val maxTokens = model.llmMaxToken.takeIf { it > 0 }?.coerceIn(256, 64_000) ?: 8192
     val myGen = stopGen.get()
+    val abort = CloudApi.Abort()
+    aborts.add(abort)
     scope.launch {
       var shown = ""
       fun show(text: String) {
@@ -467,6 +473,7 @@ object RemoteModelHelper : LlmModelHelper {
             maxTokens = maxTokens,
             isCancelled = { stopGen.get() != myGen },
             onText = ::show,
+            abort = abort,
           )
         if (stopGen.get() != myGen) {
           cleanUpListener()
@@ -490,6 +497,8 @@ object RemoteModelHelper : LlmModelHelper {
             )
           }
         }
+      } finally {
+        aborts.remove(abort)
       }
     }
   }

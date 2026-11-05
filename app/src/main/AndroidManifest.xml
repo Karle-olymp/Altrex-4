@@ -184,6 +184,11 @@
             android:foregroundServiceType="dataSync"
             android:exported="false" />
 
+        <!-- [ALTREX] « Arrêter » de la notification de Forge : un récepteur, toujours livré (un démarrage de service depuis l'arrière-plan peut être refusé). -->
+        <receiver
+            android:name="com.google.ai.edge.gallery.forge.service.ForgeStopReceiver"
+            android:exported="false" />
+
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"

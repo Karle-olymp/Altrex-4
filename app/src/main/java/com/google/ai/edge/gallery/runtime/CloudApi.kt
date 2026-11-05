@@ -111,6 +111,33 @@ object CloudApi {
 
   open class CloudException(message: String) : IOException(message)
 
+  /** [ALTREX] HTTP 429: too many requests. [retryAfterMs]: the wait the provider asked for, if it said. */
+  class RateLimited(message: String, val retryAfterMs: Long?) : CloudException(message)
+
+  /**
+   * [ALTREX] Stops a [chat] from another thread: its HTTP connection is closed, so a read blocked
+   * on a silent stream ends at once (the Stop button), instead of after the 10 min read timeout.
+   */
+  class Abort {
+    @Volatile var aborted = false
+      private set
+    private val conns = java.util.concurrent.CopyOnWriteArrayList<HttpURLConnection>()
+
+    internal fun attach(conn: HttpURLConnection) {
+      conns.add(conn)
+      if (aborted) runCatching { conn.disconnect() }
+    }
+
+    /** Callable from the main thread (Stop): closing a TLS socket writes, so it is done on a thread of its own. */
+    fun abort() {
+      aborted = true
+      if (conns.isEmpty()) return
+      Thread { for (c in conns) runCatching { c.disconnect() } }.apply { isDaemon = true; name = "altrex-abort" }.start()
+    }
+  }
+
+  private val currentAbort = ThreadLocal<Abort?>()
+
   // ---- Model list.
 
   /** Model ids the key can use. Network: call off the main thread. */
@@ -143,6 +170,25 @@ object CloudApi {
    * request once, and keeps it for the rest of the session.
    */
   fun chat(
+    provider: Provider,
+    modelId: String,
+    key: String,
+    messagesJson: String,
+    thinking: Boolean,
+    maxTokens: Int,
+    isCancelled: () -> Boolean,
+    onText: (String) -> Unit,
+    abort: Abort? = null,
+  ): String {
+    currentAbort.set(abort)
+    try {
+      return chatInner(provider, modelId, key, messagesJson, thinking, maxTokens, { isCancelled() || abort?.aborted == true }, onText)
+    } finally {
+      currentAbort.set(null)
+    }
+  }
+
+  private fun chatInner(
     provider: Provider,
     modelId: String,
     key: String,
@@ -314,7 +360,7 @@ object CloudApi {
         if (native != null && CloudTools.shouldRetryWithText(code, text)) {
           throw CloudTools.NativeToolsRejected(httpError(provider, code, text), CloudTools.mentionsTools(text))
         }
-        throw CloudException(httpError(provider, code, text))
+        throwHttp(conn, provider, code, text)
       }
       val stream = AnthropicStream(provider, native != null, onText)
       readSse(conn, isCancelled, stream::onEvent)
@@ -436,7 +482,7 @@ object CloudApi {
         if (native != null && CloudTools.shouldRetryWithText(code, text)) {
           throw CloudTools.NativeToolsRejected(httpError(provider, code, text), CloudTools.mentionsTools(text))
         }
-        throw CloudException(httpError(provider, code, text))
+        throwHttp(conn, provider, code, text)
       }
       val stream = OpenAiStream(provider, native != null, onText)
       readSse(conn, isCancelled) { _, data -> stream.onData(data) }
@@ -494,8 +540,18 @@ object CloudApi {
 
   // ---- HTTP.
 
+  /** An error answer as an exception; a 429 carries the wait the provider asked for. */
+  private fun throwHttp(conn: HttpURLConnection, provider: Provider, code: Int, text: String): Nothing {
+    if (code == 429) {
+      val wait = com.google.ai.edge.gallery.forge.engine.RateLimit.parseRetryAfter(conn.getHeaderField("Retry-After"), text)
+      throw RateLimited(httpError(provider, code, text), wait)
+    }
+    throw CloudException(httpError(provider, code, text))
+  }
+
   private fun open(url: String, provider: Provider, key: String, readTimeoutMs: Int): HttpURLConnection {
     val conn = URL(url).openConnection() as HttpURLConnection
+    currentAbort.get()?.attach(conn)
     conn.connectTimeout = 20_000
     conn.readTimeout = readTimeoutMs
     conn.instanceFollowRedirects = false

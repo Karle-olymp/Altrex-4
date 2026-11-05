@@ -127,7 +127,12 @@ class MemoryAndCommandsTest {
     for (spec in ForgeToolSpecs.specs) {
       assertTrue(spec.name, doc.contains("\"name\":\"${spec.name}\""))
       for (p in spec.params) assertTrue("${spec.name}.${p.name}", doc.contains("\"${p.name}\":{"))
+      // The descriptions too (version 1.1): the dataset copies them word for word.
+      assertTrue("${spec.name} : description", doc.contains(org.json.JSONObject.quote(spec.description).trim('"')))
+      for (p in spec.params) assertTrue("${spec.name}.${p.name} : description", doc.contains(org.json.JSONObject.quote(p.description).trim('"')))
     }
     assertTrue(doc.contains(ForgeCommands.INIT_PROMPT))
+    // The system prompt's rules, exactly.
+    for (line in com.google.ai.edge.gallery.forge.engine.ForgePrompts.INSTRUCTIONS.lines()) assertTrue(line, doc.contains(line))
   }
 }

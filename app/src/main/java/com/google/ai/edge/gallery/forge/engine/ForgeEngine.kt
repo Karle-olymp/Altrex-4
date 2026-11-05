@@ -19,7 +19,9 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.google.ai.edge.gallery.tools.CommandWait
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -81,10 +83,23 @@ class ForgeEngine(
 
   @Volatile private var stopRequested = false
 
+  /** The turn was closed by [forceStop] (its coroutine did not end in time): nothing more is written for it. */
+  @Volatile private var forced = false
+
+  /** The tool call running now (id, name), closed with a result if the turn is stopped during it. */
+  @Volatile private var openCall: Pair<String, String>? = null
+
+  private var turnStartedAt = 0L
+
+  private val _fileChanges = MutableStateFlow(0)
+  /** Bumped after each successful Write, Edit or Bash: the Aperçu reloads its page. */
+  val fileChanges: StateFlow<Int> = _fileChanges.asStateFlow()
+
   val sessionId: String
     get() = journal.id
 
   private fun append(e: ForgeEvent) {
+    if (forced && e !is ForgeEvent.TurnEnd) return
     journal.append(e)
     _state.value = SessionState.fold(journal.snapshot())
   }
@@ -102,10 +117,45 @@ class ForgeEngine(
     append(ForgeEvent.Note(_state.value.lastTurn, kind, text, forModel))
   }
 
-  /** The Stop button: the answer being written stops, the turn ends after the current tool. */
+  /**
+   * The Stop button: the answer being written stops and the turn ends. The caller also cancels the
+   * turn's coroutine: every wait (model, command, user) is cancellable, and a running command's
+   * process tree is killed.
+   */
   fun requestStop() {
     stopRequested = true
     model.stop()
+  }
+
+  /**
+   * Last resort, when the turn's coroutine did not end shortly after Stop: the turn is closed in
+   * the journal now (the open tool call gets a result), and whatever the stuck code does later is
+   * not written.
+   */
+  fun forceStop() {
+    synchronized(this) {
+      if (!_state.value.turnOpen) return
+      val turn = _state.value.lastTurn
+      closeOpenCall(turn)
+      end(turn, "stopped", "Arrêté par l'utilisateur.")
+      forced = true
+    }
+    _live.value = Live()
+  }
+
+  private fun closeOpenCall(turn: Int) {
+    val (id, name) = openCall ?: return
+    openCall = null
+    append(
+      ForgeEvent.ToolResult(
+        turn,
+        id,
+        name,
+        "error",
+        ToolOutcome.json("error" to "Arrêté par l'utilisateur pendant cet appel.", "status" to "error"),
+        "arrêté",
+      )
+    )
   }
 
   val isRunning: Boolean
@@ -114,6 +164,9 @@ class ForgeEngine(
   /** Runs one turn for [request]. Returns how it ended ("done", "stopped", "limit", "error", "blocked"). */
   suspend fun runTurn(request: String): String {
     stopRequested = false
+    forced = false
+    openCall = null
+    turnStartedAt = clock()
     val turn = _state.value.lastTurn + 1
     _live.value = Live(running = true)
     append(ForgeEvent.TurnStart(turn))
@@ -127,7 +180,10 @@ class ForgeEngine(
     return try {
       loop(turn)
     } catch (e: CancellationException) {
-      end(turn, "stopped", "Tour annulé.")
+      synchronized(this) {
+        closeOpenCall(turn)
+        end(turn, "stopped", if (stopRequested) "Arrêté par l'utilisateur." else "Tour annulé.")
+      }
       throw e
     } catch (e: Exception) {
       end(turn, "error", e.message ?: e.javaClass.simpleName)
@@ -137,7 +193,7 @@ class ForgeEngine(
   }
 
   private fun end(turn: Int, reason: String, detail: String = ""): String {
-    if (_state.value.turnOpen) append(ForgeEvent.TurnEnd(turn, reason, detail))
+    synchronized(this) { if (_state.value.turnOpen && !forced) append(ForgeEvent.TurnEnd(turn, reason, detail)) }
     return reason
   }
 
@@ -149,6 +205,7 @@ class ForgeEngine(
     var steps = 0
     var forceAnswer = false
     var nudgedEmpty = false
+    var nudgedTodos = false
     var callCounter = 0
     while (true) {
       if (stopRequested) return end(turn, "stopped", "Arrêté par l'utilisateur.")
@@ -171,29 +228,54 @@ class ForgeEngine(
       _contextRatio.value = promptChars.toFloat() / (model.historyBudgetChars.coerceAtLeast(1))
       val genStart = clock()
 
-      _live.value = _live.value.copy(text = "", thinking = "", tool = null, toolProgress = "", step = steps)
-      val splitter = StreamSplitter()
+      var splitter = StreamSplitter()
       val shown = StringBuilder()
       val thinking = StringBuilder()
-      val raw =
+      var attempt = 0
+      var raw = ""
+      while (true) {
+        _live.value = _live.value.copy(text = "", thinking = "", tool = null, toolProgress = "", step = steps)
+        splitter = StreamSplitter()
+        shown.setLength(0)
+        thinking.setLength(0)
         try {
-          model.generate(system, fitted) { chunk ->
-            synchronized(splitter) {
-              val out = splitter.feed(chunk)
-              shown.append(out.text)
-              thinking.append(out.thinking)
-              val secs = (clock() - genStart) / 1000f
-              val tps = if (secs > 0.5f) (shown.length + thinking.length) / 3f / secs else 0f
-              _live.value = _live.value.copy(text = shown.toString(), thinking = thinking.toString(), tokensPerSecond = tps)
+          raw =
+            model.generate(system, fitted) { chunk ->
+              synchronized(splitter) {
+                val out = splitter.feed(chunk)
+                shown.append(out.text)
+                thinking.append(out.thinking)
+                val secs = (clock() - genStart) / 1000f
+                val tps = if (secs > 0.5f) (shown.length + thinking.length) / 3f / secs else 0f
+                _live.value = _live.value.copy(text = shown.toString(), thinking = thinking.toString(), tokensPerSecond = tps)
+              }
             }
-          }
+          break
         } catch (e: CancellationException) {
           throw e
+        } catch (e: RateLimitedException) {
+          if (stopRequested) return end(turn, "stopped", "Arrêté par l'utilisateur.")
+          attempt++
+          val wait = RateLimit.delayMs(e.retryAfterMs, attempt)
+          if (attempt > RateLimit.MAX_RETRIES || wait == null) {
+            append(ForgeEvent.Note(turn, "erreur", RateLimit.giveUp(e.provider, e.retryAfterMs), forModel = false))
+            return end(turn, "error", e.message ?: "Limite du fournisseur.")
+          }
+          append(ForgeEvent.Note(turn, "attente", RateLimit.waiting(e.provider, wait, attempt), forModel = false))
+          _live.value = _live.value.copy(toolProgress = "Nouvel essai dans ${(wait + 999) / 1000} s…")
+          // Small steps: Stop answers at once even if the coroutine is not cancelled.
+          val until = clock() + wait
+          while (clock() < until) {
+            if (stopRequested) return end(turn, "stopped", "Arrêté par l'utilisateur.")
+            delay(minOf(250L, (until - clock()).coerceAtLeast(1L)))
+          }
+          if (stopRequested) return end(turn, "stopped", "Arrêté par l'utilisateur.")
         } catch (e: Exception) {
           if (stopRequested) return end(turn, "stopped", "Arrêté par l'utilisateur.")
           append(ForgeEvent.Note(turn, "erreur", "Erreur du modèle : ${e.message ?: e.javaClass.simpleName}", forModel = false))
           return end(turn, "error", e.message ?: "Erreur du modèle.")
         }
+      }
       synchronized(splitter) {
         val out = splitter.finish()
         shown.append(out.text)
@@ -217,6 +299,13 @@ class ForgeEngine(
           append(ForgeEvent.Note(turn, "vide", ForgePrompts.EMPTY_ANSWER, forModel = true, shown = false))
           continue
         }
+        // The agent is done, but its task list says otherwise: once per turn, a reminder.
+        val openTodos = _state.value.todos.filter { it.status != "completed" }
+        if (openTodos.isNotEmpty() && !nudgedTodos && !forceAnswer && !stopRequested) {
+          nudgedTodos = true
+          append(ForgeEvent.Note(turn, "taches", ForgePrompts.todosOpen(openTodos.map { it.content }), forModel = true, shown = false))
+          continue
+        }
         return end(turn, if (forceAnswer) "limit" else "done", if (forceAnswer) "Limite de ${limits.maxSteps} étapes atteinte." else "")
       }
 
@@ -226,6 +315,7 @@ class ForgeEngine(
         val named = call.copy(name = name)
         val id = "c$turn-${++callCounter}"
         append(ForgeEvent.ToolCall(turn, id, name, call.arguments.toString()))
+        openCall = id to name
         _live.value = _live.value.copy(tool = name, toolProgress = "")
         val check = guard.beforeCall(named)
         val outcome =
@@ -250,7 +340,11 @@ class ForgeEngine(
           ToolOutcome.Status.REFUSED -> "refused"
         }
         val modelText = clip(outcome.modelText)
+        openCall = null
         append(ForgeEvent.ToolResult(turn, id, name, status, modelText, outcome.summary, outcome.detail.take(MAX_DETAIL), outcome.added, outcome.removed, outcome.path))
+        if (outcome.status == ToolOutcome.Status.OK && (name == ForgeToolSpecs.WRITE || name == ForgeToolSpecs.EDIT || name == ForgeToolSpecs.BASH)) {
+          _fileChanges.value++
+        }
         if (outcome.status == ToolOutcome.Status.OK) {
           outcome.path?.let { p -> context.onPathTouched(p)?.let { append(ForgeEvent.Note(turn, "memoire", it, forModel = true, shown = false)) } }
         }
@@ -439,20 +533,21 @@ class ForgeEngine(
         summary = "en arrière-plan ($job)",
       )
     }
-    val timeoutS = (ForgeToolSpecs.int(a, "timeout") ?: DEFAULT_TIMEOUT_S).coerceIn(1, MAX_TIMEOUT_S)
+    val remaining = limits.maxDurationMs - (clock() - turnStartedAt)
+    val wait = CommandWait.policy(command, ForgeToolSpecs.int(a, "timeout"), capMs = remaining)
     var lastShown = 0L
     val partial = StringBuilder()
     val r =
-      shell.run(command, timeoutS * 1000L) { chunk ->
+      shell.run(command, wait) { chunk ->
         synchronized(partial) {
           partial.append(chunk)
           if (partial.length > 4_000) partial.delete(0, partial.length - 2_000)
         }
         val now = clock()
-        if (now - lastShown > 1_000) {
+        if (now - lastShown > 500) {
           lastShown = now
-          val line = synchronized(partial) { partial.toString() }.trimEnd().substringAfterLast('\n').take(80)
-          if (line.isNotBlank() && !line.startsWith("\u001E")) _live.value = _live.value.copy(toolProgress = line)
+          val lines = progressLines(synchronized(partial) { partial.toString() })
+          if (lines.isNotBlank()) _live.value = _live.value.copy(toolProgress = lines)
         }
       }
     val output = SecretRedactor.redact(r.output)
@@ -465,6 +560,33 @@ class ForgeEngine(
       } else {
         output
       }
+    val lockHint =
+      if (output.contains("Unable to lock database") || output.contains("unable to lock database")) {
+        "Une autre commande apk tient encore le verrou de la base des paquets (souvent une installation passée en arrière-plan) : " +
+          "attends-la avec BashOutput, ou arrête-la avec KillShell, puis relance. Ne supprime pas le fichier de verrou."
+      } else {
+        null
+      }
+    r.jobId?.let { job ->
+      val why =
+        if (r.detached == "cap") "Toujours en cours après ${wait.capMs / 60_000} min"
+        else "Toujours en cours, sans nouvelle sortie depuis ${wait.idleMs / 1000} s"
+      return ToolOutcome(
+        ToolOutcome.Status.OK,
+        ToolOutcome.json(
+          "still_running" to true,
+          "job_id" to job,
+          "output" to shown.ifEmpty { "(aucune sortie pour l'instant)" },
+          "full_output" to spilled,
+          "note" to
+            "$why : la commande n'est pas arrêtée, elle continue en arrière-plan ($job). Suis-la avec BashOutput(\"$job\") " +
+              "jusqu'à state=finished et vérifie son exit_code ; arrête-la avec KillShell(\"$job\"). Ne la relance pas.",
+          "status" to "ok",
+        ),
+        summary = "en arrière-plan ($job)",
+        detail = output.takeLast(4_000),
+      )
+    }
     val ok = r.exitCode == 0 && !r.timedOut
     return ToolOutcome(
       if (ok) ToolOutcome.Status.OK else ToolOutcome.Status.ERROR,
@@ -474,9 +596,10 @@ class ForgeEngine(
         "output" to shown.ifEmpty { "(aucune sortie)" },
         "full_output" to spilled,
         "cwd" to r.cwd,
+        "hint" to lockHint,
         "note" to
           listOfNotNull(
-            if (r.timedOut) "Arrêtée après $timeoutS s. Pour un travail long, utilise run_in_background puis BashOutput." else null,
+            if (r.timedOut) "Arrêtée : délai dépassé. Pour un travail long, utilise run_in_background puis BashOutput." else null,
             spilled?.let { "Sortie complète dans $it : lis-la avec Read (offset, limit) ou cherche dedans avec Grep." },
           ).joinToString(" ").ifEmpty { null },
         "status" to if (ok) "ok" else "error",
@@ -485,6 +608,14 @@ class ForgeEngine(
       detail = output.takeLast(4_000),
     )
   }
+
+  /** The last lines of a running command, for its card (4 at most, each cut). */
+  private fun progressLines(text: String): String =
+    text.replace("\r\n", "\n").split('\n', '\r')
+      .map { it.trimEnd() }
+      .filter { it.isNotBlank() && !it.startsWith("\u001E") }
+      .takeLast(PROGRESS_LINES)
+      .joinToString("\n") { it.take(120) }
 
   /** A long output, kept whole in .altrex/sorties/ (ignored by Git) for Read and Grep. */
   private fun spill(id: String, output: String): String? =
@@ -558,8 +689,9 @@ class ForgeEngine(
 
   companion object {
     const val MAX_CALLS_PER_STEP = 4
-    const val DEFAULT_TIMEOUT_S = 120
-    const val MAX_TIMEOUT_S = 600
+    const val DEFAULT_TIMEOUT_S = CommandWait.DEFAULT_IDLE_S
+    const val MAX_TIMEOUT_S = CommandWait.MAX_IDLE_S
+    private const val PROGRESS_LINES = 4
     private const val MAX_DETAIL = 6_000
   }
 }

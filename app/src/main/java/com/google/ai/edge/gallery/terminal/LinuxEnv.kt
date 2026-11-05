@@ -9,10 +9,14 @@ import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
-import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPInputStream
+import com.google.ai.edge.gallery.tools.ProcessTree
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import java.util.concurrent.TimeUnit
 
 private const val TAG = "AGLinuxEnv"
 
@@ -140,17 +144,38 @@ break-system-packages = true
     }
 
     /**
-     * Stops PRoot and what it runs. A plain kill of PRoot leaves its program alive (an apk still
+     * Stops PRoot and what it runs. A plain kill of PRoot left its program alive (an apk still
      * installing kept the package database locked, and every later apk failed with "Unable to lock
-     * database"); on SIGTERM PRoot kills everything it traces first, so ask nicely, then insist.
+     * database"), and its children kept the output pipe open. The whole tree is stopped now
+     * ([ProcessTree.kill]: SIGTERM, then SIGKILL after a short grace, pipes closed), without
+     * blocking the caller.
      */
     fun stopTree(process: Process) {
-      process.destroy()
-      try {
-        if (!process.waitFor(3, TimeUnit.SECONDS)) process.destroyForcibly()
-      } catch (e: InterruptedException) {
-        process.destroyForcibly()
+      ProcessTree.kill(process)
+    }
+
+    /** Processes started by [start] and not yet ended (their trees are never "strays"). */
+    private val live = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Process, Boolean>())
+
+    internal fun livePids(): Set<Int> {
+      live.removeAll { !it.isAlive }
+      return live.mapNotNull { ProcessTree.pidOf(it) }.toSet()
+    }
+
+    /** Environment variable every program of the model's Linux gets (see [ProcessTree.strays]). */
+    const val MARKER_VAR = "ALTREX_ENV"
+
+    /**
+     * Kills package managers of environment [envName] left running by a command that was stopped
+     * (their tracer gone): the apk database lock is theirs. Returns how many were killed.
+     */
+    fun reapStrays(envName: String, programs: Set<String> = setOf("apk")): Int {
+      val pids = runCatching { ProcessTree.strays("$MARKER_VAR=$envName", programs, livePids()) }.getOrDefault(emptyList())
+      if (pids.isNotEmpty()) {
+        Log.w(TAG, "[$envName] killing ${pids.size} stray process(es) $programs")
+        ProcessTree.signal(pids, ProcessTree.SIGKILL)
       }
+      return pids.size
     }
 
     fun of(context: Context, name: String): LinuxEnv = LinuxEnv(context.applicationContext, name)
@@ -270,6 +295,7 @@ break-system-packages = true
             // The program ended without reading everything.
           }
         }
+        .apply { isDaemon = true }
         .start()
       val out = StringBuilder()
       val reader = Thread {
@@ -288,10 +314,27 @@ break-system-packages = true
           // Process killed.
         }
       }
+      reader.isDaemon = true
       reader.start()
-      val finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
-      if (!finished) stopTree(process)
-      reader.join(2_000)
+      // Waits by short steps so that a cancelled coroutine (the Stop button) ends at once: the
+      // process tree is killed on the way out, never waited for here.
+      val deadline = System.currentTimeMillis() + timeoutMs
+      var finished = false
+      try {
+        while (true) {
+          if (process.waitFor(100, TimeUnit.MILLISECONDS)) {
+            finished = true
+            break
+          }
+          currentCoroutineContext().ensureActive()
+          if (System.currentTimeMillis() >= deadline) break
+        }
+      } catch (e: CancellationException) {
+        stopTree(process)
+        throw e
+      }
+      if (!finished) ProcessTree.killAndWait(process)
+      reader.join(if (finished) 2_000 else 500)
       val text = synchronized(out) { out.toString() }
       CommandResult(
         exitCode = if (finished) process.exitValue() else -1,
@@ -328,6 +371,7 @@ break-system-packages = true
         "TERM" to "xterm-256color",
         "LANG" to "C.UTF-8",
         "TMPDIR" to "/tmp",
+        MARKER_VAR to name,
       )
     return Launch(proot.absolutePath, args, env)
   }
@@ -369,7 +413,7 @@ break-system-packages = true
       putAll(l.env)
     }
     Log.d(TAG, "[$name] start ${argv.firstOrNull()}")
-    return pb.start()
+    return ProcessTree.startTracked(pb).also { live.add(it) }
   }
 
   private fun download(url: String, target: File) {
