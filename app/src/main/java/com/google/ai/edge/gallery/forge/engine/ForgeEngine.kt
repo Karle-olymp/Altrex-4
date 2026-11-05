@@ -54,7 +54,13 @@ class ForgeEngine(
     val tool: String? = null,
     val toolProgress: String = "",
     val step: Int = 0,
+    /** Speed of the answer being written (3 characters ≈ 1 token), for local models. */
+    val tokensPerSecond: Float = 0f,
   )
+
+  private val _contextRatio = MutableStateFlow(0f)
+  /** Share of the model's context used by the last request (status line). */
+  val contextRatio: StateFlow<Float> = _contextRatio.asStateFlow()
 
   private val tracker = com.google.ai.edge.gallery.forge.tools.FileTracker()
   private val files = FileTools(paths, tracker)
@@ -160,7 +166,10 @@ class ForgeEngine(
       val messages = SessionState.modelMessages(journal.snapshot(), turn)
       val requestIndex = requestIndex(messages, turn)
       val fitted = AgentContextFitter.fit(messages, requestIndex, (model.historyBudgetChars - system.length).coerceAtLeast(2_000))
-      usedChars += system.length + fitted.sumOf { it.content.length }
+      val promptChars = system.length + fitted.sumOf { it.content.length }
+      usedChars += promptChars
+      _contextRatio.value = promptChars.toFloat() / (model.historyBudgetChars.coerceAtLeast(1))
+      val genStart = clock()
 
       _live.value = _live.value.copy(text = "", thinking = "", tool = null, toolProgress = "", step = steps)
       val splitter = StreamSplitter()
@@ -173,7 +182,9 @@ class ForgeEngine(
               val out = splitter.feed(chunk)
               shown.append(out.text)
               thinking.append(out.thinking)
-              _live.value = _live.value.copy(text = shown.toString(), thinking = thinking.toString())
+              val secs = (clock() - genStart) / 1000f
+              val tps = if (secs > 0.5f) (shown.length + thinking.length) / 3f / secs else 0f
+              _live.value = _live.value.copy(text = shown.toString(), thinking = thinking.toString(), tokensPerSecond = tps)
             }
           }
         } catch (e: CancellationException) {

@@ -157,7 +157,7 @@ object ForgeToolSpecs {
 
   /** Text that may be empty (new_string, content). */
   fun text(args: JSONObject, vararg names: String): String? {
-    for (n in names) if (args.has(n) && args.opt(n) != JSONObject.NULL) return args.opt(n).toString()
+    for (n in names) if (args.has(n) && args.opt(n) != JSONObject.NULL) return args.opt(n)?.toString()
     return null
   }
 

@@ -1,39 +1,32 @@
 package com.google.ai.edge.gallery.ui.security
 
 import android.content.Context
-import android.net.Uri
-import androidx.documentfile.provider.DocumentFile
-import com.google.ai.edge.gallery.ui.llmsingleturn.FileActions
-import com.google.ai.edge.gallery.ui.llmsingleturn.ProjectContextBuilder
-import com.google.ai.edge.gallery.ui.llmsingleturn.ProjectFolderManager
-import com.google.ai.edge.gallery.ui.llmsingleturn.ToolOutcome
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
-import java.util.zip.ZipInputStream
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Client of the SecurCode API v1 (POST /api-scan). Reads a folder, a .zip or a single file from the
- * project folder, sends the text files, and condenses the report so that a small model can use it.
+ * Client of the SecurCode API v1 (POST /api-scan). Reads a folder, a .zip or a single file of a
+ * Forge project, sends the text files, and condenses the report. [ALTREX] Forge's `/scan`: the
+ * app shows the report itself (no model in between), after the user's consent for the project.
  */
 object SecurCodeClient {
   private const val API_URL = "https://hpyojztsldlyeqjrudbs.supabase.co/functions/v1/api-scan"
   private const val MAX_FILES = 400
   private const val MAX_FILE_BYTES = 300_000
   private const val MAX_TOTAL_BYTES = 4_000_000
-  private const val MAX_ENTRIES = 5_000
   private const val MAX_DEPTH = 10
   private const val PAGE_SIZE = 10
 
-  // true: the app shows the report itself and ends the turn (fast, no hallucination).
-  // false: the report goes back to the model, which writes its own summary (slower).
-  private const val DIRECT_REPORT = true
+  /** What the screen shows: the report, or why there is none. */
+  data class ScanOutcome(val text: String, val ok: Boolean)
 
   private val SKIP_PARTS = listOf("node_modules/", ".git/", "dist/")
   private val BINARY_EXT =
@@ -53,11 +46,7 @@ object SecurCodeClient {
 
   @Volatile private var cache: Cached? = null
 
-  private fun fail(message: String, log: String) = ToolOutcome("Erreur : $message", "✗ $log")
-
-  /** Error the model cannot fix itself: shown to the user as is, without another generation. */
-  private fun failEnd(message: String, userLog: String) =
-    ToolOutcome("Erreur : $message", userLog, endTurn = true)
+  private fun fail(message: String) = ScanOutcome("✗ $message", ok = false)
 
   private fun addFile(input: ScanInput, path: String, bytes: ByteArray) {
     if (input.files.size >= MAX_FILES || input.totalBytes + bytes.size > MAX_TOTAL_BYTES) {
@@ -105,71 +94,24 @@ object SecurCodeClient {
     return out.toByteArray()
   }
 
-  private fun resolve(root: DocumentFile, path: String): DocumentFile? {
-    var cur: DocumentFile = root
-    if (path.isEmpty()) return cur
-    for (seg in path.split('/')) {
-      cur = cur.findFile(seg) ?: return null
-    }
-    return cur
-  }
-
-  private fun collectDir(
-    context: Context,
-    dir: DocumentFile,
-    prefix: String,
-    depth: Int,
-    input: ScanInput,
-  ) {
+  private fun collectDir(dir: File, prefix: String, depth: Int, input: ScanInput) {
     if (depth > MAX_DEPTH) {
       input.truncated = true
       return
     }
-    for (f in dir.listFiles()) {
+    for (f in dir.listFiles()?.sortedBy { it.name }.orEmpty()) {
       if (input.files.size >= MAX_FILES || input.totalBytes >= MAX_TOTAL_BYTES) {
         input.truncated = true
         return
       }
-      val name = f.name ?: continue
-      val rel = if (prefix.isEmpty()) name else "$prefix/$name"
+      // A link is not followed: it could lead out of the project.
+      if (java.nio.file.Files.isSymbolicLink(f.toPath())) continue
+      val rel = if (prefix.isEmpty()) f.name else "$prefix/${f.name}"
       if (f.isDirectory) {
-        if (keep("$rel/")) collectDir(context, f, rel, depth + 1, input)
+        if (keep("$rel/") && f.name != ".altrex") collectDir(f, rel, depth + 1, input)
       } else if (f.isFile && keep(rel)) {
-        val bytes =
-          try {
-            context.contentResolver.openInputStream(f.uri)?.use { readCapped(it, MAX_FILE_BYTES) }
-          } catch (e: Exception) {
-            null
-          }
+        val bytes = runCatching { f.inputStream().use { readCapped(it, MAX_FILE_BYTES) } }.getOrNull()
         if (bytes == null) input.skipped++ else addFile(input, rel, bytes)
-      }
-    }
-  }
-
-  // The zip is read in memory only: nothing is extracted to disk.
-  private fun collectZip(context: Context, uri: Uri, input: ScanInput) {
-    context.contentResolver.openInputStream(uri)?.use { raw ->
-      ZipInputStream(raw.buffered()).use { zin ->
-        var count = 0
-        var entry = zin.nextEntry
-        while (entry != null) {
-          count++
-          if (count > MAX_ENTRIES || input.files.size >= MAX_FILES) {
-            input.truncated = true
-            break
-          }
-          val name = entry.name.replace('\\', '/')
-          if (!entry.isDirectory) {
-            val safe = !name.startsWith("/") && name.split('/').none { it == ".." }
-            if (!safe) {
-              input.skipped++
-            } else if (keep(name)) {
-              val bytes = readCapped(zin, MAX_FILE_BYTES)
-              if (bytes == null) input.skipped++ else addFile(input, name, bytes)
-            }
-          }
-          entry = zin.nextEntry
-        }
       }
     }
   }
@@ -182,18 +124,11 @@ object SecurCodeClient {
       else -> 3
     }
 
-  private fun pageOutcome(c: Cached, page: Int): ToolOutcome {
+  /** Page [page] of the cached report, as the user reads it. */
+  private fun pageOutcome(c: Cached, page: Int): ScanOutcome {
     val from = (page - 1) * PAGE_SIZE
-    // A clean scan: show the score and say so (this is not "no more pages").
-    if (c.vulns.isEmpty()) {
-      val clean = c.header + "\n\nAucune faille détectée."
-      val log = if (DIRECT_REPORT) "🛡 $clean" else "🛡 SecurCode : aucune faille détectée"
-      return ToolOutcome(clean, log, endTurn = DIRECT_REPORT)
-    }
-    if (from >= c.vulns.size) {
-      val text = "Il n'y a plus de failles à afficher (total : ${c.vulns.size})."
-      return ToolOutcome(text, "🛡 SecurCode : $text", endTurn = DIRECT_REPORT)
-    }
+    if (c.vulns.isEmpty()) return ScanOutcome("🛡 " + c.header + "\n\nAucune faille détectée.", ok = true)
+    if (from >= c.vulns.size) return ScanOutcome("Il n'y a plus de failles à afficher (total : ${c.vulns.size}).", ok = true)
     val items = c.vulns.subList(from, minOf(from + PAGE_SIZE, c.vulns.size))
     val body = StringBuilder()
     items.forEachIndexed { i, v ->
@@ -211,103 +146,45 @@ object SecurCodeClient {
       body.append("\n")
     }
     val remaining = c.vulns.size - (from + items.size)
-    val range = "Failles ${from + 1} à ${from + items.size} sur ${c.vulns.size} :\n"
-    val caveat = "Les failles XSS et AI_DEEP sont des pistes à vérifier, pas des certitudes."
-
-    // Text for the model.
-    val forModel = StringBuilder()
-    forModel.append(c.header).append("\n\n").append(range).append(body)
-    if (remaining > 0) {
-      forModel.append("\nIl reste $remaining failles : rappelle securcode_scan avec la même cible et page=")
-      forModel.append(page + 1).append(" (sans refaire de scan).")
-    }
-    forModel.append("\n").append(caveat)
-
-    // Text for the user: the app's own, exact rendering of the report.
-    val forUser = StringBuilder()
-    forUser.append("🛡 ").append(c.header).append("\n\n")
-    forUser.append(range).append(body)
-    if (remaining > 0) {
-      forUser.append("\nIl reste $remaining failles : écris « page ${page + 1} » pour la suite.")
-    }
-    forUser.append("\n").append(caveat)
-    val log =
-      if (DIRECT_REPORT) forUser.toString().trimEnd()
-      else "🛡 SecurCode : failles ${from + 1}–${from + items.size} / ${c.vulns.size}"
-    return ToolOutcome(forModel.toString(), log, endTurn = DIRECT_REPORT)
+    val out = StringBuilder()
+    out.append("🛡 ").append(c.header).append("\n\n")
+    out.append("Failles ${from + 1} à ${from + items.size} sur ${c.vulns.size} :\n").append(body)
+    if (remaining > 0) out.append("\nIl reste $remaining failles : tape « /scan ${page + 1} » pour la suite.")
+    out.append("\nLes failles XSS et AI_DEEP sont des pistes à vérifier, pas des certitudes.")
+    return ScanOutcome(out.toString().trimEnd(), ok = true)
   }
 
-  fun scan(context: Context, args: JSONObject): ToolOutcome {
-    val raw = args.optString("path", ".")
-    val page = args.optInt("page", 1).coerceAtLeast(1)
-    val rel =
-      FileActions.normalizeDir(raw) ?: return fail("chemin invalide : $raw", "securcode_scan : chemin invalide")
-    val root =
-      ProjectFolderManager.getSavedProjectFolder(context)
-        ?: return failEnd(
-          "aucun dossier de projet n'est choisi. L'utilisateur doit en choisir un.",
-          "✗ Aucun dossier de projet choisi : utilise « Select » en haut de l'écran.",
-        )
-    val projectId = root.uri.toString()
-    val cacheKey = "$projectId|$rel"
-
-    // Next pages of the last scan: served from memory, no new API call.
+  /**
+   * Scans the Forge project in [root] ([projectId] keys the user's consent, [label] names it).
+   * Page 2 and after come from the last report, without a new request.
+   */
+  fun scanProject(context: Context, root: File, projectId: String, label: String, page: Int = 1): ScanOutcome {
+    val cacheKey = projectId
     if (page > 1) {
       val c = cache
-      return if (c != null && c.key == cacheKey) {
-        pageOutcome(c, page)
-      } else {
-        fail(
-          "aucun scan récent pour cette cible : appelle d'abord securcode_scan sans page.",
-          "securcode_scan : aucun scan en mémoire",
-        )
-      }
+      return if (c != null && c.key == cacheKey) pageOutcome(c, page) else fail("aucun scan récent de ce projet : lance d'abord /scan.")
     }
-
     val key = SecurCodeSettings.getApiKey(context)
     if (key == null) {
       SecurCodeSettings.keyDialogRequest.value = true
-      return failEnd(
-        "aucune clé API SecurCode n'est enregistrée.",
-        "🔑 Clé API SecurCode requise : saisis-la dans la fenêtre, puis renvoie ta demande.",
-      )
+      return fail("Clé API SecurCode requise : saisis-la dans la fenêtre, puis relance /scan.")
     }
     if (!SecurCodeSettings.isConsented(context, projectId)) {
-      SecurCodeSettings.pendingConsent.value = ConsentRequest(projectId, root.name ?: "projet")
-      return failEnd(
-        "l'envoi de ce projet à SecurCode n'est pas autorisé.",
-        "🔒 Autorisation d'envoi requise : réponds dans la fenêtre, puis renvoie ta demande.",
-      )
+      SecurCodeSettings.pendingConsent.value = ConsentRequest(projectId, label)
+      return fail("Autorisation d'envoi requise : réponds dans la fenêtre, puis relance /scan.")
     }
-
-    val target =
-      resolve(root, rel)
-        ?: ProjectContextBuilder.findByName(context, raw.substringAfterLast('/'))?.let {
-          resolve(root, it)
-        }
-        ?: return fail("introuvable : $raw", "securcode_scan : introuvable : $raw")
-
+    if (!root.isDirectory) return fail("dossier du projet introuvable.")
     val input = ScanInput()
     try {
-      val targetName = target.name ?: ""
-      if (target.isDirectory) {
-        collectDir(context, target, "", 0, input)
-      } else if (target.isFile && targetName.endsWith(".zip", ignoreCase = true)) {
-        collectZip(context, target.uri, input)
-      } else if (target.isFile) {
-        val bytes =
-          context.contentResolver.openInputStream(target.uri)?.use { readCapped(it, MAX_FILE_BYTES) }
-        if (bytes == null) input.skipped++ else addFile(input, if (rel.isEmpty()) targetName else rel, bytes)
-      } else {
-        return fail("« $raw » n'est ni un dossier, ni un zip, ni un fichier.", "securcode_scan : cible invalide")
-      }
+      collectDir(root, "", 0, input)
     } catch (e: Exception) {
-      return fail("lecture impossible : ${e.message}", "securcode_scan : lecture impossible")
+      return fail("lecture impossible : ${e.message}")
     }
-    if (input.files.isEmpty()) {
-      return fail("aucun fichier texte exploitable trouvé.", "securcode_scan : aucun fichier texte")
-    }
+    if (input.files.isEmpty()) return fail("aucun fichier texte exploitable trouvé.")
+    return send(key, input, cacheKey, label)
+  }
 
+  private fun send(key: String, input: ScanInput, cacheKey: String, raw: String): ScanOutcome {
     val filesJson = JSONArray()
     for ((p, c) in input.files) {
       filesJson.put(JSONObject().put("path", p).put("content", c))
@@ -329,10 +206,7 @@ object SecurCodeClient {
       val stream = if (code in 200..299) conn.inputStream else conn.errorStream
       text = stream?.use { it.bufferedReader().readText() } ?: ""
     } catch (e: IOException) {
-      return failEnd(
-        "réseau indisponible ou délai dépassé (${e.message}).",
-        "✗ SecurCode injoignable (réseau ou délai dépassé) : vérifie ta connexion et réessaie.",
-      )
+      return fail("SecurCode injoignable (réseau ou délai dépassé) : vérifie ta connexion et réessaie.")
     } finally {
       conn.disconnect()
     }
@@ -347,18 +221,11 @@ object SecurCodeClient {
       return when (code) {
         401 -> {
           SecurCodeSettings.keyDialogRequest.value = true
-          failEnd(
-            "clé API SecurCode invalide ou révoquée.",
-            "✗ Clé SecurCode invalide ou révoquée : remplace-la dans la fenêtre, puis renvoie ta demande.",
-          )
+          fail("Clé SecurCode invalide ou révoquée : remplace-la dans la fenêtre, puis relance /scan.")
         }
-        429 ->
-          failEnd(
-            "quota quotidien SecurCode atteint (réinitialisé à minuit UTC).",
-            "✗ Quota quotidien SecurCode atteint (20 analyses par jour) : réessaie demain.",
-          )
-        400 -> fail("requête refusée par SecurCode : $apiMessage", "✗ SecurCode : requête refusée")
-        else -> fail("erreur SecurCode ($code) $apiMessage".trim(), "✗ SecurCode : erreur $code")
+        429 -> fail("Quota quotidien SecurCode atteint (20 analyses par jour) : réessaie demain.")
+        400 -> fail("requête refusée par SecurCode : $apiMessage")
+        else -> fail("erreur SecurCode ($code) $apiMessage".trim())
       }
     }
 
@@ -366,7 +233,7 @@ object SecurCodeClient {
       try {
         JSONObject(text)
       } catch (e: Exception) {
-        return fail("réponse SecurCode illisible.", "✗ SecurCode : réponse illisible")
+        return fail("réponse SecurCode illisible.")
       }
     val summary = report.optJSONObject("summary") ?: JSONObject()
     val vulnArray = report.optJSONArray("vulnerabilities") ?: JSONArray()
@@ -394,12 +261,6 @@ object SecurCodeClient {
     val c = Cached(cacheKey, sorted, header)
     cache = c
 
-    val outcome = pageOutcome(c, 1)
-    if (DIRECT_REPORT) return outcome
-    val log =
-      "🛡 SecurCode : score ${if (score >= 0) score else "?"}/100 — $counts" +
-        (if (quotaText.isNotEmpty()) " ($quotaText)" else "") +
-        (if (input.truncated) " ⚠ projet tronqué" else "")
-    return ToolOutcome(outcome.result, log)
+    return pageOutcome(c, 1)
   }
 }

@@ -515,11 +515,11 @@
   <!-- Task Labels & Descriptions -->
   <!-- [ALTREX] The app's own spaces: French in the default locale too. -->
   <string name="task_label_ai_chat" translatable="false">Discuter</string>
-  <string name="task_label_prompt_lab" translatable="false">Code</string>
+  <string name="task_label_prompt_lab" translatable="false">Forge</string>
   <string name="task_desc_ai_chat" translatable="false">Discuter avec un modèle qui tourne sur ton téléphone</string>
   <string name="task_short_desc_ai_chat" translatable="false">Chat avec un modèle local</string>
-  <string name="task_desc_prompt_lab" translatable="false">Écris, explique et corrige du code avec un modèle local</string>
-  <string name="task_short_desc_prompt_lab" translatable="false">Écrire et corriger du code</string>
+  <string name="task_desc_prompt_lab" translatable="false">Altrex Forge : un agent de programmation qui lit, écrit, lance et vérifie, dans tes projets</string>
+  <string name="task_short_desc_prompt_lab" translatable="false">Concevoir et construire des projets</string>
 
 
 

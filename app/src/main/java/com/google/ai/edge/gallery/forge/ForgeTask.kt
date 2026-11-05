@@ -1,20 +1,4 @@
-/*
- * Copyright 2025 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-package com.google.ai.edge.gallery.ui.llmsingleturn
+package com.google.ai.edge.gallery.forge
 
 import android.content.Context
 import androidx.compose.material.icons.Icons
@@ -27,6 +11,7 @@ import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.Category
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.Task
+import com.google.ai.edge.gallery.forge.ui.ForgeScreen
 import com.google.ai.edge.gallery.runtime.runtimeHelper
 import com.google.ai.edge.litertlm.Contents
 import dagger.Module
@@ -38,8 +23,12 @@ import dagger.multibindings.IntoSet
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 
-class LlmSingleTurnTask @Inject constructor(@ApplicationContext private val context: Context) :
-  CustomTask {
+/**
+ * [ALTREX] Altrex Forge, in the place of the former Code screen (same task id, so the menu, the
+ * model lists and the saved last screen keep working). The model is loaded without tools:
+ * Forge gives its tools in the prompt (text protocol), the same way for every engine.
+ */
+class ForgeTask @Inject constructor(@ApplicationContext private val context: Context) : CustomTask {
   override val task: Task by lazy {
     Task(
       id = BuiltInTaskId.LLM_PROMPT_LAB,
@@ -49,9 +38,8 @@ class LlmSingleTurnTask @Inject constructor(@ApplicationContext private val cont
       models = mutableListOf(),
       description = context.getString(R.string.task_desc_prompt_lab),
       shortDescription = context.getString(R.string.task_short_desc_prompt_lab),
-      docUrl = "https://github.com/google-ai-edge/LiteRT-LM/blob/main/kotlin/README.md",
-      sourceCodeUrl =
-        "https://github.com/google-ai-edge/gallery/blob/main/Android/src/app/src/main/java/com/google/ai/edge/gallery/ui/llmchat/LlmChatModelHelper.kt",
+      docUrl = "",
+      sourceCodeUrl = "",
       textInputPlaceHolderRes = R.string.text_input_placeholder_llm_chat,
     )
   }
@@ -74,32 +62,21 @@ class LlmSingleTurnTask @Inject constructor(@ApplicationContext private val cont
     )
   }
 
-  override fun cleanUpModelFn(
-    context: Context,
-    coroutineScope: CoroutineScope,
-    model: Model,
-    onDone: () -> Unit,
-  ) {
+  override fun cleanUpModelFn(context: Context, coroutineScope: CoroutineScope, model: Model, onDone: () -> Unit) {
     model.runtimeHelper.cleanUp(model = model, onDone = onDone)
   }
 
   @Composable
   override fun MainScreen(data: Any) {
-    val myData = data as CustomTaskDataForBuiltinTask
-    LlmSingleTurnScreen(
-      modelManagerViewModel = myData.modelManagerViewModel,
-      navigateUp = myData.onNavUp,
-      onMenuClicked = myData.onMenuClicked,
-    )
+    val d = data as CustomTaskDataForBuiltinTask
+    ForgeScreen(modelManagerViewModel = d.modelManagerViewModel, navigateUp = d.onNavUp, onMenuClicked = d.onMenuClicked)
   }
 }
 
 @Module
-@InstallIn(SingletonComponent::class) // Or another component that fits your scope
-internal object LlmSingleTurnTaskModule {
+@InstallIn(SingletonComponent::class)
+internal object ForgeTaskModule {
   @Provides
   @IntoSet
-  fun provideTask(@ApplicationContext context: Context): CustomTask {
-    return LlmSingleTurnTask(context)
-  }
+  fun provideTask(@ApplicationContext context: Context): CustomTask = ForgeTask(context)
 }

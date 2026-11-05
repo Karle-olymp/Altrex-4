@@ -80,15 +80,16 @@ private data class DrawerEntry(
 /**
  * [ALTREX] The four spaces, in menu order. Configuration (models, connectors, settings) sits in the
  * buttons at the bottom. Ask Image and Audio Scribe are gone: Discuter takes photos, camera and
- * audio; Agent Skills and Sécurité were merged into Discuter and Code.
+ * audio; Agent Skills and Sécurité were merged into Discuter and Forge.
  */
 private val SPACES =
   listOf(
     DrawerEntry(BuiltInTaskId.LLM_CHAT, "Discuter", "Chat, pièces jointes et outils", Icons.Outlined.Forum, 2),
+    // [ALTREX] Altrex Forge (« Forge » in the app): the programming agent, in projects.
     DrawerEntry(
       BuiltInTaskId.LLM_PROMPT_LAB,
-      "Code",
-      "Projet, éditeur, aperçu et scan",
+      "Forge",
+      "Projets, agent, aperçu et scan",
       Icons.Outlined.Code,
       3,
     ),

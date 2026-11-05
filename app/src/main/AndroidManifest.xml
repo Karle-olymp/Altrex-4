@@ -177,6 +177,12 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- [ALTREX] Altrex Forge: keeps a turn of the agent alive while the screen is off. -->
+        <service
+            android:name="com.google.ai.edge.gallery.forge.service.ForgeService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"

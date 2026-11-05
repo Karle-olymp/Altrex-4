@@ -59,7 +59,7 @@ class DrawerAndSettingsRenderTest {
       }
     }
     draw(80)
-    for (label in listOf("Discuter", "Code", "Notes vocales", "Terminal", "Modèles", "Connecteurs", "Réglages")) {
+    for (label in listOf("Discuter", "Forge", "Notes vocales", "Terminal", "Modèles", "Connecteurs", "Réglages")) {
       compose.onNodeWithText(label).assertIsDisplayed()
     }
     // Google's tools are gone from the menu.

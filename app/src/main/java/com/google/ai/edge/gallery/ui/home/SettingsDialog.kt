@@ -440,8 +440,8 @@ private val API_KEYS =
       help =
         "Colle ta clé Brave Search (api-dashboard.search.brave.com → API keys). Seules tes requêtes " +
           "de recherche partent vers Brave, jamais ton code ni un secret.",
-      read = { com.google.ai.edge.gallery.ui.llmsingleturn.WebSettings.getBraveKey(it) },
-      save = { c, k -> com.google.ai.edge.gallery.ui.llmsingleturn.WebSettings.saveBraveKey(c, k) },
+      read = { com.google.ai.edge.gallery.tools.WebSettings.getBraveKey(it) },
+      save = { c, k -> com.google.ai.edge.gallery.tools.WebSettings.saveBraveKey(c, k) },
     ),
     ApiKeySpec(
       name = "SecurCode",

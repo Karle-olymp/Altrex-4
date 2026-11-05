@@ -1,4 +1,4 @@
-package com.google.ai.edge.gallery.ui.llmsingleturn
+package com.google.ai.edge.gallery.tools
 
 import android.content.Context
 import android.content.SharedPreferences

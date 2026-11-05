@@ -184,10 +184,17 @@ object ProjectImporter {
     }
     val name = workspace.freeName(repoName(url))
     onProgress("Clonage de ${repoName(url)}…")
+    // A private repository of github.com: the token of the Settings, given on stdin (never in a
+    // command line written to disk, never kept in .git/config).
+    val token =
+      if (url.trim().startsWith("https://github.com/")) com.google.ai.edge.gallery.ui.github.GitHubSettings.getToken(context) else null
     val script =
       "command -v git >/dev/null 2>&1 || apk add --no-progress git >/dev/null 2>&1 || { echo 'git introuvable et impossible à installer'; exit 3; }\n" +
+        "if [ \"\$3\" = token ]; then read -r T; H=\$(printf 'x-access-token:%s' \"\$T\" | base64 | tr -d '\\n'); " +
+        "exec git -c \"http.https://github.com/.extraheader=AUTHORIZATION: basic \$H\" clone --depth 50 -- \"\$1\" \"\$2\" 2>&1; fi\n" +
         "exec git clone --depth 50 -- \"\$1\" \"\$2\" 2>&1\n"
-    val r = env.exec(listOf("/bin/sh", "-lc", script, "sh", url.trim(), "${LinuxEnv.PROJECTS_PATH}/$name"), null, 600_000) { chunk ->
+    val argv = listOf("/bin/sh", "-lc", script, "sh", url.trim(), "${LinuxEnv.PROJECTS_PATH}/$name", if (token != null) "token" else "")
+    val r = env.exec(argv, token?.let { it + "\n" }, 600_000) { chunk ->
       chunk.trim().lineSequence().lastOrNull()?.takeIf { it.isNotBlank() }?.let { onProgress(it.take(80)) }
     }
     if (r.exitCode != 0 || !workspace.exists(name)) {
