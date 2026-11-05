@@ -22,9 +22,9 @@ import com.google.ai.edge.gallery.tools.RunJsTool
 import com.google.ai.edge.gallery.tools.RunMcpTool
 import com.google.ai.edge.gallery.tools.ToolsProvider
 import com.google.ai.edge.gallery.tools.WebSearchTool
-import com.google.ai.edge.gallery.ui.llmsingleturn.AgentToolCall
-import com.google.ai.edge.gallery.ui.llmsingleturn.AgentToolParam
-import com.google.ai.edge.gallery.ui.llmsingleturn.AgentToolSpec
+import com.google.ai.edge.gallery.agent.AgentToolCall
+import com.google.ai.edge.gallery.agent.AgentToolParam
+import com.google.ai.edge.gallery.agent.AgentToolSpec
 import com.google.gson.Gson
 import org.json.JSONObject
 

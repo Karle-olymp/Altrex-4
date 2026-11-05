@@ -1,7 +1,7 @@
 package com.google.ai.edge.gallery.agent
 
-import com.google.ai.edge.gallery.ui.llmsingleturn.AgentMsg
-import com.google.ai.edge.gallery.ui.llmsingleturn.AgentToolCall
+import com.google.ai.edge.gallery.agent.AgentMsg
+import com.google.ai.edge.gallery.agent.AgentToolCall
 import org.json.JSONArray
 import org.json.JSONObject
 

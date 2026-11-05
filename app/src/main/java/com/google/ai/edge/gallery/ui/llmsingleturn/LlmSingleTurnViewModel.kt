@@ -16,6 +16,7 @@
 
 package com.google.ai.edge.gallery.ui.llmsingleturn
 
+import com.google.ai.edge.gallery.agent.ToolCalling
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope

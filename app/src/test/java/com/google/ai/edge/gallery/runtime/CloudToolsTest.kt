@@ -2,7 +2,7 @@ package com.google.ai.edge.gallery.runtime
 
 import com.google.ai.edge.gallery.agent.LlamaCppToolBridge
 import com.google.ai.edge.gallery.runtime.CloudApi.Provider
-import com.google.ai.edge.gallery.ui.llmsingleturn.ToolCalling
+import com.google.ai.edge.gallery.agent.ToolCalling
 import java.io.BufferedReader
 import java.io.StringReader
 import org.json.JSONArray

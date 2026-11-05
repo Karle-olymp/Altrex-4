@@ -19,7 +19,7 @@ package com.google.ai.edge.gallery.agent
 import com.google.ai.edge.gallery.tools.ToolDefinition
 import com.google.ai.edge.gallery.tools.ToolsProvider
 import com.google.ai.edge.gallery.tools.WebSearchTool
-import com.google.ai.edge.gallery.ui.llmsingleturn.AgentToolCall
+import com.google.ai.edge.gallery.agent.AgentToolCall
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals

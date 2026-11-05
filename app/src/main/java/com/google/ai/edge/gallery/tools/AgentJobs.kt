@@ -26,13 +26,20 @@ object AgentJobs {
   private val counter = AtomicInteger(0)
 
   /** Starts [command]; returns its id, or an error message (prefixed "error:"). */
+  fun start(context: Context, command: String): String =
+    start(context, command, listOf("/bin/sh", "-lc", AgentShell.WRAPPER_BG))
+
+  /** [ALTREX] Forge: a job started in the project's shell state ([AgentShell.FORGE_WRAPPER_BG]). */
+  fun startIn(context: Context, command: String, stateDir: String, defaultCwd: String): String =
+    start(context, command, listOf("/bin/sh", "-lc", AgentShell.FORGE_WRAPPER_BG, "sh", stateDir, defaultCwd))
+
   @Synchronized
-  fun start(context: Context, command: String): String {
+  private fun start(context: Context, command: String, argv: List<String>): String {
     if (jobs.values.count { it.process.isAlive } >= MAX_RUNNING) {
       return "error: $MAX_RUNNING background jobs are already running; stop one with check_job first."
     }
     val env = LinuxEnv.of(context, LinuxEnv.AGENT)
-    val process = env.start(listOf("/bin/sh", "-lc", AgentShell.WRAPPER_BG))
+    val process = env.start(argv)
     try {
       process.outputStream.use { it.write(command.toByteArray()) }
     } catch (e: IOException) {

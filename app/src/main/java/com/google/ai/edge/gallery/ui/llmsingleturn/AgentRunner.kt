@@ -1,5 +1,9 @@
 package com.google.ai.edge.gallery.ui.llmsingleturn
 
+import com.google.ai.edge.gallery.agent.AgentMsg
+import com.google.ai.edge.gallery.agent.AgentToolCall
+import com.google.ai.edge.gallery.agent.AgentToolSpec
+import com.google.ai.edge.gallery.agent.ToolCalling
 import android.content.Context
 import android.util.Log
 import com.google.ai.edge.gallery.data.Model

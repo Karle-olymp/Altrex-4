@@ -1,4 +1,4 @@
-package com.google.ai.edge.gallery.ui.llmsingleturn
+package com.google.ai.edge.gallery.agent
 
 import org.json.JSONArray
 import org.json.JSONObject
@@ -9,6 +9,10 @@ data class AgentToolParam(
   val type: String,
   val description: String,
   val required: Boolean = true,
+  /** [ALTREX] Schema of the elements when [type] is "array" (JSON Schema text), for Forge. */
+  val itemsSchema: String? = null,
+  /** [ALTREX] Allowed values, when the parameter is a choice. */
+  val enumValues: List<String>? = null,
 )
 
 /** Description of a tool, rendered as JSON in the system prompt (Qwen / Hermes format). */
@@ -41,11 +45,14 @@ object ToolCalling {
   private const val IM_START = "<|im_start|>"
   private const val IM_END = "<|im_end|>"
 
-  private fun specJson(spec: AgentToolSpec): String {
+  internal fun specJson(spec: AgentToolSpec): String {
     val props = JSONObject()
     val required = JSONArray()
     for (p in spec.params) {
-      props.put(p.name, JSONObject().put("type", p.type).put("description", p.description))
+      val prop = JSONObject().put("type", p.type).put("description", p.description)
+      p.itemsSchema?.let { prop.put("items", JSONObject(it)) }
+      p.enumValues?.let { prop.put("enum", JSONArray(it)) }
+      props.put(p.name, prop)
       if (p.required) required.put(p.name)
     }
     val parameters =

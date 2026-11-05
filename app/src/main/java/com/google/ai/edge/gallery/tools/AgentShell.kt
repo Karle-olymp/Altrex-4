@@ -25,10 +25,8 @@ object AgentShell {
       "[ -f \"\$S/env\" ] && . \"\$S/env\" >/dev/null 2>&1\n" +
       "cd \"\$(cat \"\$S/cwd\" 2>/dev/null)\" 2>/dev/null || cd /root\n"
 
-  /** Runs the command read from stdin where the previous one left off, then saves cwd and env. */
-  internal const val WRAPPER =
-    RESTORE +
-      "__altrex_cmd=\$(cat)\n" +
+  private const val RUN_AND_SAVE =
+    "__altrex_cmd=\$(cat)\n" +
       "eval \"\$__altrex_cmd\" </dev/null\n" +
       "__altrex_rc=\$?\n" +
       "pwd > \"\$S/cwd\"\n" +
@@ -36,8 +34,25 @@ object AgentShell {
       "printf '\\n$CWD_MARK%s\\n' \"\$(pwd)\"\n" +
       "exit \$__altrex_rc\n"
 
+  /** Runs the command read from stdin where the previous one left off, then saves cwd and env. */
+  internal const val WRAPPER = RESTORE + RUN_AND_SAVE
+
   /** Background job: same starting point, nothing saved after. */
   internal const val WRAPPER_BG = RESTORE + "__altrex_cmd=\$(cat)\nexec /bin/sh -c \"\$__altrex_cmd\" </dev/null\n"
+
+  /**
+   * [ALTREX] Forge: the same shell, with its own saved state in [stateDir] and [defaultCwd] (the
+   * project folder) as the starting point. Both are given as arguments ($1, $2), never pasted in
+   * the script. A saved directory outside [defaultCwd] is kept: `cd ..` is the model's choice.
+   */
+  internal const val FORGE_RESTORE =
+    "S=\"\$1\"; mkdir -p \"\$S\"\n" +
+      "[ -f \"\$S/env\" ] && . \"\$S/env\" >/dev/null 2>&1\n" +
+      "cd \"\$(cat \"\$S/cwd\" 2>/dev/null)\" 2>/dev/null || cd \"\$2\" 2>/dev/null || cd /root\n"
+
+  internal const val FORGE_WRAPPER = FORGE_RESTORE + RUN_AND_SAVE
+
+  internal const val FORGE_WRAPPER_BG = FORGE_RESTORE + "__altrex_cmd=\$(cat)\nexec /bin/sh -c \"\$__altrex_cmd\" </dev/null\n"
 
   /** Numbered lines [$2, $2+$3) of file $1 (lines cut at 500 characters), after a total line. */
   internal const val READ_SCRIPT =
@@ -66,6 +81,21 @@ object AgentShell {
   suspend fun run(context: Context, command: String, timeoutMs: Long, onOutput: (String) -> Unit = {}): Result {
     val env = LinuxEnv.of(context, LinuxEnv.AGENT)
     val r = env.exec(listOf("/bin/sh", "-lc", WRAPPER), command, timeoutMs, onOutput)
+    val (output, cwd) = splitCwd(r.output)
+    return Result(r.exitCode, output, cwd, r.timedOut)
+  }
+
+  /** [ALTREX] A Forge command: state in [stateDir], starting in [defaultCwd] (see [FORGE_WRAPPER]). */
+  suspend fun runIn(
+    context: Context,
+    stateDir: String,
+    defaultCwd: String,
+    command: String,
+    timeoutMs: Long,
+    onOutput: (String) -> Unit = {},
+  ): Result {
+    val env = LinuxEnv.of(context, LinuxEnv.AGENT)
+    val r = env.exec(listOf("/bin/sh", "-lc", FORGE_WRAPPER, "sh", stateDir, defaultCwd), command, timeoutMs, onOutput)
     val (output, cwd) = splitCwd(r.output)
     return Result(r.exitCode, output, cwd, r.timedOut)
   }

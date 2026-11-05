@@ -30,9 +30,9 @@ import com.google.ai.edge.gallery.skills.SkillsProvider
 import com.google.ai.edge.gallery.tools.ToolDispatcher
 import com.google.ai.edge.gallery.tools.ToolExecutionContext
 import com.google.ai.edge.gallery.tools.ToolsProvider
-import com.google.ai.edge.gallery.ui.llmsingleturn.AgentMsg
-import com.google.ai.edge.gallery.ui.llmsingleturn.StreamSplitter
-import com.google.ai.edge.gallery.ui.llmsingleturn.ToolCalling
+import com.google.ai.edge.gallery.agent.AgentMsg
+import com.google.ai.edge.gallery.agent.StreamSplitter
+import com.google.ai.edge.gallery.agent.ToolCalling
 import com.google.ai.edge.litertlm.Contents
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference

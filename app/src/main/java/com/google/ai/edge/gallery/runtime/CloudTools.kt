@@ -1,6 +1,6 @@
 package com.google.ai.edge.gallery.runtime
 
-import com.google.ai.edge.gallery.ui.llmsingleturn.ToolCalling
+import com.google.ai.edge.gallery.agent.ToolCalling
 import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONArray
 import org.json.JSONObject

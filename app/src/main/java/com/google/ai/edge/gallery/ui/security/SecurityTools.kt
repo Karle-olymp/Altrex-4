@@ -2,9 +2,9 @@ package com.google.ai.edge.gallery.ui.security
 
 import android.content.Context
 import com.google.ai.edge.gallery.ui.llmsingleturn.AgentProfile
-import com.google.ai.edge.gallery.ui.llmsingleturn.AgentToolCall
-import com.google.ai.edge.gallery.ui.llmsingleturn.AgentToolParam
-import com.google.ai.edge.gallery.ui.llmsingleturn.AgentToolSpec
+import com.google.ai.edge.gallery.agent.AgentToolCall
+import com.google.ai.edge.gallery.agent.AgentToolParam
+import com.google.ai.edge.gallery.agent.AgentToolSpec
 import com.google.ai.edge.gallery.ui.llmsingleturn.CodeTools
 import com.google.ai.edge.gallery.ui.llmsingleturn.ToolOutcome
 

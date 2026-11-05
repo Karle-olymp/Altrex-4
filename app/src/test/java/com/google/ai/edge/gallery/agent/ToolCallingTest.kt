@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.google.ai.edge.gallery.ui.llmsingleturn
+package com.google.ai.edge.gallery.agent
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
