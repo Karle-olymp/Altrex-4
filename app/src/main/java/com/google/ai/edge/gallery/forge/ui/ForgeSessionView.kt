@@ -149,30 +149,40 @@ fun ForgeSessionView(ui: SessionUi, actions: SessionActions) {
   }
 }
 
+/** The model's name for the status line: without its provider path (groq/openai/gpt-oss-120b → gpt-oss-120b). */
+internal fun shortModelName(name: String, max: Int = 22): String {
+  val n = name.substringAfterLast('/').substringAfterLast(':').ifEmpty { name }
+  return if (n.length > max) n.take(max - 1) + "…" else n
+}
+
 @Composable
 private fun StatusLine(ui: SessionUi, onPickModel: () -> Unit) {
   val p = LocalForgePalette.current
   Column {
-    Row(
-      Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      ui.branch?.let {
-        Text("⑂ $it", style = ForgeType.monoSmall, color = p.text)
-        Text("  ·  ", style = ForgeType.monoSmall, color = p.faint)
-      }
-      Row(Modifier.clickable(onClick = onPickModel), verticalAlignment = Alignment.CenterVertically) {
-        Dot(if (ui.running) p.accent else p.ok)
-        Spacer(Modifier.width(6.dp))
-        Text(ui.model, style = ForgeType.monoSmall, color = p.text, maxLines = 1)
-      }
-      Text("  ·  contexte ", style = ForgeType.monoSmall, color = p.muted)
-      Box(Modifier.width(70.dp).height(4.dp).clip(smallShape()).background(p.line2)) {
-        Box(Modifier.fillMaxWidth(ui.contextRatio.coerceIn(0f, 1f)).height(4.dp).background(if (ui.contextRatio > 0.85f) p.warn else p.accent))
-      }
-      Text("  ${(ui.contextRatio * 100).toInt().coerceIn(0, 100)} %", style = ForgeType.monoSmall, color = p.muted)
-      if (ui.local && ui.live.tokensPerSecond > 0f) {
-        Text("  ·  ${"%.1f".format(ui.live.tokensPerSecond)} t/s", style = ForgeType.monoSmall, color = p.muted)
+    // Narrow screens: shorter labels; the line also scrolls sideways, nothing is cut.
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+      val narrow = maxWidth < 420.dp
+      Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        ui.branch?.let {
+          Text("⑂ ${if (narrow && it.length > 14) it.take(13) + "…" else it}", style = ForgeType.monoSmall, color = p.text, maxLines = 1)
+          Text(if (narrow) " · " else "  ·  ", style = ForgeType.monoSmall, color = p.faint)
+        }
+        Row(Modifier.clickable(onClick = onPickModel), verticalAlignment = Alignment.CenterVertically) {
+          Dot(if (ui.running) p.accent else p.ok)
+          Spacer(Modifier.width(6.dp))
+          Text(if (narrow) shortModelName(ui.model, 18) else shortModelName(ui.model, 32), style = ForgeType.monoSmall, color = p.text, maxLines = 1)
+        }
+        Text(if (narrow) " · ctx " else "  ·  contexte ", style = ForgeType.monoSmall, color = p.muted, maxLines = 1)
+        Box(Modifier.width(if (narrow) 40.dp else 70.dp).height(4.dp).clip(smallShape()).background(p.line2)) {
+          Box(Modifier.fillMaxWidth(ui.contextRatio.coerceIn(0f, 1f)).height(4.dp).background(if (ui.contextRatio > 0.85f) p.warn else p.accent))
+        }
+        Text(" ${(ui.contextRatio * 100).toInt().coerceIn(0, 100)} %", style = ForgeType.monoSmall, color = p.muted, maxLines = 1)
+        if (ui.local && ui.live.tokensPerSecond > 0f) {
+          Text("  ·  ${"%.1f".format(ui.live.tokensPerSecond)} t/s", style = ForgeType.monoSmall, color = p.muted, maxLines = 1)
+        }
       }
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(p.line))

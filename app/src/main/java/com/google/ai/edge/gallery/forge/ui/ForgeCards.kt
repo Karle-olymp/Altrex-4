@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -176,7 +177,15 @@ fun ToolCard(item: FeedItem.ToolCard, progress: String?, running: Boolean = true
       }
     }
     if (r == null && !progress.isNullOrBlank()) {
-      Text("▸ $progress", style = ForgeType.monoSmall, color = p.faint, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 42.dp, end = 14.dp, bottom = 10.dp))
+      // The last lines of a running command (4 at most), live.
+      Text(
+        progress.lines().joinToString("\n") { "▸ $it" },
+        style = ForgeType.monoSmall,
+        color = p.faint,
+        maxLines = 4,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.padding(start = 42.dp, end = 14.dp, bottom = 10.dp),
+      )
     }
     if (open && detail.isNotEmpty()) {
       Box(Modifier.fillMaxWidth().height(1.dp).background(p.line))
@@ -192,6 +201,9 @@ fun DetailLines(detail: String, isDiff: Boolean, maxFolded: Int = 5) {
   val lines = remember(detail) { detail.split('\n') }
   var all by remember(detail) { mutableStateOf(false) }
   val shown = if (all) lines else lines.take(maxFolded)
+  // One column for the lines and the « voir tout » link: in a Box (the approval card) two
+  // siblings were drawn on top of each other, the link over the first line of the diff.
+  Column(Modifier.fillMaxWidth()) {
   Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 6.dp)) {
     for (line in shown) {
       val parts = line.split('\t', limit = 3)
@@ -215,6 +227,7 @@ fun DetailLines(detail: String, isDiff: Boolean, maxFolded: Int = 5) {
       color = p.accent,
       modifier = Modifier.fillMaxWidth().clickable { all = !all }.padding(horizontal = 12.dp, vertical = 8.dp),
     )
+  }
   }
 }
 
@@ -369,7 +382,7 @@ fun ApprovalCard(request: ApprovalRequest, onAnswer: (ApprovalAnswer) -> Unit) {
       Text("Déjà refusée une fois. Raison donnée : ${request.justification.orEmpty()}", style = ForgeType.monoSmall, color = p.warn)
     }
     Spacer(Modifier.height(8.dp))
-    Box(Modifier.fillMaxWidth().clip(smallShape()).background(p.bg).heightIn(max = 260.dp)) {
+    Box(Modifier.fillMaxWidth().clip(smallShape()).background(p.bg).heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
       if (request.isDiff) DetailLines(request.detail, isDiff = true, maxFolded = 12)
       else Text(request.detail, style = ForgeType.mono, color = p.text, modifier = Modifier.padding(10.dp))
     }

@@ -23,6 +23,8 @@ import com.google.ai.edge.gallery.forge.ui.relativeTime
 import com.google.ai.edge.gallery.forge.workspace.ForgeWorkspace
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -101,6 +103,43 @@ class ForgeRenderTest {
     compose.onNodeWithText("Non, plutôt…").performClick()
     compose.onNodeWithText("Refuser").performClick()
     assertEquals(ApprovalAnswer.Choice.NON, answer!!.choice)
+  }
+
+  @Test
+  fun approvalCard_longDiff_linkIsBelowTheLines() {
+    // 20 lines folded at 12: « … 8 lignes de plus · voir tout » must come after the lines, not over the first one.
+    val diff = (1..20).joinToString("\n") { "$it\t+\tligne$it" }
+    val req = ApprovalRequest("c1-7", "Write", "Forge veut écrire a.js", diff, isDiff = true)
+    compose.setContent { MaterialTheme { ApprovalCard(req) {} } }
+    frames()
+    val first = compose.onNodeWithText("ligne1", substring = false).getUnclippedBoundsInRoot()
+    val link = compose.onNodeWithText("lignes de plus", substring = true).getUnclippedBoundsInRoot()
+    assertTrue("lien ${link.top} sous la 1re ligne ${first.bottom}", link.top >= first.bottom)
+  }
+
+  @Test
+  fun previewHelpers() {
+    assertEquals("gpt-oss-120b", com.google.ai.edge.gallery.forge.ui.shortModelName("groq/openai/gpt-oss-120b"))
+    assertEquals("un-tres-long-nom-de-m…", com.google.ai.edge.gallery.forge.ui.shortModelName("un-tres-long-nom-de-modele-cloud"))
+    assertEquals("web", com.google.ai.edge.gallery.forge.ui.previewKind("public/index.html"))
+    assertEquals("web", com.google.ai.edge.gallery.forge.ui.previewKind("app.js"))
+    assertEquals("web", com.google.ai.edge.gallery.forge.ui.previewKind("style.css"))
+    assertEquals("markdown", com.google.ai.edge.gallery.forge.ui.previewKind("README.md"))
+    assertEquals("python", com.google.ai.edge.gallery.forge.ui.previewKind("a.py"))
+    assertTrue(com.google.ai.edge.gallery.forge.ui.isLocalUrl("http://127.0.0.1:41234/index.html?altrex_apercu=abc"))
+    assertTrue(com.google.ai.edge.gallery.forge.ui.isLocalUrl("http://localhost:3000"))
+    assertTrue(!com.google.ai.edge.gallery.forge.ui.isLocalUrl("http://localhost.evil.com/"))
+    assertTrue(!com.google.ai.edge.gallery.forge.ui.isLocalUrl("https://example.com"))
+  }
+
+  @Test
+  fun previewSheet_drawsWithItsServer() {
+    val dir = java.nio.file.Files.createTempDirectory("apercu-ui").toFile()
+    File(dir, "index.html").writeText("<h1>ok</h1>")
+    compose.setContent { MaterialTheme { com.google.ai.edge.gallery.forge.ui.PreviewSheet(dir, null, reloadSignal = 0) {} } }
+    frames()
+    compose.onNodeWithText("Serveur local").performClick()
+    frames()
   }
 
   @Test
