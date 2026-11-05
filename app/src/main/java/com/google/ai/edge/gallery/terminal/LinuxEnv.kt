@@ -124,6 +124,7 @@ break-system-packages = true
         echo "Alpine Linux (Altrex). Paquets : pkg install <nom> ou apk add <nom>. Aide : pkg help"
         [ -f /root/.altrex-setup-done ] || echo "Premier lancement ? Tape altrex-setup pour installer git, curl, bash, python, node, gh…"
         [ -d /root/partage ] && echo "Dossier partagé avec le téléphone : ~/partage (Android/media/…/Linux)"
+        [ -d /root/projets ] && echo "Projets de Forge : ~/projets (le même dossier que celui de l'agent)"
       ;; esac
       """.trimIndent() + "\n"
 
@@ -153,6 +154,15 @@ break-system-packages = true
     }
 
     fun of(context: Context, name: String): LinuxEnv = LinuxEnv(context.applicationContext, name)
+
+    /** [ALTREX] Where Forge's projects are seen inside both Linux environments. */
+    const val PROJECTS_PATH = "/root/projets"
+
+    /** [ALTREX] Forge's working folder on the phone (the app's storage). */
+    fun forgeHostDir(context: Context): File = File(context.applicationContext.filesDir, "forge")
+
+    /** [ALTREX] The projects folder bound as [PROJECTS_PATH]. */
+    fun projectsHostDir(context: Context): File = File(forgeHostDir(context), "projets")
   }
 
   private val baseDir = File(context.filesDir, "linux/$name")
@@ -307,7 +317,7 @@ break-system-packages = true
         "-b", "/proc",
         "-b", "/sys",
         "-w", "/root",
-      ) + sharedFolderBind() + argv
+      ) + sharedFolderBind() + projectsBind() + argv
     val env =
       linkedMapOf(
         "PROOT_LOADER" to loader.absolutePath,
@@ -335,6 +345,18 @@ break-system-packages = true
     if (!shared.isDirectory && !shared.mkdirs()) return emptyList()
     File(rootfs, "root/partage").mkdirs()
     return listOf("-b", "${shared.absolutePath}:/root/partage")
+  }
+
+  /**
+   * [ALTREX] Forge's projects, the same folder in both environments: `/root/projets` in the
+   * user's terminal and in the model's Linux (docs/forge/FORGE.md, « dossier de travail commun »).
+   * The folder lives in the app's storage ([projectsHostDir]); PRoot only binds it.
+   */
+  private fun projectsBind(): List<String> {
+    val host = projectsHostDir(context)
+    if (!host.isDirectory && !host.mkdirs()) return emptyList()
+    File(rootfs, "root/projets").mkdirs()
+    return listOf("-b", "${host.absolutePath}:$PROJECTS_PATH")
   }
 
   /** Starts [argv] inside the environment (stdin/stdout/stderr pipes, stderr merged unless asked). */
