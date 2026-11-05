@@ -1,8 +1,12 @@
 package com.google.ai.edge.gallery.forge.ui
 
 import android.annotation.SuppressLint
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
+import com.google.ai.edge.gallery.forge.preview.PreviewServer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,16 +29,20 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -47,10 +55,10 @@ import com.google.ai.edge.gallery.forge.engine.ForgeMode
 import com.google.ai.edge.gallery.forge.engine.Preset
 import com.google.ai.edge.gallery.ui.common.MarkdownText
 import com.google.ai.edge.gallery.ui.common.coderunner.CodeRunnerContent
-import com.google.ai.edge.gallery.ui.common.coderunner.RunLanguage
 import com.google.ai.edge.gallery.ui.common.coderunner.runnableLanguage
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /** [ALTREX] « Mode de travail » (maquette 03-plan-modes): the four chips, honest about PRoot. */
@@ -117,7 +125,10 @@ fun ModeSheet(current: ForgeMode, onPick: (ForgeMode) -> Unit, onDismiss: () -> 
 }
 
 /** Files the Aperçu can draw or run. */
-private val PREVIEW_EXT = setOf("html", "htm", "svg", "md", "markdown", "js", "mjs", "py")
+private val PREVIEW_EXT = setOf("html", "htm", "svg", "css", "md", "markdown", "js", "mjs", "py")
+
+/** Files the Aperçu opens through its own web server ([PreviewServer]). */
+private val SERVED_EXT = setOf("html", "htm", "svg", "css", "js", "mjs")
 
 fun previewableFiles(root: File, max: Int = 100): List<String> {
   val out = ArrayList<String>()
@@ -134,69 +145,157 @@ fun previewableFiles(root: File, max: Int = 100): List<String> {
   return out
 }
 
-/** Only pages served inside the phone (the Linux): nothing on the internet from here. */
-fun isLocalUrl(url: String): Boolean = Regex("^https?://(localhost|127\\.0\\.0\\.1)(:[0-9]{1,5})?(/.*)?$").matches(url.trim())
+/** Only pages served inside the phone (the Linux, or the Aperçu's server): nothing on the internet from here. */
+fun isLocalUrl(url: String): Boolean = Regex("^https?://(localhost|127\\.0\\.0\\.1)(:[0-9]{1,5})?([/?#].*)?$").matches(url.trim())
+
+/** How the Aperçu shows [file]: through its server (web files), drawn (Markdown), or run (Python). */
+internal fun previewKind(file: String): String =
+  when (file.substringAfterLast('.', "").lowercase()) {
+    in SERVED_EXT -> "web"
+    "md", "markdown" -> "markdown"
+    "py" -> "python"
+    else -> "none"
+  }
 
 /**
- * [ALTREX] Aperçu, kept from the former Code screen: a file of the project (HTML, SVG and Markdown
- * drawn; JavaScript and Python run on the phone, without network), or a page served by a server
- * started in the Linux (http://localhost:PORT, NOT verified on a phone yet).
+ * [ALTREX] Aperçu: the project's files through the app's own web server ([PreviewServer], started
+ * here and stopped when the sheet closes: relative links, styles and scripts work as on a site),
+ * Markdown drawn, Python run on the phone; and, in « Serveur local », the page of a server the
+ * model started in the Linux (http://localhost:PORT). « Recharger », and a reload by itself when
+ * the agent changes a file of the project ([reloadSignal]) while the sheet is open.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PreviewSheet(root: File, initialFile: String?, onDismiss: () -> Unit) {
+fun PreviewSheet(root: File, initialFile: String?, reloadSignal: Int = 0, onDismiss: () -> Unit) {
   val p = LocalForgePalette.current
   var file by remember { mutableStateOf(initialFile) }
+  var tab by remember { mutableStateOf(0) }
   var url by remember { mutableStateOf("http://localhost:3000") }
   var shownUrl by remember { mutableStateOf<String?>(null) }
   var files by remember { mutableStateOf(emptyList<String>()) }
   var text by remember { mutableStateOf<String?>(null) }
-  LaunchedEffect(root) { files = withContext(Dispatchers.IO) { previewableFiles(root) } }
-  LaunchedEffect(file) {
-    text = file?.let { f -> withContext(Dispatchers.IO) { File(root, f).takeIf { it.isFile && it.length() < 2_000_000 }?.readText() } }
+  var runJs by remember { mutableStateOf(false) }
+  var reloadTick by remember { mutableIntStateOf(0) }
+  var server by remember { mutableStateOf<PreviewServer?>(null) }
+  var serverError by remember { mutableStateOf<String?>(null) }
+
+  // The server lives as long as the sheet.
+  LaunchedEffect(root) {
+    val s = withContext(Dispatchers.IO) { runCatching { PreviewServer(root).start() } }
+    s.onSuccess { server = it }.onFailure { serverError = it.message ?: it.javaClass.simpleName }
+  }
+  DisposableEffect(root) {
+    onDispose {
+      val s = server
+      server = null
+      if (s != null) Thread { s.stop() }.apply { isDaemon = true }.start()
+    }
+  }
+  // The agent changed a file: reload (once the writes of that step are done).
+  var firstSignal by remember { mutableStateOf(true) }
+  LaunchedEffect(reloadSignal) {
+    if (firstSignal) {
+      firstSignal = false
+    } else {
+      delay(400)
+      reloadTick++
+    }
+  }
+  LaunchedEffect(root, reloadTick) { files = withContext(Dispatchers.IO) { previewableFiles(root) } }
+  LaunchedEffect(file, reloadTick) {
+    runJs = runJs && file != null
+    text =
+      file?.takeIf { previewKind(it) != "web" || runJs }?.let { f ->
+        withContext(Dispatchers.IO) { File(root, f).takeIf { it.isFile && it.length() < 2_000_000 }?.readText() }
+      }
   }
   ModalBottomSheet(onDismissRequest = onDismiss, containerColor = p.surface, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
     Column(Modifier.fillMaxWidth().fillMaxHeight(0.92f).padding(horizontal = 16.dp)) {
-      Text("Aperçu", style = ForgeType.title, color = p.text)
-      Spacer(Modifier.height(8.dp))
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Aperçu", style = ForgeType.title, color = p.text, modifier = Modifier.weight(1f))
+        val showing = file != null || shownUrl != null
+        if (showing) {
+          IconButton(onClick = { reloadTick++ }) { Icon(Icons.Outlined.Refresh, "Recharger", tint = p.accent) }
+        }
+      }
+      Spacer(Modifier.height(4.dp))
       val f = file
       val u = shownUrl
       when {
         u != null -> {
-          Text(u, style = ForgeType.monoSmall, color = p.muted, modifier = Modifier.clickable { shownUrl = null }.padding(vertical = 6.dp))
-          LocalPage(u, Modifier.fillMaxWidth().weight(1f))
+          Text("← $u", style = ForgeType.monoSmall, color = p.accent, maxLines = 1, modifier = Modifier.clickable { shownUrl = null }.padding(vertical = 6.dp))
+          PreviewWeb(u, reloadTick, Modifier.fillMaxWidth().weight(1f))
         }
         f != null -> {
-          Text("← $f", style = ForgeType.mono, color = p.accent, modifier = Modifier.clickable { file = null }.padding(vertical = 6.dp))
-          val t = text
-          val ext = f.substringAfterLast('.', "").lowercase()
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("← $f", style = ForgeType.mono, color = p.accent, maxLines = 1, modifier = Modifier.weight(1f).clickable { file = null; runJs = false }.padding(vertical = 6.dp))
+            val ext = f.substringAfterLast('.', "").lowercase()
+            if (ext == "js" || ext == "mjs") {
+              Text(if (runJs) "Voir le fichier" else "Exécuter", style = ForgeType.bodyStrong, color = p.accent, modifier = Modifier.clickable { runJs = !runJs; reloadTick++ }.padding(8.dp))
+            }
+          }
           Box(Modifier.fillMaxWidth().weight(1f)) {
+            val kind = previewKind(f)
+            val t = text
             when {
+              kind == "web" && !runJs -> {
+                val srv = server
+                when {
+                  srv != null -> PreviewWeb(srv.urlFor(f), reloadTick, Modifier.fillMaxSize())
+                  serverError != null -> Text("Le serveur de l'aperçu n'a pas pu démarrer : $serverError", style = ForgeType.body, color = p.warn)
+                  else -> Text("Démarrage de l'aperçu…", style = ForgeType.body, color = p.muted)
+                }
+              }
               t == null -> Text("Fichier illisible ou trop gros.", style = ForgeType.body, color = p.muted)
-              ext == "md" || ext == "markdown" ->
+              kind == "markdown" ->
                 Column(Modifier.verticalScroll(rememberScrollState())) { MarkdownText(text = t, textColor = p.text, linkColor = p.accent) }
               else -> {
-                val lang = if (ext == "svg" || ext == "htm") RunLanguage.HTML else runnableLanguage(ext)
-                if (lang != null) androidx.compose.runtime.key(f, t) { CodeRunnerContent(language = lang, code = t, fill = true, title = f.substringAfterLast('/')) }
+                val lang = runnableLanguage(f.substringAfterLast('.', "").lowercase())
+                if (lang != null) androidx.compose.runtime.key(f, t, reloadTick) { CodeRunnerContent(language = lang, code = t, fill = true, title = f.substringAfterLast('/')) }
                 else Text("Pas d'aperçu pour ce type de fichier.", style = ForgeType.body, color = p.muted)
               }
             }
           }
         }
         else -> {
-          Text("SERVEUR LOCAL", style = ForgeType.section, color = p.muted)
-          Text("Lance d'abord le serveur dans le Linux (Bash en arrière-plan), puis ouvre son adresse.", style = ForgeType.body, color = p.faint)
-          Spacer(Modifier.height(6.dp))
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            ForgeTextField(url, { url = it }, "http://localhost:3000", modifier = Modifier.weight(1f))
-            Spacer(Modifier.width(8.dp))
-            ForgeButton("Ouvrir", primary = true, enabled = isLocalUrl(url)) { shownUrl = url.trim() }
+          Row(Modifier.fillMaxWidth().clip(shape()).border(1.dp, p.line, shape())) {
+            for ((i, label) in listOf("Fichiers du projet", "Serveur local").withIndex()) {
+              Box(
+                Modifier.weight(1f).background(if (tab == i) p.accent.copy(alpha = 0.10f) else p.surface).clickable { tab = i }.padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(label, style = ForgeType.bodyStrong, color = if (tab == i) p.accent else p.muted)
+              }
+            }
           }
-          SectionHeader("Fichiers du projet")
-          if (files.isEmpty()) Text("Aucun fichier HTML, SVG, Markdown, JavaScript ou Python.", style = ForgeType.body, color = p.faint)
-          LazyColumn(Modifier.fillMaxWidth().heightIn(max = 600.dp)) {
-            items(files) { name ->
-              Text(name, style = ForgeType.mono, color = p.text, modifier = Modifier.fillMaxWidth().clickable { file = name }.padding(vertical = 10.dp))
+          Spacer(Modifier.height(10.dp))
+          if (tab == 0) {
+            Text(
+              "Les pages s'ouvrent par le serveur de l'aperçu (dans l'appli, 127.0.0.1 seulement) : liens, styles et scripts relatifs fonctionnent.",
+              style = ForgeType.body,
+              color = p.faint,
+            )
+            if (File(root, "index.html").isFile || File(root, "index.htm").isFile) {
+              Spacer(Modifier.height(8.dp))
+              ForgeButton("Ouvrir le site (index.html)", primary = true, enabled = server != null) { file = if (File(root, "index.html").isFile) "index.html" else "index.htm" }
+            }
+            if (files.isEmpty()) Text("Aucun fichier HTML, SVG, CSS, Markdown, JavaScript ou Python.", style = ForgeType.body, color = p.faint, modifier = Modifier.padding(top = 8.dp))
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 600.dp)) {
+              items(files) { name ->
+                Text(name, style = ForgeType.mono, color = p.text, modifier = Modifier.fillMaxWidth().clickable { file = name }.padding(vertical = 10.dp))
+              }
+            }
+          } else {
+            Text(
+              "Pour un serveur lancé par l'agent dans le Linux (node, python…) : lance-le d'abord (Bash en arrière-plan), puis ouvre son adresse.",
+              style = ForgeType.body,
+              color = p.faint,
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              ForgeTextField(url, { url = it }, "http://localhost:3000", modifier = Modifier.weight(1f))
+              Spacer(Modifier.width(8.dp))
+              ForgeButton("Ouvrir", primary = true, enabled = isLocalUrl(url)) { shownUrl = url.trim() }
             }
           }
         }
@@ -206,24 +305,67 @@ fun PreviewSheet(root: File, initialFile: String?, onDismiss: () -> Unit) {
   }
 }
 
+/**
+ * The Aperçu's WebView: the page as its author wrote it (no forced or algorithmic darkening, white
+ * background by default), JavaScript and local storage on, links kept on the phone (localhost and
+ * 127.0.0.1; anything else is not opened). Reloaded when [reloadTick] changes.
+ */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun LocalPage(url: String, modifier: Modifier) {
+private fun PreviewWeb(url: String, reloadTick: Int, modifier: Modifier) {
+  var view by remember { mutableStateOf<WebView?>(null) }
+  var loaded by remember { mutableStateOf<String?>(null) }
+  var first by remember { mutableStateOf(true) }
+  LaunchedEffect(reloadTick) {
+    if (first) first = false else view?.reload()
+  }
   AndroidView(
     factory = { ctx ->
       WebView(ctx).apply {
-        settings.javaScriptEnabled = true
-        settings.allowFileAccess = false
-        settings.allowContentAccess = false
-        webViewClient =
-          object : WebViewClient() {
-            // Links stay on the local server; nothing else is opened here.
-            override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean =
-              !isLocalUrl(request?.url?.toString().orEmpty())
-          }
-        loadUrl(url)
+        configurePreview(this)
+        view = this
       }
+    },
+    update = { w ->
+      if (loaded != url) {
+        loaded = url
+        w.loadUrl(url)
+      }
+    },
+    onRelease = { w ->
+      w.stopLoading()
+      w.destroy()
+      if (view === w) view = null
     },
     modifier = modifier.fillMaxSize(),
   )
+}
+
+/** Settings of the Aperçu's WebView (see [PreviewWeb]). */
+@SuppressLint("SetJavaScriptEnabled")
+@Suppress("DEPRECATION")
+internal fun configurePreview(w: WebView) {
+  w.setBackgroundColor(android.graphics.Color.WHITE)
+  w.settings.apply {
+    javaScriptEnabled = true
+    domStorageEnabled = true
+    allowFileAccess = false
+    allowContentAccess = false
+    // Our pages are http://127.0.0.1 or http://localhost: no https page loads them, so mixed
+    // content never applies; the default (refused) stays.
+    mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+  }
+  // The app's dark theme must not darken the page.
+  if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+    WebSettingsCompat.setAlgorithmicDarkeningAllowed(w.settings, false)
+  }
+  if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
+    WebSettingsCompat.setForceDark(w.settings, WebSettingsCompat.FORCE_DARK_OFF)
+  }
+  w.webViewClient =
+    object : WebViewClient() {
+      // Links stay on the phone (the Aperçu's server, or the model's server); nothing else opens here.
+      override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean =
+        !isLocalUrl(request?.url?.toString().orEmpty())
+    }
 }

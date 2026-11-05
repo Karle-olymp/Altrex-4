@@ -43,12 +43,21 @@ object AgentShell {
   /**
    * [ALTREX] Forge: the same shell, with its own saved state in [stateDir] and [defaultCwd] (the
    * project folder) as the starting point. Both are given as arguments ($1, $2), never pasted in
-   * the script. A saved directory outside [defaultCwd] is kept: `cd ..` is the model's choice.
+   * the script.
+   *
+   * The saved folder is used only when it is the project or inside it: everything Forge runs
+   * (commands and background jobs, a server included) starts in the project. The former script
+   * did `cd "$(cat cwd)"`: with no saved folder yet that is `cd ""`, which sh accepts without
+   * moving, so the first command ran in /root, saved /root, and every later one (a
+   * `python3 -m http.server` too) started there.
    */
   internal const val FORGE_RESTORE =
-    "S=\"\$1\"; mkdir -p \"\$S\"\n" +
+    "S=\"\$1\"; P=\"\$2\"; mkdir -p \"\$S\"\n" +
       "[ -f \"\$S/env\" ] && . \"\$S/env\" >/dev/null 2>&1\n" +
-      "cd \"\$(cat \"\$S/cwd\" 2>/dev/null)\" 2>/dev/null || cd \"\$2\" 2>/dev/null || cd /root\n"
+      "__altrex_dir=\$(cat \"\$S/cwd\" 2>/dev/null)\n" +
+      "case \"\$__altrex_dir\" in \"\$P\"|\"\$P\"/*) ;; *) __altrex_dir=\"\$P\" ;; esac\n" +
+      "cd \"\$__altrex_dir\" 2>/dev/null || cd \"\$P\" 2>/dev/null || cd /root\n" +
+      "unset __altrex_dir\n"
 
   internal const val FORGE_WRAPPER = FORGE_RESTORE + RUN_AND_SAVE
 

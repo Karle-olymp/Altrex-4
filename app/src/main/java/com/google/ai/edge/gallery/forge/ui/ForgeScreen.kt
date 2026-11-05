@@ -364,7 +364,8 @@ private fun SessionScreen(
         onCommand = ::command,
       ),
   )
-  if (showPreview) PreviewSheet(info.dir, preview) { showPreview = false }
+  val fileChanges by engine.fileChanges.collectAsState()
+  if (showPreview) PreviewSheet(info.dir, preview, reloadSignal = fileChanges) { showPreview = false }
 }
 
 private fun engineLocal(c: ForgeSessionController): Boolean = c.modelIsLocal

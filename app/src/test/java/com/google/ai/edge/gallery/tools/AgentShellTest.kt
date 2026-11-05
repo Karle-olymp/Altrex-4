@@ -130,4 +130,46 @@ class AgentShellTest {
       assertFalse(c, RunCommandTool.isSlow(c))
     }
   }
+
+  @Test
+  fun forgeWrapper_alwaysStartsInTheProject() {
+    // The state folder without a saved folder yet: the former script stayed in /root (cd "").
+    val proj = File(home, "projets/demo").apply { mkdirs() }
+    File(proj, "sub").mkdirs()
+    val state = File(home, ".altrex/forge/demo").path
+    fun pwd(cmd: String = "pwd"): String = AgentShell.splitCwd(sh(AgentShell.FORGE_WRAPPER, listOf(state, proj.path), stdin = cmd).second).first.trim()
+    assertEquals(proj.canonicalPath, File(pwd()).canonicalPath)
+    // A folder inside the project is kept from one command to the next…
+    pwd("cd sub")
+    assertEquals(File(proj, "sub").canonicalPath, File(pwd()).canonicalPath)
+    // …a folder outside it (a /root saved by the old script, or cd ..) is not: back to the project.
+    File(state, "cwd").writeText(home.path + "\n")
+    assertEquals(proj.canonicalPath, File(pwd()).canonicalPath)
+    pwd("cd /")
+    assertEquals(proj.canonicalPath, File(pwd()).canonicalPath)
+    // Background jobs (a server) start there too.
+    val (_, bg) = sh(AgentShell.FORGE_WRAPPER_BG, listOf(state, proj.path), stdin = "pwd")
+    assertEquals(proj.canonicalPath, File(bg.trim()).canonicalPath)
+  }
+
+  @Test
+  fun commandWait_byKindOfCommand() {
+    assertEquals(CommandWait.SLOW_IDLE_S * 1000L, CommandWait.policy("apk update && apk add nodejs python3", null).idleMs)
+    assertEquals(CommandWait.SERVER_IDLE_S * 1000L, CommandWait.policy("python3 -m http.server 3000", null).idleMs)
+    assertEquals(CommandWait.SERVER_IDLE_S * 1000L, CommandWait.policy("npm run dev", null).idleMs)
+    assertEquals(CommandWait.DEFAULT_IDLE_S * 1000L, CommandWait.policy("ls -la", null).idleMs)
+    assertEquals(45_000L, CommandWait.policy("ls", 45).idleMs)
+    assertEquals(CommandWait.MAX_IDLE_S * 1000L, CommandWait.policy("ls", 9_999).idleMs)
+    assertEquals(CommandWait.CAP_MS, CommandWait.policy("ls", null, capMs = Long.MAX_VALUE).capMs)
+    assertEquals(120_000L, CommandWait.policy("ls", null, capMs = 120_000L).capMs)
+    val p = CommandWait.Policy(idleMs = 1_000, capMs = 10_000)
+    assertEquals(CommandWait.Verdict.WAIT, CommandWait.verdict(now = 1_500, startedAt = 0, lastOutputAt = 900, p))
+    assertEquals(CommandWait.Verdict.IDLE, CommandWait.verdict(now = 2_000, startedAt = 0, lastOutputAt = 900, p))
+    assertEquals(CommandWait.Verdict.CAP, CommandWait.verdict(now = 10_000, startedAt = 0, lastOutputAt = 9_999, p))
+    assertTrue(CommandWait.usesApk("apk add git"))
+    assertTrue(CommandWait.usesApk("cd x && pkg install python"))
+    assertTrue(CommandWait.usesApk("altrex-setup"))
+    assertFalse(CommandWait.usesApk("echo apkadd"))
+    assertFalse(CommandWait.usesApk("npm install"))
+  }
 }
