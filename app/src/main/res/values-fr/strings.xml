@@ -24,7 +24,7 @@
   <string name="aichat_emptystate_title">Discuter</string>
   <string name="config_dialog_tab_model_configs">Réglages du modèle</string>
   <string name="config_dialog_tab_system_prompt">Prompt système</string>
-  <string name="config_dialog_title">Configurations</string>
+  <string name="config_dialog_title">Génération</string>
   <string name="restore_default">Restaurer par défaut</string>
   <string name="config_label_max_tokens">Tokens max</string>
   <string name="config_label_accelerator">Accélérateur</string>
@@ -322,6 +322,7 @@
   <string name="config_label_topk">TopK</string>
   <string name="config_label_topp">TopP</string>
   <string name="config_label_num_threads">Threads processeur (0 = automatique)</string>
+  <string name="config_label_context_auto">Contexte automatique (selon la mémoire libre)</string>
   <string name="config_label_basic_cpu">Mode compatibilité processeur (plus lent, effet au prochain lancement de l’appli)</string>
   <string name="config_label_kv_cache_type">Type du cache KV (diagnostic)</string>
   <string name="config_label_flash_attention">Flash attention (diagnostic)</string>

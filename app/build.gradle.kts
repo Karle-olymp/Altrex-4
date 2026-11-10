@@ -29,6 +29,10 @@ android {
   testOptions { unitTests.isIncludeAndroidResources = true }
   namespace = "com.google.ai.edge.gallery"
   compileSdk = 37
+  // [ALTREX] The app is in French: only the French translations of the libraries are packaged (and
+  // the default resources). No other language (Russian, say) can show up in a label when a phone
+  // lists several languages or a library string lacks its French version.
+  androidResources { localeFilters += listOf("fr") }
 
   defaultConfig {
     applicationId = "com.aistudio.altrex.app"

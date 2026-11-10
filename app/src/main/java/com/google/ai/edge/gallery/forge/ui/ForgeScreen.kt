@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -69,11 +70,8 @@ fun ForgeScreen(modelManagerViewModel: ModelManagerViewModel, navigateUp: () -> 
   val model = mm.selectedModel
   val workspace = remember { ForgeRuntime.workspace(context) }
 
-  // The model is loaded once downloaded, as in the other spaces.
+  // [ALTREX] Nothing loads by opening Forge: "Charger" (bar or model picker) or sending a message.
   val download = mm.modelDownloadStatus[model.name]
-  LaunchedEffect(download?.status, model.name) {
-    if (download?.status == ModelDownloadStatusType.SUCCEEDED) modelManagerViewModel.initializeModel(context, task = task, model = model)
-  }
   val initStatus = mm.modelInitializationStatus[model.name]
 
   var project by rememberSaveable { mutableStateOf<String?>(null) }
@@ -91,7 +89,14 @@ fun ForgeScreen(modelManagerViewModel: ModelManagerViewModel, navigateUp: () -> 
   }
 
   CompositionLocalProvider(LocalForgePalette provides ForgePalette.B) {
-    Box(Modifier.fillMaxSize().background(ForgePalette.B.bg).safeDrawingPadding().imePadding()) {
+    Column(Modifier.fillMaxSize().background(ForgePalette.B.bg).safeDrawingPadding().imePadding()) {
+      com.google.ai.edge.gallery.ui.common.ModelLoadBar(
+        task = task,
+        model = model,
+        modelManagerViewModel = modelManagerViewModel,
+        conversationActive = project != null,
+      )
+      Box(Modifier.fillMaxWidth().weight(1f)) {
       val proj = project
       if (proj == null) {
         var showNew by remember { mutableStateOf(false) }
@@ -187,17 +192,22 @@ fun ForgeScreen(modelManagerViewModel: ModelManagerViewModel, navigateUp: () -> 
             if (idea != null) {
               pendingIdea = null
               startPlan = false
-              if (idea.isNotBlank() && initStatus?.status == ModelInitializationStatusType.INITIALIZED) {
-                askNotifications()
-                controller.send(idea)
-              } else if (idea.isNotBlank()) {
-                controller.note("info", "Ton idée, à envoyer une fois le modèle prêt :\n\n$idea", forModel = false)
+              if (idea.isNotBlank()) {
+                // [ALTREX] Creating a project with an idea is an explicit request: load if needed.
+                val error = modelManagerViewModel.ensureLoaded(context, task, model)
+                if (error == null) {
+                  askNotifications()
+                  controller.send(idea)
+                } else {
+                  controller.note("info", "Ton idée, à envoyer une fois le modèle prêt :\n\n$idea", forModel = false)
+                }
               }
             }
           }
           SessionScreen(
             controller = controller,
             modelReady = initStatus?.status == ModelInitializationStatusType.INITIALIZED,
+            ensureModel = { modelManagerViewModel.ensureLoaded(context, task, model) },
             onBack = {
               project = null
               sessionId = null
@@ -214,10 +224,11 @@ fun ForgeScreen(modelManagerViewModel: ModelManagerViewModel, navigateUp: () -> 
           }
         }
       }
+      }
     }
     if (showModelPicker) {
       ModalBottomSheet(onDismissRequest = { showModelPicker = false }) {
-        ModelPicker(task = task, modelManagerViewModel = modelManagerViewModel) { m ->
+        ModelPicker(task = task, modelManagerViewModel = modelManagerViewModel, conversationActive = project != null) { m ->
           showModelPicker = false
           val prev = model
           scope.launch(Dispatchers.Default) {
@@ -240,6 +251,7 @@ private var showModelPicker by mutableStateOf(false)
 private fun SessionScreen(
   controller: ForgeSessionController,
   modelReady: Boolean,
+  ensureModel: suspend () -> String?,
   onBack: () -> Unit,
   onNewSession: () -> Unit,
   askNotifications: () -> Unit,
@@ -262,12 +274,23 @@ private fun SessionScreen(
   com.google.ai.edge.gallery.ui.common.KeepScreenOn(active = running)
 
   fun send(text: String) {
-    if (!modelReady) {
-      Toast.makeText(context, "Le modèle n'est pas encore chargé.", Toast.LENGTH_SHORT).show()
+    if (modelReady) {
+      askNotifications()
+      controller.send(text)
       return
     }
-    askNotifications()
-    controller.send(text)
+    // [ALTREX] Sending is an explicit request: the model loads (no Auto measurement), then the
+    // message leaves.
+    Toast.makeText(context, "Chargement du modèle…", Toast.LENGTH_SHORT).show()
+    scope.launch {
+      val error = ensureModel()
+      if (error == null) {
+        askNotifications()
+        controller.send(text)
+      } else {
+        Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+      }
+    }
   }
 
   fun command(text: String) {

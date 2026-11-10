@@ -47,7 +47,8 @@ const val DEFAULT_TOPP = 0.95f
 const val DEFAULT_REPEAT_PENALTY = 1.05f
 const val DEFAULT_TEMPERATURE = 1.0f
 const val DEFAULT_MAX_OUTPUT_TOKEN = 1024
-val DEFAULT_ACCELERATORS = listOf(Accelerator.GPU)
+// [ALTREX] LiteRT-LM runs every text model on the CPU too: CPU and GPU unless the list says otherwise.
+val DEFAULT_ACCELERATORS = listOf(Accelerator.CPU, Accelerator.GPU)
 val DEFAULT_VISION_ACCELERATOR = Accelerator.GPU
 
 // LiteRT LM Engine constants.

@@ -31,6 +31,7 @@ import com.google.ai.edge.gallery.common.getJsonResponse
 import com.google.ai.edge.gallery.common.isAICoreSupported
 import com.google.ai.edge.gallery.customtasks.common.CustomTask
 import com.google.ai.edge.gallery.data.Accelerator
+import com.google.ai.edge.gallery.compute.ComputeRuntime
 import com.google.ai.edge.gallery.data.ArgoraManifest
 import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.Category
@@ -80,6 +81,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -376,6 +378,7 @@ constructor(
   }
 
   fun deleteModel(model: Model, removeImportedFromModelList: Boolean = true) {
+    ComputeRuntime.lastModel(context).clearIf(model.name)
     // [ALTREX] A loaded model is unloaded too: deleting only its file left it in RAM, still shown as
     // loaded.
     if (model.instance != null) {
@@ -511,6 +514,8 @@ constructor(
             cleanupModel(context = context, task = task, model = model)
           } else {
             model.markInitialized()
+            // [ALTREX] Proposed first next time (never loaded by itself).
+            ComputeRuntime.lastModel(context).set(model.name)
           }
           onDone()
         } else if (error.isNotEmpty()) {
@@ -560,6 +565,7 @@ constructor(
       Log.d(TAG, "Cleaning up model '${model.name}'...")
       val onDoneFn: () -> Unit = {
         model.resetInitialization()
+        ComputeRuntime.setUnloaded(model.name)
         updateModelInitializationStatus(
           model = model,
           status = ModelInitializationStatusType.NOT_INITIALIZED,
@@ -586,6 +592,46 @@ constructor(
       }
       onDone()
     }
+  }
+
+  /**
+   * [ALTREX] Loads [model] because the user asked for it ("Charger"). Nothing loads a model by
+   * itself: neither the app's start nor opening a chat or Forge. Outside a conversation, the Auto
+   * mode may measure the backends during this load.
+   */
+  fun loadModel(context: Context, task: Task, model: Model, conversationActive: Boolean) {
+    if (model.instance != null || model.initializing) return
+    ComputeRuntime.permitBenchmark(model.name, conversationActive)
+    initializeModel(context = context, task = task, model = model)
+  }
+
+  /** [ALTREX] Frees the model's memory now ("Décharger"). */
+  fun unloadModel(context: Context, task: Task, model: Model, onDone: () -> Unit = {}) {
+    cleanupModel(context = context, task = task, model = model, onDone = onDone)
+  }
+
+  /**
+   * [ALTREX] Loads [model] if needed and waits for it: the user sent a message to a model that is
+   * not loaded (an explicit request; no measurement since a conversation is going on). Returns
+   * null when the model is ready, else the error to show.
+   */
+  suspend fun ensureLoaded(context: Context, task: Task, model: Model): String? {
+    if (!ComputeRuntime.hasLocalCompute(model)) return null
+    if (model.instance != null && uiState.value.isModelInitialized(model)) return null
+    if (!model.initializing && !uiState.value.isModelInitializing(model)) {
+      initializeModel(context = context, task = task, model = model)
+    }
+    val reached =
+      withTimeoutOrNull(10 * 60_000L) {
+        uiState.first {
+          val st = it.modelInitializationStatus[model.name]?.status
+          (st == ModelInitializationStatusType.INITIALIZED && model.instance != null) ||
+            st == ModelInitializationStatusType.ERROR
+        }
+      }
+    if (model.instance != null) return null
+    return reached?.modelInitializationStatus?.get(model.name)?.error?.takeIf { it.isNotBlank() }
+      ?: "Le modèle n'a pas pu être chargé."
   }
 
   fun setDownloadStatus(curModel: Model, status: ModelDownloadStatus) {
@@ -1284,6 +1330,8 @@ constructor(
         modelInstances[model.name] =
           ModelInitializationStatus(status = ModelInitializationStatusType.NOT_INITIALIZED)
         checkedModelNames.add(model.name)
+        // [ALTREX] Compute choice, context and threads chosen by the user, kept between runs.
+        ComputeRuntime.restoreModelSettings(context, model)
       }
     }
 
@@ -1445,6 +1493,7 @@ constructor(
           },
       )
     model.preProcess()
+    ComputeRuntime.restoreModelSettings(context, model)
 
     return model
   }

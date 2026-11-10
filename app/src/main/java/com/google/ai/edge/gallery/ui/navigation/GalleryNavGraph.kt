@@ -221,12 +221,21 @@ fun GalleryNavHost(
       .firstOrNull { it.instance != null }
       ?.let { it.displayName.ifEmpty { it.name } }
 
+  val navContext = LocalContext.current
+  val lastModelName =
+    remember(modelManagerUiState.tasks.size) {
+      com.google.ai.edge.gallery.compute.ComputeRuntime.lastModel(navContext).get()
+    }
   val navigateToTaskScreen: (Task) -> Unit = { task ->
+    // [ALTREX] The last used model first (selected, not loaded), else the first downloaded one.
     val defaultModel =
-      task.models.firstOrNull { model ->
-        modelManagerUiState.modelDownloadStatus[model.name]?.status ==
-          ModelDownloadStatusType.SUCCEEDED
-      } ?: task.models.firstOrNull()
+      com.google.ai.edge.gallery.compute.ModelOrdering.preferred(
+        task.models,
+        com.google.ai.edge.gallery.compute.ComputeRuntime.lastModel(navContext).get(),
+        { it.name },
+      ) { model ->
+        modelManagerUiState.modelDownloadStatus[model.name]?.status == ModelDownloadStatusType.SUCCEEDED
+      }
     if (defaultModel != null) {
       navController.navigate("$ROUTE_MODEL/${task.id}/${defaultModel.name}")
     } else {
@@ -342,6 +351,7 @@ fun GalleryNavHost(
           downloadStatus = modelManagerUiState.modelDownloadStatus,
           loadFailed = modelManagerUiState.loadingModelAllowlistError.isNotEmpty(),
           gaveUpWaiting = gaveUpWaiting,
+          lastModelName = lastModelName,
         )
       StartLoadingScreen(modifier = modifier)
       LaunchedEffect(destination) {
@@ -366,6 +376,7 @@ fun GalleryNavHost(
           downloadStatus = modelManagerUiState.modelDownloadStatus,
           loadFailed = modelManagerUiState.loadingModelAllowlistError.isNotEmpty(),
           gaveUpWaiting = true,
+          lastModelName = lastModelName,
         )
       LaunchedEffect(destination) {
         if (destination is StartDestination.Chat) {
@@ -611,7 +622,9 @@ fun GalleryNavHost(
     val model =
       chatTask?.models?.firstOrNull {
         it.name == modelManagerUiState.selectedModel.name && downloaded(it.name)
-      } ?: chatTask?.models?.firstOrNull { downloaded(it.name) }
+      }
+        ?: chatTask?.models?.firstOrNull { it.name == lastModelName && downloaded(it.name) }
+        ?: chatTask?.models?.firstOrNull { downloaded(it.name) }
     if (chatTask == null || model == null) {
       com.google.ai.edge.gallery.ui.common.chat.SharedInbox.take()
       android.widget.Toast.makeText(
@@ -664,10 +677,11 @@ fun GalleryNavHost(
         if (task != null) {
           // Pick the first successfully downloaded model or the default active model for this task
           val defaultModel =
-            task.models.firstOrNull { model ->
+            com.google.ai.edge.gallery.compute.ModelOrdering.preferred(task.models, lastModelName, { it.name }) {
+              model ->
               modelManagerUiState.modelDownloadStatus[model.name]?.status ==
                 ModelDownloadStatusType.SUCCEEDED
-            } ?: task.models.firstOrNull()
+            }
 
           if (defaultModel != null) {
             val route =
@@ -713,19 +727,7 @@ private fun CustomTaskScreen(
   // Handle system's edge swipe.
   BackHandler { handleNavigateUp() }
 
-  // Initialize model when model/download state changes.
-  val curDownloadStatus = modelManagerUiState.modelDownloadStatus[selectedModel.name]
-  LaunchedEffect(curDownloadStatus, selectedModel.name) {
-    if (!navigatingUp) {
-      if (curDownloadStatus?.status == ModelDownloadStatusType.SUCCEEDED) {
-        Log.d(
-          TAG,
-          "Initializing model '${selectedModel.name}' from CustomTaskScreen launched effect",
-        )
-        modelManagerViewModel.initializeModel(context, task = task, model = selectedModel)
-      }
-    }
-  }
+  // [ALTREX] No model loads by opening the screen: the user loads it ("Charger" or a message).
 
   val modelInitializationStatus = modelManagerUiState.modelInitializationStatus[selectedModel.name]
   LaunchedEffect(modelInitializationStatus) {

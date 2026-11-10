@@ -23,6 +23,16 @@ import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import com.google.ai.edge.gallery.common.cleanUpMediapipeTaskErrorMessage
+import com.google.ai.edge.gallery.compute.AutoMemory
+import com.google.ai.edge.gallery.compute.AutoPlan
+import com.google.ai.edge.gallery.compute.AutoSelector
+import com.google.ai.edge.gallery.compute.BenchSample
+import com.google.ai.edge.gallery.compute.BenchmarkGate
+import com.google.ai.edge.gallery.compute.ComputeChoice
+import com.google.ai.edge.gallery.compute.ComputeOptions
+import com.google.ai.edge.gallery.compute.ComputeRuntime
+import com.google.ai.edge.gallery.compute.ModelFingerprint
+import com.google.ai.edge.gallery.data.RuntimeType
 import com.google.ai.edge.gallery.data.Accelerator
 import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN
@@ -64,9 +74,6 @@ data class LlmModelInstance(val engine: Engine, var conversation: Conversation)
 object LlmChatModelHelper : LlmModelHelper {
   // Indexed by model name.
   private val cleanUpListeners: MutableMap<String, CleanUpListener> = mutableMapOf()
-
-  // Accelerator that actually started, per "model|requested accelerator", for this app session.
-  private val workingAccelerators = java.util.concurrent.ConcurrentHashMap<String, String>()
 
   @OptIn(ExperimentalApi::class) // opt-in experimental flags
   override fun initialize(
@@ -116,18 +123,63 @@ object LlmChatModelHelper : LlmModelHelper {
     val shouldEnableAudio = supportAudio
     val modelPath = model.getPath(context = context)
 
-    // [ALTREX] Mode Auto : la puce choisie est essayée en premier, puis le GPU et le CPU si le
-    // moteur refuse de démarrer (par exemple un modèle qui n'est pas compilé pour ce NPU). La puce
-    // qui a fonctionné est retenue pour la session, pour ne pas refaire à chaque fois l'essai raté.
-    val memoryKey = model.name + "|" + accelerator
-    val candidates = backendCandidates(model, accelerator)
-    val remembered = workingAccelerators[memoryKey]
-    val ordered =
-      if (remembered != null && remembered in candidates) {
-        listOf(remembered) + (candidates - remembered)
-      } else {
-        candidates
+    // [ALTREX] Compute: Auto (measured once per model file, app and phone, see AutoSelector) or
+    // the user's choice, then the CPU when the engine refuses to start. An engine start that killed
+    // the app last time (a GPU or NPU driver crash) is recorded and not retried: no crash loop.
+    val candidates =
+      ComputeOptions.backendsFor(RuntimeType.LITERT_LM, model.accelerators, supportedBackends(modelPath))
+    val choice = ComputeOptions.resolve(accelerator, candidates)
+    val memory = ComputeRuntime.memory(context)
+    val fp = ComputeRuntime.fingerprint(context, model)
+    val crashed = memory.takeCrashedAttempt(fp)
+    if (crashed != null) {
+      showToast(
+        context,
+        "${ComputeRuntime.title(crashed)} s'est arrêté brutalement au dernier chargement de ce " +
+          "modèle : il ne sera plus essayé automatiquement.",
+      )
+    }
+    val failed = memory.failedOf(fp)
+    val mayMeasure = ComputeRuntime.takeBenchmarkPermit(model.name)
+    val cpuOk = ComputeChoice.CPU in candidates
+    val primary: ComputeChoice
+    var primaryTps: Double? = null
+    var autoReason = ""
+    if (choice == ComputeChoice.AUTO) {
+      val refusal =
+        BenchmarkGate.refusal(
+          ComputeRuntime.deviceState(context),
+          conversationActive = false,
+          explicitLoad = mayMeasure,
+        )
+      when (val plan = AutoSelector.plan(candidates, memory.recall(fp), failed, refusal)) {
+        is AutoPlan.Use -> {
+          primary = plan.backend
+          primaryTps = plan.tokensPerSecond
+          autoReason = plan.reason
+        }
+        is AutoPlan.Measure -> {
+          val samples =
+            plan.backends.map { b ->
+              ComputeRuntime.setPhase(model.name, "Mesure du calcul ${ComputeRuntime.title(b)}…")
+              BenchSample(b, measure(context, modelPath, b, fp, memory))
+            }
+          Log.i(TAG, "Auto measurement for '${model.name}': $samples")
+          for (sample in samples) if (sample.tokensPerSecond == null) memory.markFailed(fp, sample.backend)
+          val pick = AutoSelector.pickFastest(samples)
+          primary = pick ?: if (cpuOk) ComputeChoice.CPU else candidates.first()
+          primaryTps = samples.firstOrNull { it.backend == primary }?.tokensPerSecond
+          if (pick != null) memory.remember(fp, pick, primaryTps, System.currentTimeMillis())
+          autoReason = "mesuré"
+        }
       }
+    } else {
+      // A backend that failed for this file runs on the CPU until the user picks it again.
+      primary = if (choice in failed && cpuOk) ComputeChoice.CPU else choice
+    }
+    val ordered = (listOf(primary) + if (cpuOk) listOf(ComputeChoice.CPU) else emptyList()).distinct()
+    ComputeRuntime.setPhase(model.name, "Démarrage sur ${ComputeRuntime.title(primary)}…")
+    val cpuThreads = ComputeRuntime.autoParams(context, model).threads
 
     // Check if the model file supports speculative decoding.
     var supportsSpeculativeDecoding = false
@@ -143,12 +195,12 @@ object LlmChatModelHelper : LlmModelHelper {
     }
 
     var firstError: String? = null
-    for (label in ordered) {
-      val preferredBackend = backendFor(context, label)
+    for (attempt in ordered) {
+      val preferredBackend = backendFor(context, attempt, cpuThreads)
       // A fallback away from the NPU also moves the image encoder off the NPU.
       val visionForAttempt =
-        if (label != accelerator && visionBackend is Backend.NPU) Backend.GPU() else visionBackend
-      Log.d(TAG, "Trying backend $label (asked: $accelerator)")
+        if (attempt != ComputeChoice.NPU && visionBackend is Backend.NPU) Backend.GPU() else visionBackend
+      Log.d(TAG, "Trying backend $attempt (asked: $accelerator)")
       val engineConfig =
         EngineConfig(
           modelPath = modelPath,
@@ -183,6 +235,7 @@ object LlmChatModelHelper : LlmModelHelper {
         Log.d(TAG, "Speculative decoding enabled: $speculativeDecoding")
         val newEngine = Engine(engineConfig)
         engine = newEngine
+        memory.beginAttempt(fp, attempt)
         newEngine.initialize()
         ExperimentalFlags.enableSpeculativeDecoding = false
 
@@ -207,7 +260,9 @@ object LlmChatModelHelper : LlmModelHelper {
           )
         ExperimentalFlags.enableConversationConstrainedDecoding = false
         model.instance = LlmModelInstance(engine = newEngine, conversation = conversation)
+        memory.endAttempt(fp)
       } catch (e: Exception) {
+        memory.endAttempt(fp)
         ExperimentalFlags.enableSpeculativeDecoding = false
         ExperimentalFlags.enableConversationConstrainedDecoding = false
         try {
@@ -216,16 +271,33 @@ object LlmChatModelHelper : LlmModelHelper {
           Log.w(TAG, "Failed to close the engine after a failed start: ${closeError.message}")
         }
         val errorMsg = cleanUpMediapipeTaskErrorMessage(e.message ?: "Unknown error")
-        Log.w(TAG, "Backend $label failed to start: $errorMsg")
+        Log.w(TAG, "Backend $attempt failed to start: $errorMsg")
         if (firstError == null) firstError = errorMsg
+        if (attempt != ComputeChoice.CPU) memory.markFailed(fp, attempt)
         continue
       }
 
-      workingAccelerators[memoryKey] = label
-      if (label != accelerator) {
-        Log.w(TAG, "Backend $accelerator unavailable for '${model.name}', using $label")
-        showFallbackToast(context, asked = accelerator, used = label)
+      val fellBack = attempt != primary
+      if (fellBack) {
+        Log.w(TAG, "Backend $primary unavailable for '${model.name}', using $attempt")
+        showToast(
+          context,
+          "${ComputeRuntime.title(primary)} indisponible pour ce modèle : ${ComputeRuntime.title(attempt)} utilisé à la place.",
+        )
+        if (choice == ComputeChoice.AUTO) memory.remember(fp, attempt, null, System.currentTimeMillis())
       }
+      val used = ComputeRuntime.title(attempt)
+      val line =
+        when {
+          choice == ComputeChoice.AUTO && fellBack ->
+            "Auto : $used (repli : ${ComputeRuntime.title(primary)} a échoué)"
+          choice == ComputeChoice.AUTO -> AutoSelector.explain(used, primaryTps, autoReason)
+          attempt != choice -> "Calcul : $used (${ComputeRuntime.title(choice)} a échoué ; rechoisis-le pour réessayer)"
+          else -> "Calcul : $used"
+        }
+      val params =
+        "contexte $maxTokens" + if (attempt == ComputeChoice.CPU) " · $cpuThreads threads (auto)" else ""
+      ComputeRuntime.setLoaded(model.name, attempt, line, params)
       model.markInitialized()
       onDone("")
       return
@@ -236,36 +308,71 @@ object LlmChatModelHelper : LlmModelHelper {
     onDone(errorMsg)
   }
 
-  // Requested accelerator first, then GPU and CPU when the model allows them.
-  private fun backendCandidates(model: Model, accelerator: String): List<String> {
-    val allowed = model.accelerators.map { it.label }
-    val fallbacks =
-      listOf(Accelerator.GPU.label, Accelerator.CPU.label).filter {
-        allowed.isEmpty() || it in allowed
-      }
-    return (listOf(accelerator) + fallbacks).distinct()
-  }
-
-  private fun backendFor(context: Context, label: String): Backend =
-    when (label) {
-      Accelerator.CPU.label -> Backend.CPU()
-      Accelerator.GPU.label -> Backend.GPU()
-      Accelerator.NPU.label ->
-        Backend.NPU(nativeLibraryDir = context.applicationInfo.nativeLibraryDir)
-      Accelerator.TPU.label ->
-        Backend.NPU(nativeLibraryDir = context.applicationInfo.nativeLibraryDir)
-      else -> Backend.CPU()
+  private fun backendFor(context: Context, choice: ComputeChoice, cpuThreads: Int? = null): Backend =
+    when (choice) {
+      ComputeChoice.GPU -> Backend.GPU()
+      ComputeChoice.NPU -> Backend.NPU(nativeLibraryDir = context.applicationInfo.nativeLibraryDir)
+      else -> Backend.CPU(cpuThreads)
     }
 
-  private fun showFallbackToast(context: Context, asked: String, used: String) {
+  /** Backends the model file declares (LiteRT-LM metadata), null when unknown. */
+  private fun supportedBackends(modelPath: String): Set<ComputeChoice>? =
+    try {
+      com.google.ai.edge.litertlm.ModelInfo.from(modelPath).use { info ->
+        info
+          .supportedBackends(com.google.ai.edge.litertlm.Modality.TEXT)
+          .mapNotNull {
+            when (it) {
+              com.google.ai.edge.litertlm.BackendType.CPU -> ComputeChoice.CPU
+              com.google.ai.edge.litertlm.BackendType.GPU -> ComputeChoice.GPU
+              com.google.ai.edge.litertlm.BackendType.NPU -> ComputeChoice.NPU
+              else -> null
+            }
+          }
+          .toSet()
+          .ifEmpty { null }
+      }
+    } catch (e: Throwable) {
+      null
+    }
+
+  /**
+   * [ALTREX] Micro-benchmark of one backend: LiteRT-LM's benchmark (a fixed synthetic prompt of 64
+   * tokens, then 32 generated tokens). Decode speed in tokens per second, null on failure. The
+   * crash guard marks the attempt: if a driver kills the app here, Auto never tries it again.
+   */
+  @OptIn(ExperimentalApi::class)
+  private fun measure(
+    context: Context,
+    modelPath: String,
+    backend: ComputeChoice,
+    fp: ModelFingerprint,
+    memory: AutoMemory,
+  ): Double? {
+    memory.beginAttempt(fp, backend)
+    return try {
+      val dir = java.io.File(context.cacheDir, "litert_bench").apply { mkdirs() }
+      val info =
+        com.google.ai.edge.litertlm.benchmark(
+          modelPath = modelPath,
+          backend = backendFor(context, backend),
+          prefillTokens = 64,
+          decodeTokens = 32,
+          cacheDir = dir.absolutePath,
+        )
+      info.lastDecodeTokensPerSecond.takeIf { it > 0.0 }
+    } catch (e: Throwable) {
+      Log.w(TAG, "Measurement on $backend failed: ${e.message}")
+      null
+    } finally {
+      memory.endAttempt(fp)
+    }
+  }
+
+  private fun showToast(context: Context, message: String) {
     val appContext = context.applicationContext
     Handler(Looper.getMainLooper()).post {
-      Toast.makeText(
-          appContext,
-          "$asked indisponible pour ce modèle : $used utilisé à la place.",
-          Toast.LENGTH_LONG,
-        )
-        .show()
+      Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()
     }
   }
 
@@ -294,18 +401,15 @@ object LlmChatModelHelper : LlmModelHelper {
       val shouldEnableAudio = supportAudio
       Log.d(TAG, "Enable image: $shouldEnableImage, enable audio: $shouldEnableAudio")
 
-      val accelerator =
-        model.getStringConfigValue(
-          key = ConfigKeys.ACCELERATOR,
-          defaultValue = Accelerator.GPU.label,
-        )
+      // [ALTREX] The backend really in use (Auto or a fallback may differ from the setting).
+      val onNpu = ComputeRuntime.status.value[model.name]?.backend == ComputeChoice.NPU
       ExperimentalFlags.enableConversationConstrainedDecoding =
         enableConversationConstrainedDecoding
       val newConversation =
         engine.createConversation(
           ConversationConfig(
             samplerConfig =
-              if (accelerator == Accelerator.NPU.label || accelerator == Accelerator.TPU.label) {
+              if (onNpu) {
                 null
               } else {
                 SamplerConfig(

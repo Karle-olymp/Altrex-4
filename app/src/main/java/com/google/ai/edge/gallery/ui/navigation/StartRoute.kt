@@ -40,14 +40,16 @@ fun chooseStartDestination(
   downloadStatus: Map<String, ModelDownloadStatus>,
   loadFailed: Boolean,
   gaveUpWaiting: Boolean,
+  // [ALTREX] The last model the user loaded: opened first (selected, not loaded).
+  lastModelName: String? = null,
 ): StartDestination {
   if (tasks.isEmpty()) {
     return if (loadFailed || gaveUpWaiting) StartDestination.Welcome else StartDestination.Waiting
   }
   val chatTask = tasks.find { it.id == BuiltInTaskId.LLM_CHAT } ?: return StartDestination.Welcome
   val model =
-    chatTask.models.firstOrNull { downloadStatus[it.name]?.status == ModelDownloadStatusType.SUCCEEDED }
-      ?: chatTask.models.firstOrNull()
-      ?: return StartDestination.Welcome
+    com.google.ai.edge.gallery.compute.ModelOrdering.preferred(chatTask.models, lastModelName, { it.name }) {
+      downloadStatus[it.name]?.status == ModelDownloadStatusType.SUCCEEDED
+    } ?: return StartDestination.Welcome
   return StartDestination.Chat(chatTask.id, model.name)
 }

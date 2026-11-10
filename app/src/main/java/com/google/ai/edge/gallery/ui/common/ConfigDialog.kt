@@ -132,7 +132,13 @@ fun ConfigDialog(
   showSystemPromptEditorTab: Boolean = false,
   defaultSystemPrompt: String = "",
   curSystemPrompt: String = "",
+  // [ALTREX] Sections drawn above the generic rows (compute, model parameters), and the values a
+  // "Réinitialiser" button puts back (null: no such button).
+  extraContent: (@Composable (SnapshotStateMap<String, Any>) -> Unit)? = null,
+  resetValues: Map<String, Any>? = null,
+  onReset: () -> Unit = {},
 ) {
+  var resetCount by remember { mutableIntStateOf(0) }
   val values: SnapshotStateMap<String, Any> = remember {
     mutableStateMapOf<String, Any>().apply { putAll(initialValues) }
   }
@@ -210,7 +216,10 @@ fun ConfigDialog(
             modifier = Modifier.verticalScroll(rememberScrollState()).weight(1f, fill = false),
             verticalArrangement = Arrangement.spacedBy(16.dp),
           ) {
-            ConfigEditorsPanel(configs = configs, values = values)
+            androidx.compose.runtime.key(resetCount) {
+              extraContent?.invoke(values)
+              ConfigEditorsPanel(configs = configs, values = values)
+            }
           }
         } else if (selectedTabIndex == 1) {
           OutlinedTextField(
@@ -251,6 +260,20 @@ fun ConfigDialog(
           horizontalArrangement = Arrangement.End,
           verticalAlignment = Alignment.CenterVertically,
         ) {
+          // [ALTREX] Back to the defaults (Auto compute, auto parameters…).
+          if (resetValues != null && selectedTabIndex == 0) {
+            TextButton(
+              onClick = {
+                values.clear()
+                values.putAll(resetValues)
+                resetCount++
+                onReset()
+              }
+            ) {
+              Text("Réinitialiser")
+            }
+            Spacer(modifier = Modifier.weight(1f))
+          }
           // Cancel button.
           if (showCancel) {
             TextButton(onClick = { onDismissed() }) { Text(stringResource(R.string.cancel)) }

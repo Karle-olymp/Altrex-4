@@ -223,16 +223,11 @@ fun ChatView(
     }
   }
 
-  // Initialize model when model/download state changes.
-  val curDownloadStatus = modelManagerUiState.modelDownloadStatus[selectedModel.name]
-  LaunchedEffect(curDownloadStatus, selectedModel.name) {
-    if (!navigatingUp) {
-      if (curDownloadStatus?.status == ModelDownloadStatusType.SUCCEEDED) {
-        Log.d(TAG, "Initializing model '${selectedModel.name}' from ChatView launched effect")
-        modelManagerViewModel.initializeModel(context, task = task, model = selectedModel)
-      }
-    }
-  }
+  // [ALTREX] No model is loaded by opening the chat (as in LM Studio): the bar above the messages
+  // offers "Charger", and sending a message loads it (ChatViewWrapper). A conversation is going on
+  // when it has messages or an answer is being written: the Auto mode then never measures.
+  val conversationActive =
+    uiState.inProgress || currentMessages.any { it is ChatMessageText || it is ChatMessageThinking }
 
   LaunchedEffect(sendMessageTrigger) {
     sendMessageTrigger?.let { trigger -> onSendMessage(trigger.model, trigger.messages) }
@@ -350,6 +345,7 @@ fun ChatView(
               onHistoryClicked = {
                 scope.launch { drawerState.open() }
               },
+              conversationActive = conversationActive,
             )
           },
         ) { innerPadding ->
@@ -402,7 +398,16 @@ fun ChatView(
                       showImagePicker = showImagePicker,
                       showAudioPicker = showAudioPicker,
                       emptyStateComposable = emptyStateComposable,
-                      topContent = topContent,
+                      // [ALTREX] "Non chargé · Charger" above the messages.
+                      topContent = {
+                        com.google.ai.edge.gallery.ui.common.ModelLoadBar(
+                          task = task,
+                          model = selectedModel,
+                          modelManagerViewModel = modelManagerViewModel,
+                          conversationActive = conversationActive,
+                        )
+                        topContent?.invoke()
+                      },
                     )
                   // Model download
                   false ->

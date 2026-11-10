@@ -68,6 +68,22 @@ class StartRouteTest {
   }
 
   @Test
+  fun chatOpensTheLastUsedModelNotTheFirstOne() {
+    // [ALTREX] The Argora Space (first, always "downloaded") no longer wins over the last model.
+    val tasks = listOf(task(BuiltInTaskId.LLM_CHAT, model("space:argora"), model("qwen")))
+    val both = mapOf("space:argora" to downloaded, "qwen" to downloaded)
+    assertEquals(
+      StartDestination.Chat(BuiltInTaskId.LLM_CHAT, "qwen"),
+      chooseStartDestination(tasks, both, loadFailed = false, gaveUpWaiting = false, lastModelName = "qwen"),
+    )
+    // Last model deleted since: the first downloaded one.
+    assertEquals(
+      StartDestination.Chat(BuiltInTaskId.LLM_CHAT, "space:argora"),
+      chooseStartDestination(tasks, both, loadFailed = false, gaveUpWaiting = false, lastModelName = "gone"),
+    )
+  }
+
+  @Test
   fun removedTasksOpenTheirReplacement() {
     assertEquals(BuiltInTaskId.LLM_CHAT, resolveTaskAlias(BuiltInTaskId.LLM_AGENT_CHAT))
     assertEquals(BuiltInTaskId.LLM_CHAT, resolveTaskAlias(BuiltInTaskId.LLM_ASK_IMAGE))

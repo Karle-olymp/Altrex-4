@@ -60,7 +60,7 @@
   <string name="clear" translatable="true" description="Content description for a button to clear text input. [CHAR_LIMIT=9]">Clear</string>
   <string name="config_dialog_tab_model_configs" translatable="true" description="Tab label for model-specific configurations. [CHAR_LIMIT=22]">Model configs</string>
   <string name="config_dialog_tab_system_prompt" translatable="true" description="Tab label for system prompt configuration. [CHAR_LIMIT=22]">System prompt</string>
-  <string name="config_dialog_title" translatable="true" description="Title of the settings/configuration dialog. [CHAR_LIMIT=26]">Configurations</string>
+  <string name="config_dialog_title" translatable="true" description="Title of the settings/configuration dialog. [CHAR_LIMIT=26]">Generation</string>
   <string name="benchmark_config_dialog_title" translatable="true" description="Title of the benchmark configuration dialog. [CHAR_LIMIT=29]">Benchmark configs</string>
   <string name="start" translatable="true" description="Button label to start benchmarking. [CHAR_LIMIT=9]">Start</string>
   <string name="continue_button_label" translatable="true" description="Button label to proceed to next step. [CHAR_LIMIT=18]">Continue</string>
@@ -433,6 +433,7 @@
   <!-- Label for the 'TopP' option in the model configuration dialog. -->
   <string name="config_label_topp">TopP</string>
   <string name="config_label_num_threads">CPU threads (0 = automatic)</string>
+  <string name="config_label_context_auto">Automatic context (from the free memory)</string>
   <string name="config_label_basic_cpu">CPU compatibility mode (slower, applies at next app start)</string>
   <string name="config_label_kv_cache_type">KV cache type (diagnostic)</string>
   <string name="config_label_flash_attention">Flash attention (diagnostic)</string>

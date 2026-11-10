@@ -230,6 +230,16 @@ fun ChatViewWrapper(
         val baseInput = input
         val readLongDocument = longDocument
         scope.launch {
+          // [ALTREX] Sending to a model that is not loaded loads it first (an explicit request;
+          // the Auto mode does not measure during a conversation).
+          val loadError = modelManagerViewModel.ensureLoaded(context, task, model)
+          if (loadError != null) {
+            viewModel.addMessage(
+              model = model,
+              message = com.google.ai.edge.gallery.ui.common.chat.ChatMessageError(content = loadError),
+            )
+            return@launch
+          }
           var finalInput = baseInput
           if (useMemory) {
             val contextTokens =

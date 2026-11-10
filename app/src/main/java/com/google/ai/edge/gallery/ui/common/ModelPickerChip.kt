@@ -76,6 +76,7 @@ fun ModelPickerChip(
   initialModel: Model,
   modelManagerViewModel: ModelManagerViewModel,
   onModelSelected: (prev: Model, cur: Model) -> Unit,
+  conversationActive: Boolean = true,
 ) {
   var showModelPicker by remember { mutableStateOf(false) }
   var modelPickerModel by remember { mutableStateOf<Model?>(null) }
@@ -168,6 +169,7 @@ fun ModelPickerChip(
       ModelPicker(
         task = task,
         modelManagerViewModel = modelManagerViewModel,
+        conversationActive = conversationActive,
         onModelSelected = { selectedModel ->
           showModelPicker = false
           val prevSelectedModel = modelManagerUiState.selectedModel

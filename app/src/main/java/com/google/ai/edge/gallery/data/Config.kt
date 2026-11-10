@@ -16,6 +16,8 @@
 
 package com.google.ai.edge.gallery.data
 
+import com.google.ai.edge.gallery.compute.ComputeChoice
+
 import androidx.annotation.StringRes
 import com.google.ai.edge.gallery.R
 import kotlin.math.abs
@@ -57,6 +59,8 @@ object ConfigKeys {
   val THINKING_BUDGET =
     ConfigKey("thinking_budget", "Thinking budget", R.string.config_label_thinking_budget)
   val NUM_THREADS = ConfigKey("num_threads", "CPU threads", R.string.config_label_num_threads)
+  // [ALTREX] Context size chosen from the free memory (AutoParamsCalculator) instead of MAX_TOKENS.
+  val CONTEXT_AUTO = ConfigKey("context_auto", "Automatic context", R.string.config_label_context_auto)
   val BASIC_CPU = ConfigKey("basic_cpu", "CPU compatibility mode", R.string.config_label_basic_cpu)
   val KV_CACHE_TYPE = ConfigKey("kv_cache_type", "KV cache type", R.string.config_label_kv_cache_type)
   val FLASH_ATTENTION =
@@ -313,10 +317,11 @@ fun createLlmChatConfigs(
           defaultValue = defaultTemperature,
           valueType = ValueType.FLOAT,
         ),
+        // [ALTREX] Auto first (ComputeOptions decides what each engine really offers).
         SegmentedButtonConfig(
           key = ConfigKeys.ACCELERATOR,
-          defaultValue = accelerators[0].label,
-          options = accelerators.map { it.label },
+          defaultValue = ComputeChoice.AUTO.label,
+          options = listOf(ComputeChoice.AUTO.label) + accelerators.map { it.label },
         ),
       )
       .toMutableList()
@@ -334,6 +339,8 @@ fun createLlmChatConfigs(
     )
   }
   if (defaultRepeatPenalty != null) {
+    // [ALTREX] Context chosen from the free RAM by default (the MAX_TOKENS slider when off).
+    configs.add(BooleanSwitchConfig(key = ConfigKeys.CONTEXT_AUTO, defaultValue = true))
     // [ALTREX] llama.cpp diagnostics: thread count, and the plain ARMv8 build instead of the
     // dotprod/i8mm one.
     configs.add(
