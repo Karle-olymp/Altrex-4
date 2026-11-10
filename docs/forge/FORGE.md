@@ -264,3 +264,34 @@ Fait dans le code (paquet `com.google.ai.edge.gallery.forge`), compilé et couve
 **4. Petits correctifs.** Carte d'autorisation : « N lignes de plus · voir tout » ne recouvre plus la première ligne du diff (deux éléments frères dans une `Box`) ; liste de tâches : consigne renforcée dans le prompt et rappel automatique, une fois par tour, si des tâches restent non terminées à la réponse finale ; ligne d'état : libellés raccourcis sur écran étroit (« ctx », nom du modèle sans son fournisseur) et défilement horizontal ; limites de débit (HTTP 429) : nouvel essai automatique (Retry-After ou 2, 4, 8 s, 3 essais), message « Limite du fournisseur …, nouvel essai dans N s » dans le fil, annulable.
 
 **Non vérifié sans téléphone** : temps réel d'arrêt sous PRoot (SIGTERM aux processus tracés, `--kill-on-exit`), lecture de `/proc/<pid>/environ` et `cmdline` des processus du Linux sur Android (repérage des apk orphelins), obtention du pid d'un processus sur Android (réflexion, sinon comparaison des enfants avant/après le lancement), fermeture d'une connexion HTTPS bloquée par `disconnect()` depuis un autre fil, livraison du récepteur de la notification, cookie du jeton accepté par le WebView, rendu clair (assombrissement désactivé) selon la version du WebView, réception réelle d'un 429 de Groq et format de son `Retry-After`.
+
+## 16. Étude d'Acode (MIT) : idées retenues
+
+Étude complète : `docs/forge/recherche/acode.md` (dépôt Acode, commit 6962af1, licence MIT ; idées seulement, aucun code repris).
+
+| Idée | Étape |
+|---|---|
+| Rapport d'aperçu pour l'agent : erreurs de console, JS, HTTP, plantage du rendu (callbacks natifs de la WebView) | 3 |
+| Émulateur de tailles d'écran (téléphone, tablette, bureau) et captures multi-tailles | 3 |
+| Garde de navigation de l'aperçu (origine du projet ; liens externes dans le navigateur) | 3 |
+| Profil WebView isolé par projet (cookies et stockage séparés) | 3 |
+| Servir le texte non enregistré de l'éditeur avant le disque | 3 |
+| Fichier ouvert modifié par l'agent : rechargement ou conflit visible, jamais d'écrasement silencieux | 2 |
+| Barre de touches rapides configurable (symboles, Ctrl, Tab, flèches) | 2 |
+| CodeMirror 6 tactile en WebView (poignées, indentation conservée) | 2 |
+
+À ne pas reprendre : serveur sur toutes les interfaces sans jeton, Eruda injecté partout, réécriture du HTML par regex, plugins avec tous les droits, SFTP/FTP (LGPL), `libaxs.so` (licence non vérifiée). Forge fait déjà mieux sur le serveur d'aperçu (127.0.0.1, jeton, port éphémère) et sur le rechargement automatique.
+
+## 17. Document d'architecture du 8 novembre (`ARCHITECTURE_ALTREX4.md`, sur `main`)
+
+Analyse du 2026-11-10.
+
+- **Déjà fait dans Forge :** double terminal, modes de permission, cartes d'accord, outils déterministes avec diff.
+- **Déjà prévu :** compaction du contexte et carte du dépôt (étape 2), client MCP (n8n à tester), skills `SKILL.md`.
+- **Laya (Système 1) :** à tester d'abord dans notre llama.cpp (API `/v1/systemone` non vérifiée). Modèles sous Apache 2.0 vérifiés (`ggml-org/Laya-GGUF`, `convaiinnovations/laya-multilingual`) ; préférer le multilingue. **Règle :** son score peut ajouter une demande d'accord, jamais en retirer.
+- **Kali :** à ajouter en option téléchargeable, sans remplacer Alpine ; prévoir l'équivalent `apt` des aides `apk`/`altrex-setup`. `force-unsafe-io` et `nmap -sT --unprivileged` sont justes. Les cartes d'accord restent actives même en mode « force ».
+- **À corriger dans le document :** retirer la référence à OpenClaude (dérivé du code propriétaire de Claude Code, écarté) ; changer l'`applicationId` une seule fois, avec la vraie clé de signature.
+- **Recherche FTS5 + RRF :** bonne idée, complète la recherche par le sens.
+- **Licence de `aayushch/laya` :** non vérifiée.
+
+Ordre proposé : chargement manuel et calcul (fait) → étape 2 de Forge → test de Laya → Kali en option → n8n.
