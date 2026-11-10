@@ -99,6 +99,29 @@ sealed class ForgeEvent {
     override val type = "turn_end"
   }
 
+  /**
+   * A snapshot of the project in the shadow store ([com.google.ai.edge.gallery.forge.checkpoints]):
+   * "avant" the agent's first change of a turn, "apres" at its end ([files] = what changed).
+   */
+  data class Checkpoint(val turn: Int, val phase: String, val rev: String, val store: String, val files: List<String> = emptyList(), override val ts: Long = 0) : ForgeEvent() {
+    override val type = "checkpoint"
+  }
+
+  /** /undo of turn [turn]: files put back, files left alone (changed by the user since), backup snapshot. */
+  data class Undo(val turn: Int, val restored: List<String>, val skipped: List<String>, val backup: String, val after: String, override val ts: Long = 0) : ForgeEvent() {
+    override val type = "undo"
+  }
+
+  /** Level 1 compaction: these tool results are replaced by a tombstone in the model's history. */
+  data class Compaction(val turn: Int, val ids: List<String>, override val ts: Long = 0) : ForgeEvent() {
+    override val type = "compaction"
+  }
+
+  /** Level 2 compaction: [text] replaces, for the model, the first [upto] events of the journal. */
+  data class Summary(val turn: Int, val upto: Int, val text: String, override val ts: Long = 0) : ForgeEvent() {
+    override val type = "summary"
+  }
+
   data class Todo(val content: String, val status: String, val activeForm: String = "")
 
   fun toJson(now: Long = ts): JSONObject {
@@ -137,12 +160,21 @@ sealed class ForgeEvent {
       is Answer -> o.put("turn", turn).put("id", id).put("answer", answer)
       is Note -> o.put("turn", turn).put("kind", kind).put("text", text).put("forModel", forModel).put("shown", shown)
       is TurnEnd -> o.put("turn", turn).put("reason", reason).also { if (detail.isNotEmpty()) it.put("detail", detail) }
+      is Checkpoint -> o.put("turn", turn).put("phase", phase).put("rev", rev).put("store", store).put("files", org.json.JSONArray(files))
+      is Undo -> o.put("turn", turn).put("restored", org.json.JSONArray(restored)).put("skipped", org.json.JSONArray(skipped)).put("backup", backup).put("after", after)
+      is Compaction -> o.put("turn", turn).put("ids", org.json.JSONArray(ids))
+      is Summary -> o.put("turn", turn).put("upto", upto).put("text", text)
     }
     return o
   }
 
   companion object {
     const val FORMAT_VERSION = 1
+
+    private fun strings(o: JSONObject, key: String): List<String> {
+      val arr = o.optJSONArray(key) ?: return emptyList()
+      return (0 until arr.length()).map { arr.optString(it) }
+    }
 
     /** Null for an unknown or damaged line (a crash in the middle of a write). */
     fun fromJson(o: JSONObject): ForgeEvent? {
@@ -175,6 +207,10 @@ sealed class ForgeEvent {
         "answer" -> Answer(turn, o.optString("id"), o.optString("answer"), ts)
         "note" -> Note(turn, o.optString("kind"), o.optString("text"), o.optBoolean("forModel"), o.optBoolean("shown", true), ts)
         "turn_end" -> TurnEnd(turn, o.optString("reason"), o.optString("detail"), ts)
+        "checkpoint" -> Checkpoint(turn, o.optString("phase"), o.optString("rev"), o.optString("store"), strings(o, "files"), ts)
+        "undo" -> Undo(turn, strings(o, "restored"), strings(o, "skipped"), o.optString("backup"), o.optString("after"), ts)
+        "compaction" -> Compaction(turn, strings(o, "ids"), ts)
+        "summary" -> Summary(turn, o.optInt("upto"), o.optString("text"), ts)
         else -> null
       }
     }

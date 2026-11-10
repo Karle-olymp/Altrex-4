@@ -111,6 +111,9 @@ private fun look(name: String, args: JSONObject, result: ForgeEvent.ToolResult?)
     "Read" -> ToolLook(Icons.Outlined.Description, "Lu")
     "Write" -> ToolLook(Icons.AutoMirrored.Outlined.InsertDriveFile, if (result != null && runCatching { JSONObject(result.modelText).optBoolean("created") }.getOrDefault(false)) "Créé" else "Écrit")
     "Edit" -> ToolLook(Icons.Outlined.Edit, "Modifié")
+    "MultiEdit" -> ToolLook(Icons.Outlined.Edit, "Modifié")
+    "WebFetch" -> ToolLook(Icons.Outlined.Search, "Page web")
+    "WebSearch" -> ToolLook(Icons.Outlined.Search, "Recherche web")
     "Glob" -> ToolLook(Icons.Outlined.Search, "Fichiers")
     "Grep" -> ToolLook(Icons.Outlined.Search, "Recherche")
     "Bash" -> ToolLook(Icons.Outlined.Terminal, if (args.optBoolean("run_in_background")) "Tâche de fond" else "Commande")
@@ -124,12 +127,14 @@ private fun look(name: String, args: JSONObject, result: ForgeEvent.ToolResult?)
 
 private fun target(name: String, args: JSONObject): String =
   when (name) {
-    "Read", "Write", "Edit" -> args.optString("file_path").ifEmpty { args.optString("path") }
+    "Read", "Write", "Edit", "MultiEdit" -> args.optString("file_path").ifEmpty { args.optString("path") }
     "Glob" -> args.optString("pattern")
     "Grep" -> args.optString("pattern").let { p -> args.optString("path").takeIf { it.isNotEmpty() }?.let { "$p  $it" } ?: p }
     "Bash" -> args.optString("command")
     "BashOutput", "KillShell" -> args.optString("job_id")
     "AskUserQuestion" -> args.optString("question")
+    "WebFetch" -> args.optString("url")
+    "WebSearch" -> args.optString("query")
     else -> ""
   }.lineSequence().firstOrNull().orEmpty()
 
@@ -144,7 +149,7 @@ fun ToolCard(item: FeedItem.ToolCard, progress: String?, running: Boolean = true
   val r = item.result
   val l = look(item.name, args, r)
   val detail = r?.detail.orEmpty()
-  var open by rememberSaveable(item.id) { mutableStateOf(item.name == "Edit" || item.name == "Write") }
+  var open by rememberSaveable(item.id) { mutableStateOf(item.name == "Edit" || item.name == "Write" || item.name == "MultiEdit") }
   Column(
     Modifier.fillMaxWidth().clip(shape()).border(1.dp, p.line, shape()).background(p.surface.copy(alpha = if (p.grid) 0.92f else 1f))
       .animateContentSize(tween(160))
@@ -189,7 +194,7 @@ fun ToolCard(item: FeedItem.ToolCard, progress: String?, running: Boolean = true
     }
     if (open && detail.isNotEmpty()) {
       Box(Modifier.fillMaxWidth().height(1.dp).background(p.line))
-      DetailLines(detail, isDiff = item.name == "Edit" || item.name == "Write")
+      DetailLines(detail, isDiff = item.name == "Edit" || item.name == "Write" || item.name == "MultiEdit")
     }
   }
 }
@@ -234,9 +239,9 @@ fun DetailLines(detail: String, isDiff: Boolean, maxFolded: Int = 5) {
 @Composable
 fun NoteBlock(kind: String, text: String) {
   val p = LocalForgePalette.current
-  val color = if (kind == "erreur" || kind == "blocage") p.warn else p.muted
+  val color = if (kind == "erreur" || kind == "blocage" || kind == "conflit") p.warn else p.muted
   Row(Modifier.fillMaxWidth().clip(shape()).border(1.dp, color.copy(alpha = 0.4f), shape()).padding(12.dp)) {
-    Icon(if (kind == "erreur" || kind == "blocage") Icons.Outlined.Warning else Icons.Outlined.Description, null, tint = color, modifier = Modifier.size(16.dp))
+    Icon(if (kind == "erreur" || kind == "blocage" || kind == "conflit") Icons.Outlined.Warning else Icons.Outlined.Description, null, tint = color, modifier = Modifier.size(16.dp))
     Spacer(Modifier.width(8.dp))
     if (kind == "scan" || kind == "doctor") MarkdownText(text = text, textColor = p.text, linkColor = p.accent) else Text(text, style = ForgeType.body, color = p.text)
   }

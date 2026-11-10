@@ -19,4 +19,8 @@
     <cache-path
         name="cache_pictures"
         path="images/" />
+    <!-- [ALTREX] Forge : partager un fichier produit d'un projet. -->
+    <files-path
+        name="forge_projets"
+        path="forge/projets/" />
 </paths>

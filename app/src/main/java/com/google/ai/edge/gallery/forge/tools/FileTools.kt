@@ -30,13 +30,18 @@ class FileTracker {
     if (current == null) return null
     val seen = versions[rel] ?: return "Le fichier $rel existe et tu ne l'as pas encore lu dans cette session. Lis-le d'abord avec Read."
     return if (seen != digest(current)) {
-      "Le fichier $rel a changé depuis ta dernière lecture (modifié par l'utilisateur ou par une commande). Relis-le avec Read avant de le modifier."
+      CHANGED_PREFIX + "$rel a changé depuis ta dernière lecture (modifié par l'utilisateur ou par une commande). Relis-le avec Read avant de le modifier."
     } else {
       null
     }
   }
 
   companion object {
+    /** Start of the « changed since read » error: the engine shows a conflict in the feed. */
+    const val CHANGED_PREFIX = "Le fichier "
+
+    fun isChangedError(message: String): Boolean = message.startsWith(CHANGED_PREFIX) && message.contains(" a changé depuis ta dernière lecture")
+
     fun digest(bytes: ByteArray): String =
       MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }.take(16)
   }
@@ -59,6 +64,10 @@ class FileTools(private val paths: ProjectPaths, private val tracker: FileTracke
     val diff: DiffLines.Result,
     val replacements: Int = 0,
     val tool: String,
+    /** Digest of the file when the change was prepared (null: it did not exist). */
+    val baseDigest: String? = null,
+    /** Number of edits of a MultiEdit. */
+    val edits: Int = 0,
   )
 
   sealed class Prepared {
@@ -128,7 +137,7 @@ class FileTools(private val paths: ProjectPaths, private val tracker: FileTracke
     tracker.checkBeforeWrite(r.rel, current)?.let { return failed(it) }
     val old = current?.toString(Charsets.UTF_8).orEmpty()
     return Prepared.Ready(
-      PendingWrite(r.rel, r.file, content, isNew = current == null, diff = DiffLines.compute(old, content), tool = "Write")
+      PendingWrite(r.rel, r.file, content, isNew = current == null, diff = DiffLines.compute(old, content), tool = "Write", baseDigest = current?.let { FileTracker.digest(it) })
     )
   }
 
@@ -154,9 +163,58 @@ class FileTools(private val paths: ProjectPaths, private val tracker: FileTracke
       is EditMatcher.Result.Fail -> failed(m.message)
       is EditMatcher.Result.Ok ->
         Prepared.Ready(
-          PendingWrite(r.rel, r.file, m.text, isNew = false, diff = DiffLines.compute(text, m.text), replacements = m.count, tool = "Edit")
+          PendingWrite(r.rel, r.file, m.text, isNew = false, diff = DiffLines.compute(text, m.text), replacements = m.count, tool = "Edit", baseDigest = FileTracker.digest(bytes))
         )
     }
+  }
+
+  // ------------------------------------------------------------------------------------- MultiEdit
+
+  data class EditSpec(val oldString: String, val newString: String, val replaceAll: Boolean)
+
+  /** Several Edits of one file, in order, all or none (each one sees the text left by the previous ones). */
+  fun prepareMultiEdit(rawPath: String, edits: List<EditSpec>): Prepared {
+    if (rawPath.isBlank()) return failed("MultiEdit demande un « file_path ».")
+    if (edits.isEmpty()) return failed("MultiEdit demande au moins un remplacement dans « edits ».")
+    if (edits.size > MAX_EDITS) return failed("MultiEdit accepte $MAX_EDITS remplacements au plus par appel.")
+    val r = paths.resolve(rawPath) ?: return Prepared.Failed(outside(rawPath))
+    if (!r.file.isFile) {
+      return failed(if (r.file.isDirectory) "${shown(r.rel)} est un dossier." else "Le fichier ${r.rel} n'existe pas. Pour le créer, utilise Write.")
+    }
+    val bytes = r.file.readBytes()
+    if (tracker.versionOf(r.rel) == null) {
+      return failed("Tu n'as pas encore lu ${r.rel} dans cette session. Lis-le d'abord avec Read, puis copie les passages exacts.")
+    }
+    tracker.checkBeforeWrite(r.rel, bytes)?.let { return failed(it) }
+    val original = bytes.toString(Charsets.UTF_8)
+    var text = original
+    var count = 0
+    for ((i, e) in edits.withIndex()) {
+      val prefix = "Remplacement n° ${i + 1} sur ${edits.size} : "
+      if (e.oldString.isEmpty()) return failed(prefix + "old_string est vide. Aucun remplacement n'a été appliqué.")
+      if (e.oldString == e.newString) return failed(prefix + "old_string et new_string sont identiques. Aucun remplacement n'a été appliqué.")
+      when (val m = EditMatcher.apply(text, e.oldString, e.newString, e.replaceAll)) {
+        is EditMatcher.Result.Fail -> return failed(prefix + m.message + "\nAucun remplacement n'a été appliqué.")
+        is EditMatcher.Result.Ok -> {
+          text = m.text
+          count += m.count
+        }
+      }
+    }
+    return Prepared.Ready(
+      PendingWrite(r.rel, r.file, text, isNew = false, diff = DiffLines.compute(original, text), replacements = count, tool = "MultiEdit", baseDigest = FileTracker.digest(bytes), edits = edits.size)
+    )
+  }
+
+  /**
+   * Null when the file is still as it was when [w] was prepared; else the conflict message (the
+   * user changed it while the agent waited for the approval: it is never overwritten).
+   */
+  fun changedSincePrepared(w: PendingWrite): String? {
+    val now = if (w.file.isFile) runCatching { w.file.readBytes() }.getOrNull()?.let { FileTracker.digest(it) } else null
+    if (now == w.baseDigest) return null
+    tracker.forget(w.rel)
+    return CONFLICT_PREFIX + "${w.rel} a été modifié en dehors de Forge pendant que tu attendais l'accord : rien n'a été écrit. Relis-le avec Read, puis refais ta modification sur la nouvelle version."
   }
 
   // ------------------------------------------------------------------------------------- commit
@@ -173,6 +231,8 @@ class FileTools(private val paths: ProjectPaths, private val tracker: FileTracke
     val json =
       if (w.tool == "Edit") {
         ToolOutcome.json("file" to w.rel, "replacements" to w.replacements, "added" to w.diff.added, "removed" to w.diff.removed, "status" to "ok")
+      } else if (w.tool == "MultiEdit") {
+        ToolOutcome.json("file" to w.rel, "edits" to w.edits, "replacements" to w.replacements, "added" to w.diff.added, "removed" to w.diff.removed, "status" to "ok")
       } else {
         ToolOutcome.json(
           "file" to w.rel,
@@ -204,6 +264,8 @@ class FileTools(private val paths: ProjectPaths, private val tracker: FileTracke
   private fun shown(rel: String) = if (rel.isEmpty()) "La racine du projet" else rel
 
   companion object {
+    const val MAX_EDITS = 20
+    const val CONFLICT_PREFIX = "Conflit : "
     const val DEFAULT_READ_LINES = 400
     const val MAX_READ_LINES = 2_000
     const val MAX_LINE_CHARS = 500

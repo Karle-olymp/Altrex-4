@@ -1,6 +1,6 @@
 # Forge : outils et prompts figés (étape 1)
 
-Version 1.1 du 2026-11-05 (la version 1 a été figée à la fin de l'étape 1 d'Altrex Forge ; la 1.1 suit les essais sur téléphone, voir « Changements de la version 1.1 » à la fin). **Référence pour le dataset Argora** : les exemples d'entraînement reprennent exactement ces noms d'outils, ces paramètres, ce format d'appel, ces formats de résultat et ces textes. Toute modification passe par une nouvelle version de ce document.
+Version 1.2 du 2026-11-10 (la version 1 a été figée à la fin de l'étape 1 d'Altrex Forge ; la 1.1 suit les essais sur téléphone ; la 1.2 est celle de l'étape 2, voir « Changements de la version 1.2 » à la fin). Compatible : les 11 premiers outils, leurs paramètres et leurs résultats ne changent pas ; les ajouts viennent après eux. **Référence pour le dataset Argora** : les exemples d'entraînement reprennent exactement ces noms d'outils, ces paramètres, ce format d'appel, ces formats de résultat et ces textes. Toute modification passe par une nouvelle version de ce document.
 
 Sources dans le code (un test unitaire vérifie que chaque outil, chaque paramètre et la requête de `/init` figurent ici) :
 - schémas : `app/src/main/java/com/google/ai/edge/gallery/forge/tools/ForgeToolSpecs.kt` ;
@@ -36,7 +36,7 @@ For each function call, return a json object with function name and arguments wi
 - **La liste d'outils ne change jamais d'un mode à l'autre** (Plan compris) : les restrictions s'appliquent à l'exécution, avec un motif.
 - Noms tolérés en entrée : casse et `_` ignorés (`todo_write` → TodoWrite), plus `read_file`→Read, `write_file`→Write, `edit_file`→Edit, `run_command`→Bash, `check_job`→BashOutput. Alias d'arguments : `path`/`file` pour `file_path`, `cmd` pour `command`, `background` pour `run_in_background`, `bash_id`/`shell_id` pour `job_id`. Un tableau (`todos`, `options`) peut aussi arriver sous forme de texte JSON.
 
-## 2. Les 11 outils (ordre et schémas exacts)
+## 2. Les 14 outils (ordre et schémas exacts)
 
 ```json
 {"type":"function","function":{"name":"Read","description":"Lit un fichier texte du projet, avec les numéros de ligne. Lis toujours un fichier avant de le modifier.","parameters":{"type":"object","properties":{"file_path":{"type":"string","description":"Chemin du fichier, relatif au projet (src/app.js) ou absolu sous /root/projets/<projet>."},"offset":{"type":"integer","description":"Première ligne à lire (1 par défaut)."},"limit":{"type":"integer","description":"Nombre de lignes à lire."}},"required":["file_path"]}}}
@@ -50,6 +50,9 @@ For each function call, return a json object with function name and arguments wi
 {"type":"function","function":{"name":"TodoWrite","description":"Écrit la liste de tâches complète de la demande en cours ; elle remplace la précédente. Une seule tâche in_progress à la fois ; passe-la en completed dès qu'elle est finie.","parameters":{"type":"object","properties":{"todos":{"type":"array","description":"Toutes les tâches, dans l'ordre.","items":{"type":"object","properties":{"content":{"type":"string","description":"La tâche, à l'impératif."},"status":{"type":"string","enum":["pending","in_progress","completed"]},"activeForm":{"type":"string","description":"La même tâche en cours, ex. « Écriture des tests »."}},"required":["content","status"]}}},"required":["todos"]}}}
 {"type":"function","function":{"name":"ExitPlanMode","description":"En mode Plan : présente ton plan complet, en Markdown, pour que l'utilisateur le valide. Rien n'est modifié avant sa validation.","parameters":{"type":"object","properties":{"plan":{"type":"string","description":"Le plan en Markdown : titre, étapes numérotées, fichiers touchés, risques."}},"required":["plan"]}}}
 {"type":"function","function":{"name":"AskUserQuestion","description":"Pose une question courte à l'utilisateur, avec 2 à 4 réponses possibles (il peut aussi répondre librement). Sers-t'en quand un choix lui appartient.","parameters":{"type":"object","properties":{"question":{"type":"string","description":"La question."},"options":{"type":"array","description":"Les réponses proposées, courtes.","items":{"type":"string"}}},"required":["question","options"]}}}
+{"type":"function","function":{"name":"MultiEdit","description":"Plusieurs remplacements dans un même fichier déjà lu, en un seul appel : appliqués dans l'ordre, tous ou aucun. Chaque old_string suit les règles d'Edit et porte sur le texte laissé par les remplacements précédents.","parameters":{"type":"object","properties":{"file_path":{"type":"string","description":"Chemin du fichier dans le projet."},"edits":{"type":"array","description":"Les remplacements, dans l'ordre.","items":{"type":"object","properties":{"old_string":{"type":"string","description":"Le texte exact à remplacer."},"new_string":{"type":"string","description":"Le nouveau texte."},"replace_all":{"type":"boolean","description":"Remplacer toutes les occurrences."}},"required":["old_string","new_string"]}}},"required":["file_path","edits"]}}}
+{"type":"function","function":{"name":"WebFetch","description":"Lit une page web publique (https seulement) et renvoie son texte, sans balises. Pour trouver une page, utilise d'abord WebSearch.","parameters":{"type":"object","properties":{"url":{"type":"string","description":"L'adresse complète, en https://."},"prompt":{"type":"string","description":"Ce que tu cherches dans la page : les passages qui en parlent viennent en premier."}},"required":["url"]}}}
+{"type":"function","function":{"name":"WebSearch","description":"Cherche sur le web (Brave Search) et renvoie des titres, des adresses et des extraits. Lis ensuite la page utile avec WebFetch.","parameters":{"type":"object","properties":{"query":{"type":"string","description":"La recherche, en quelques mots."}},"required":["query"]}}}
 ```
 
 **Attente d'une commande Bash (version 1.1).** Plus de délai total fixe : la commande est suivie tant qu'elle écrit. Elle passe en arrière-plan (elle n'est pas tuée) après `timeout` secondes **sans nouvelle sortie** — par défaut 120 s, 300 s pour les commandes lentes connues (`apk add/update/upgrade`, `pkg`, `apt`, `altrex-setup`, `npm install/ci`, `pnpm`, `yarn`, `pip install`, `cargo`, `go build`, `make`, `cmake`, `gradle`, `git clone/fetch/pull`, `npx`), 20 s pour les serveurs reconnus (`python3 -m http.server`, `npm run dev/start`, `vite`, `flask run`, `uvicorn`, `node server.js`…) — ou au **plafond** de 30 min (moins s'il reste moins de temps au tour). Le dossier de départ de Bash **et des tâches de fond** est toujours le projet ou un de ses sous-dossiers (un `cd` hors du projet n'est pas gardé pour la commande suivante). Arrêter tue la commande et tous ses processus (moins de 2 s).
@@ -71,6 +74,9 @@ Chemins : relatifs au projet (`src/app.js`) ou absolus sous `/root/projets/<proj
 | BashOutput, KillShell | `{"job_id":"job1","command":"…","state":"running","new_output":"…","status":"ok"}` (`state` : running, finished, stopped, ou stopping si KillShell attend encore la fin ; `exit_code` quand elle est finie) |
 | TodoWrite | `{"todos":"1/3 terminées","note":"Liste enregistrée. Garde-la à jour au fil du travail.","status":"ok"}` — 20 tâches au plus, une seule `in_progress`, pas de doublon |
 | ExitPlanMode | validé : `{"result":"<texte « plan validé » du § 4>","status":"ok"}` ; à modifier : `{"result":"<texte « plan à modifier »>","status":"ok"}` ; refusé : refus, puis fin du tour |
+| MultiEdit (1.2) | `{"file":"…","edits":2,"replacements":2,"added":2,"removed":2,"status":"ok"}` — 20 remplacements au plus ; un seul échoue : rien n'est écrit, erreur « Remplacement n° k sur n : <erreur d'Edit>\nAucun remplacement n'a été appliqué. » ; une seule demande d'accord avec le diff complet |
+| WebFetch (1.2) | `{"url":"…","final_url":"…","title":"…","content":"…","truncated":true,"note":"Page coupée. Précise « prompt » pour recevoir les passages utiles en premier.","status":"ok"}` (`final_url` après redirection, `truncated`/`note` si coupée). HTTPS public seulement : `http`, `file`, identifiant dans l'adresse, port autre que 443, `localhost`, `.local`, `.internal`, `.lan`, et tout nom qui mène à une adresse privée, de bouclage, locale au lien, CGNAT (100.64/10), multicast ou non spécifiée (IPv4, IPv6, IPv4 encapsulée) : refus (`"status":"refused"`) avec le motif ; vérifié à chaque redirection (5 au plus) ; 2 Mo, 10 s de connexion, 20 s en tout ; texte, HTML (balises, scripts et styles retirés), JSON, XML seulement ; secrets masqués ; un secret dans l'adresse : refus. Avec `prompt`, les paragraphes qui partagent le plus de mots avec lui viennent en premier (dans l'ordre de la page, séparés par `[…]`) |
+| WebSearch (1.2) | `{"query":"…","results":[{"title":"…","url":"…","snippet":"…"}],"status":"ok"}` (8 au plus, extraits de 300 caractères). Clé Brave Search des Réglages (jamais montrée au modèle) et limite quotidienne de Discuter. Sans clé : erreur « WebSearch demande une clé Brave Search : l'utilisateur peut l'ajouter dans Réglages → Recherche web (Brave). En attendant, lis une page connue avec WebFetch, ou dis-lui ce qu'il faudrait chercher. » |
 | AskUserQuestion | `{"answer":"React","status":"ok"}` ; sans réponse : `{"note":"Pas de réponse de l'utilisateur. Ne suppose rien : arrête-toi ou continue avec ce qui ne dépend pas de ce choix.","status":"ok"}` |
 
 ### Erreurs à connaître
@@ -78,6 +84,7 @@ Chemins : relatifs au projet (`src/app.js`) ou absolus sous `/root/projets/<proj
 - Write sur un fichier existant non lu : « Le fichier X existe et tu ne l'as pas encore lu dans cette session. Lis-le d'abord avec Read. » ; Edit : « Tu n'as pas encore lu X dans cette session. Lis-le d'abord avec Read, puis copie le passage exact. »
 - Fichier changé depuis la lecture (jeton de version) : « Le fichier X a changé depuis ta dernière lecture (modifié par l'utilisateur ou par une commande). Relis-le avec Read avant de le modifier. »
 - Edit introuvable : « old_string est introuvable dans le fichier (le texte doit être identique, espaces et indentation compris). Les lignes les plus proches du fichier sont (numéro, tabulation, texte) :\n     3\t…\nCopie-les exactement (sans les numéros) dans old_string. » (sans ressemblance : « … Relis le fichier avec Read et copie le passage exact. »)
+- Fichier changé **pendant l'attente de l'accord** (1.2) : « Conflit : X a été modifié en dehors de Forge pendant que tu attendais l'accord : rien n'a été écrit. Relis-le avec Read, puis refais ta modification sur la nouvelle version. » Dans les deux cas, l'écran montre une note « Conflit sur X… » : rien n'est jamais écrasé.
 - Edit ambigu : « old_string apparaît N fois (lignes a, b). Ajoute des lignes voisines pour qu'il soit unique, ou mets replace_all à true. »
 - Appel illisible : « Appel d'outil illisible (JSON invalide). Réécris-le exactement au format {"name": …, "arguments": {…}}. »
 - Outil inconnu : « L'outil « x » n'existe pas. Outils disponibles : Read, Write, … ».
@@ -161,7 +168,20 @@ Deux axes : bac à sable (`LECTURE` / `PROJET` / `TOTAL`) × approbation (`DEMAN
 
 ## 6. Commandes `/`
 
-`/aide`, `/init`, `/doctor`, `/plan [demande]`, `/mode demander|auto|plan|tout`, `/scan [page]`, `/apercu`, `/nouvelle`, `/sessions`, `/confiance`, `/limites`, `/arreter`. Une commande inconnue n'est pas envoyée au modèle.
+`/aide`, `/init`, `/doctor`, `/plan [demande]`, `/mode demander|auto|plan|tout`, `/scan [page]`, `/apercu`, `/nouvelle`, `/sessions`, `/confiance`, `/limites`, `/arreter`, et (1.2) `/undo` (alias `/annuler`), `/diff [session]`, `/checkpoints` (alias `/instantanes`). Une commande inconnue n'est pas envoyée au modèle.
+
+**Instantanés et `/undo` (1.2).** Avant la première modification d'un tour (Write, Edit, MultiEdit, ou une commande Bash qui n'est pas en lecture seule, une fois l'accord donné), Forge prend un instantané « avant » ; à la fin du tour, un instantané « après » et la liste des fichiers changés (y compris par Bash). Stockage : dépôt Git **fantôme** `/root/projets/.instantanes/<projet>.git` (GIT_DIR à part, GIT_WORK_TREE = le projet, identité « Altrex Forge », sans hooks) quand git répond dans le Linux ; sinon, repli : copies dédupliquées par contenu dans le stockage privé de l'appli (`files/forge/instantanes/<projet>/`). Jamais de commit sur la branche de l'utilisateur ni d'écriture dans son `.git`. Exclus : `.git`, `node_modules`, `.gradle`, `__pycache__`, `.venv`, `venv`, `.next`, `.cache`, `.altrex` (sauf `.altrex/plans/`), fichiers de plus de 2 Mo. `/undo` annule le dernier tour non annulé, après confirmation : il prend d'abord un instantané de sauvegarde, remet les fichiers changés par l'agent pendant ce tour (supprime ceux qu'il a créés), **laisse tels quels** ceux que l'utilisateur a modifiés depuis la fin du tour (listés), et en cas d'échec remet tout comme avant l'annulation. Le modèle en est informé au tour suivant (note de contexte) : `<rappel-forge>L'utilisateur a annulé les modifications de ton tour <n> (/undo) : <fichiers> remis comme avant ; laissés tels quels car modifiés par lui depuis : <fichiers>. Relis ces fichiers avant de les modifier.</rappel-forge>` (les fichiers remis doivent être relus avant Write/Edit). `/diff` : cartes par fichier `+N −M` (dernier tour, ou `session` : depuis le premier instantané).
+
+**`@fichier` et pièces jointes (1.2).** Dans la saisie, `@` ouvre un sélecteur à recherche floue sur les fichiers du projet. À l'envoi, le contenu des fichiers mentionnés (8 au plus ; 8 000 caractères par fichier, 20 000 en tout) est ajouté **avant** la demande, dans le même message, en note de contexte :
+
+```
+Fichiers joints par l'utilisateur à sa demande (contenu actuel, numéros de ligne comme Read) :
+<fichier path="src/app.js" lignes="1-48/48">
+     1	…
+</fichier>
+```
+
+Fichier coupé : `[… suite non incluse : lis-la avec Read, offset=<n> …]` ; binaire, trop gros ou au-delà du budget : `<fichier path="…" note="…"/>`. Un fichier donné en entier compte comme lu (Edit possible sans Read). 📎 copie le fichier choisi dans `.altrex/pieces/<nom>` (10 Mo au plus) et insère sa mention `@.altrex/pieces/<nom>`.
 
 Requête envoyée par `/init` (texte exact) :
 
@@ -187,7 +207,7 @@ Plus le bouton Arrêter. À la limite d'étapes, une dernière réponse sans out
 ## 8. Journal de session (JSON Lines, ajout seul)
 
 Fichiers : `files/forge/sessions/<projet>/<id>.jsonl`, dans le stockage privé de l'appli (hors des projets : le modèle ne peut pas réécrire son histoire). Une ligne par événement, `{"t": <type>, "ts": <ms>, …}`. Types :
-`session` (`v`=1, `id`, `project`, `model`, `mode`, `title`), `turn_start`, `user` (`text`), `assistant` (`raw`, `display`, `thinking`), `tool_call` (`id`, `name`, `args`), `tool_result` (`id`, `name`, `status`, `model`, `summary`, `detail`, `added`, `removed`, `path`), `approval` (`decision` = oui, toujours, non, arreter ou sans_reponse ; `reason`, `grant`, `key`), `todos` (`items`), `mode`, `plan`, `plan_decision`, `question`, `answer`, `note` (`kind`, `text`, `forModel`, `shown`), `turn_end` (`reason` = done, stopped, limit, error, blocked ou interrupted).
+`session` (`v`=1, `id`, `project`, `model`, `mode`, `title`), `turn_start`, `user` (`text`), `assistant` (`raw`, `display`, `thinking`), `tool_call` (`id`, `name`, `args`), `tool_result` (`id`, `name`, `status`, `model`, `summary`, `detail`, `added`, `removed`, `path`), `approval` (`decision` = oui, toujours, non, arreter ou sans_reponse ; `reason`, `grant`, `key`), `todos` (`items`), `mode`, `plan`, `plan_decision`, `question`, `answer`, `note` (`kind`, `text`, `forModel`, `shown`), `turn_end` (`reason` = done, stopped, limit, error, blocked ou interrupted) ; et (1.2) `checkpoint` (`turn`, `phase` = avant ou apres, `rev`, `store` = git ou copie, `files`), `undo` (`turn`, `restored`, `skipped`, `backup`, `after`), `compaction` (`turn`, `ids`), `summary` (`turn`, `upto`, `text`). Un lecteur de la version 1 ignore ces lignes.
 
 Au chargement, un tour resté ouvert reçoit, ajoutés à la fin du fichier, un `tool_result` « Interrompu : l'appli a été fermée pendant cet appel. Il n'a pas été relancé ; vérifie son effet avant de le refaire. » par appel sans résultat, puis `turn_end` `interrupted`. Historique envoyé au modèle : tours précédents condensés (la demande ; `[Outils utilisés : Read a.js, Edit a.js (+3 −1)]` puis la réponse finale), tour en cours complet. Mode, liste de tâches et autorisations « Toujours » se recalculent depuis le journal à la reprise.
 
@@ -199,3 +219,12 @@ Après le premier essai sur téléphone (Groq, gpt-oss-120b) :
 - **Rappel** de fin de tour pour les tâches non terminées (§ 4).
 - **Limite de débit** des fournisseurs cloud : nouvel essai automatique (§ 7), invisible pour le modèle.
 - Les exemples Argora écrits avec la version 1 restent valables sauf pour ces points.
+
+## Changements de la version 1.2 (2026-11-10, étape 2)
+
+- **Outils** : `MultiEdit`, `WebFetch`, `WebSearch` ajoutés **après** les 11 outils de la version 1 (ordre et schémas inchangés pour eux). Alias tolérés : `edits` → MultiEdit, `fetch`/`fetch_url`/`read_url` → WebFetch, `search`/`recherche` → WebSearch ; arguments `href`/`link` pour `url`, `q` pour `query`, `changes` pour `edits`.
+- **Conflits** : nouvelle erreur « Conflit : … » quand le fichier change pendant l'attente de l'accord.
+- **Contexte** : note `@fichier` (§ 6) ; note d'annulation après `/undo`.
+- **Journal** : types `checkpoint`, `undo`, `compaction`, `summary` (§ 8).
+- Les exemples Argora écrits avec la version 1.1 restent valables.
+

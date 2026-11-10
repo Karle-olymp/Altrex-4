@@ -201,6 +201,19 @@ fun PreviewSheet(root: File, initialFile: String?, reloadSignal: Int = 0, onDism
       reloadTick++
     }
   }
+  // [ALTREX] Changed outside Forge (the Terminal, another app): the open file is reloaded too.
+  LaunchedEffect(file) {
+    val f = file?.takeIf { !isLocalUrl(it) }?.let { File(root, it) } ?: return@LaunchedEffect
+    var seen = withContext(Dispatchers.IO) { f.lastModified() to f.length() }
+    while (true) {
+      delay(1_500)
+      val now = withContext(Dispatchers.IO) { f.lastModified() to f.length() }
+      if (now != seen) {
+        seen = now
+        reloadTick++
+      }
+    }
+  }
   LaunchedEffect(root, reloadTick) { files = withContext(Dispatchers.IO) { previewableFiles(root) } }
   LaunchedEffect(file, reloadTick) {
     runJs = runJs && file != null

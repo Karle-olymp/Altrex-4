@@ -22,6 +22,8 @@ class ForgeWorkspace(val base: File) {
   val metaDir = File(base, "meta")
   val sessionsDir = File(base, "sessions")
   val globalMemory = File(base, "ALTREX.md")
+  /** Copies of the projects for /undo when the Linux has no git ([com.google.ai.edge.gallery.forge.checkpoints.CopySnapshotStore]). */
+  val snapshotsDir = File(base, "instantanes")
 
   data class ProjectInfo(
     val name: String,
@@ -110,6 +112,8 @@ class ForgeWorkspace(val base: File) {
     if (checkName(name) != null) return false
     File(sessionsDir, name).deleteRecursively()
     File(metaDir, "$name.json").delete()
+    File(snapshotsDir, name).deleteRecursively()
+    File(File(projectsDir, SHADOW_DIR), "$name.git").deleteRecursively()
     return File(projectsDir, name).deleteRecursively()
   }
 
@@ -169,6 +173,8 @@ class ForgeWorkspace(val base: File) {
 
   companion object {
     const val LINUX_ROOT = "/root/projets"
+    /** Shadow Git repositories of the projects (/undo, /diff), next to them: `/root/projets/.instantanes/<projet>.git`. */
+    const val SHADOW_DIR = ".instantanes"
     const val ORIGIN_CREATED = "créé"
     const val ORIGIN_IMPORTED = "importé"
     const val ORIGIN_CLONED = "cloné"

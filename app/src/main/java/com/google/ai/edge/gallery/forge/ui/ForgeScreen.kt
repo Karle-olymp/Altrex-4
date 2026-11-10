@@ -271,6 +271,35 @@ private fun SessionScreen(
   val info = remember(controller.project, trustTick, state.lastTurn) { controller.workspace.info(controller.project) }
   var preview by remember { mutableStateOf<String?>(null) }
   var showPreview by remember { mutableStateOf(false) }
+  var diffView by remember { mutableStateOf<Pair<String, List<Pair<com.google.ai.edge.gallery.forge.checkpoints.FileChange, String>>>?>(null) }
+  var undoPlan by remember { mutableStateOf<com.google.ai.edge.gallery.forge.checkpoints.Checkpoints.UndoPlan?>(null) }
+  var showCheckpoints by remember { mutableStateOf(false) }
+  var attachTo by remember { mutableStateOf<((String) -> Unit)?>(null) }
+  val attachLauncher =
+    rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+      val insert = attachTo
+      attachTo = null
+      if (uri != null && insert != null) {
+        scope.launch {
+          val r = withContext(Dispatchers.IO) { ProjectImporter.attach(context, info.dir, uri) }
+          r.onSuccess { insert("@$it") }.onFailure { Toast.makeText(context, "Pièce jointe impossible : ${it.message}", Toast.LENGTH_LONG).show() }
+        }
+      }
+    }
+
+  fun showDiff(session: Boolean) {
+    scope.launch {
+      controller.diff(session)
+        .onSuccess { diffView = (if (session) "Modifications de la session" else "Modifications du dernier tour") to it }
+        .onFailure { controller.note("info", it.message ?: "Diff impossible.", forModel = false) }
+    }
+  }
+
+  fun planUndo() {
+    scope.launch {
+      controller.planUndo().onSuccess { undoPlan = it }.onFailure { controller.note("info", it.message ?: "Annulation impossible.", forModel = false) }
+    }
+  }
   com.google.ai.edge.gallery.ui.common.KeepScreenOn(active = running)
 
   fun send(text: String) {
@@ -316,6 +345,9 @@ private fun SessionScreen(
             trustTick++
           }
           "apercu" -> showPreview = true
+          "undo" -> planUndo()
+          "diff" -> showDiff(session = c.arg.trim().lowercase().startsWith("session"))
+          "checkpoints" -> showCheckpoints = true
           "limites" -> {
             val l = controller.limits
             controller.note(
@@ -363,6 +395,7 @@ private fun SessionScreen(
         approval = approval?.request,
         questionId = question?.callId,
         planId = plan?.callId,
+        projectRoot = info.dir,
       ),
     actions =
       SessionActions(
@@ -385,8 +418,31 @@ private fun SessionScreen(
           showPreview = true
         },
         onCommand = ::command,
+        onAttach = { insert ->
+          attachTo = insert
+          attachLauncher.launch("*/*")
+        },
+        listFiles = { com.google.ai.edge.gallery.forge.tools.Mentions.listFiles(info.dir) },
       ),
   )
+  diffView?.let { (title, entries) -> DiffSheet(title, entries) { diffView = null } }
+  undoPlan?.let { plan ->
+    UndoDialog(plan, onConfirm = {
+      undoPlan = null
+      scope.launch {
+        controller.applyUndo(plan).onFailure { controller.note("erreur", it.message ?: "Annulation impossible.", forModel = false) }
+      }
+    }, onDismiss = { undoPlan = null })
+  }
+  if (showCheckpoints) {
+    CheckpointsSheet(state, controller.snapshots.kind, onUndo = {
+      showCheckpoints = false
+      planUndo()
+    }, onDiff = {
+      showCheckpoints = false
+      showDiff(session = true)
+    }, onDismiss = { showCheckpoints = false })
+  }
   val fileChanges by engine.fileChanges.collectAsState()
   if (showPreview) PreviewSheet(info.dir, preview, reloadSignal = fileChanges) { showPreview = false }
 }

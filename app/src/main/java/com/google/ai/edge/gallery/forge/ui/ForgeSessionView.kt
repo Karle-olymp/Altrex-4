@@ -84,6 +84,8 @@ data class SessionUi(
   val approval: ApprovalRequest?,
   val questionId: String?,
   val planId: String?,
+  /** The project folder on the phone (produced files: share, copy). */
+  val projectRoot: java.io.File = java.io.File("."),
 )
 
 /** Callbacks of the session view. */
@@ -101,6 +103,10 @@ data class SessionActions(
   val onPickModel: () -> Unit = {},
   val onPreview: (String?) -> Unit = {},
   val onCommand: (String) -> Unit = {},
+  /** 📎: picks a file, copies it into the project, then gives its `@` mention to insert. */
+  val onAttach: ((String) -> Unit) -> Unit = {},
+  /** The project's files, for the `@` picker. */
+  val listFiles: () -> List<String> = { emptyList() },
 )
 
 /** [ALTREX] A Forge session (maquette B-technique/02-session; C when the Plan mode is on). */
@@ -124,7 +130,7 @@ fun ForgeSessionView(ui: SessionUi, actions: SessionActions) {
           Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "Plus", tint = p.muted) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-              for ((label, cmd) in listOf("Nouvelle session" to "/nouvelle", "Vérifier les outils (/doctor)" to "/doctor", "Mémoire du projet (/init)" to "/init", "Scanner avec SecurCode" to "/scan", "Commandes (/aide)" to "/aide")) {
+              for ((label, cmd) in listOf("Nouvelle session" to "/nouvelle", "Modifications (/diff)" to "/diff", "Annuler le dernier tour (/undo)" to "/undo", "Instantanés (/checkpoints)" to "/checkpoints", "Vérifier les outils (/doctor)" to "/doctor", "Mémoire du projet (/init)" to "/init", "Scanner avec SecurCode" to "/scan", "Commandes (/aide)" to "/aide")) {
                 DropdownMenuItem(text = { Text(label) }, onClick = {
                   menu = false
                   actions.onCommand(cmd)
@@ -317,14 +323,7 @@ private fun Feed(ui: SessionUi, a: SessionActions, modifier: Modifier) {
             Text("FICHIERS PRODUITS", style = ForgeType.section, color = p.muted)
             for (f in ui.state.lastTurnFiles.take(8)) {
               Spacer(Modifier.width(10.dp))
-              Row(
-                Modifier.clip(shape()).border(1.dp, p.line2, shape()).clickable { a.onPreview(f) }.padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-              ) {
-                Icon(Icons.AutoMirrored.Outlined.InsertDriveFile, null, tint = p.muted, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(f.substringAfterLast('/'), style = ForgeType.mono, color = p.text)
-              }
+              DeliverableChip(f, ui.projectRoot, a.onPreview)
             }
           }
         }
@@ -346,6 +345,10 @@ private fun InputBar(ui: SessionUi, a: SessionActions, onModes: () -> Unit) {
   val p = LocalForgePalette.current
   var text by rememberSaveable { mutableStateOf("") }
   val suggestions = ForgeCommands.suggestions(text)
+  // `@` picker: the token being typed after an @, matched against the project's files.
+  val mentionQuery = Regex("(?:^|\\s)@([\\w.\\-/]*)$").find(text)?.groupValues?.get(1)
+  val allFiles = remember(mentionQuery != null) { if (mentionQuery != null) a.listFiles() else emptyList() }
+  val mentionHits = if (mentionQuery != null) com.google.ai.edge.gallery.forge.tools.Mentions.fuzzy(mentionQuery, allFiles, 6) else emptyList()
   Column(Modifier.fillMaxWidth().background(p.surface)) {
     Box(Modifier.fillMaxWidth().height(1.dp).background(p.line))
     if (suggestions.isNotEmpty()) {
@@ -354,6 +357,18 @@ private fun InputBar(ui: SessionUi, a: SessionActions, onModes: () -> Unit) {
           Row(Modifier.fillMaxWidth().clickable { text = "/" + c.name + " " }.padding(vertical = 6.dp)) {
             Text(c.usage, style = ForgeType.mono, color = p.accent, modifier = Modifier.width(150.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(c.help, style = ForgeType.body, color = p.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+          }
+        }
+      }
+    }
+    if (mentionHits.isNotEmpty()) {
+      Column(Modifier.fillMaxWidth().heightIn(max = 240.dp).padding(horizontal = 12.dp, vertical = 6.dp)) {
+        for (f in mentionHits) {
+          Row(Modifier.fillMaxWidth().clickable {
+            text = text.dropLast(mentionQuery!!.length) + f + " "
+          }.padding(vertical = 6.dp)) {
+            Text("@" + f.substringAfterLast('/'), style = ForgeType.mono, color = p.accent, modifier = Modifier.width(150.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(f, style = ForgeType.monoSmall, color = p.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
           }
         }
       }
@@ -373,8 +388,8 @@ private fun InputBar(ui: SessionUi, a: SessionActions, onModes: () -> Unit) {
           Icon(Icons.Outlined.ExpandMore, null, tint = p.muted, modifier = Modifier.size(18.dp))
         }
         IconButton(onClick = { if (!text.startsWith("/")) text = "/" + text }) { Text("/", style = ForgeType.title, color = p.muted) }
-        IconButton(onClick = {}, enabled = false) { Text("@", style = ForgeType.title, color = p.faint) }
-        IconButton(onClick = {}, enabled = false) { Icon(Icons.Outlined.AttachFile, "Joindre (étape 2)", tint = p.faint) }
+        IconButton(onClick = { text = if (text.isEmpty() || text.endsWith(" ")) "$text@" else "$text @" }) { Text("@", style = ForgeType.title, color = p.muted) }
+        IconButton(onClick = { a.onAttach { m -> text = (text.trimEnd() + " " + m + " ").trimStart() } }) { Icon(Icons.Outlined.AttachFile, "Joindre un fichier", tint = p.muted) }
         Spacer(Modifier.weight(1f))
         if (ui.running) {
           Box(Modifier.size(52.dp).clip(shape()).border(1.dp, p.del, shape()).clickable(onClick = a.onStop), contentAlignment = Alignment.Center) {

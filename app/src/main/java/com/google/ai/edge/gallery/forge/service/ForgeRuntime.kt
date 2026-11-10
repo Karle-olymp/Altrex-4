@@ -119,8 +119,25 @@ class ForgeSessionController(
       }
     }
 
-  private fun buildEngine(m: Model) =
-    ForgeEngine(journal, RuntimeModelPort(m, appContext), workspace.paths(project), LinuxShellPort(appContext, project), interactions, context)
+  /** Shadow snapshots of the project (git of the Linux, or the app's copies). */
+  val snapshots = com.google.ai.edge.gallery.forge.checkpoints.AutoSnapshotStore.forProject(appContext, workspace, project)
+  private val checkpoints = com.google.ai.edge.gallery.forge.checkpoints.Checkpoints(snapshots)
+
+  private val web =
+    com.google.ai.edge.gallery.forge.web.HttpWeb(
+      braveKey = { com.google.ai.edge.gallery.tools.WebSettings.getBraveKey(appContext) },
+      takeQuota = { com.google.ai.edge.gallery.tools.WebSettings.takeSearchQuota(appContext) },
+    )
+
+  private fun buildEngine(m: Model): ForgeEngine {
+    val port = RuntimeModelPort(m, appContext)
+    return ForgeEngine(
+      journal, port, workspace.paths(project), LinuxShellPort(appContext, project), interactions, context,
+      limits = com.google.ai.edge.gallery.forge.engine.ForgeLimits.forModel(port),
+      snapshots = snapshots,
+      web = web,
+    )
+  }
 
   private val _engine = MutableStateFlow(buildEngine(model))
   val engine: StateFlow<ForgeEngine> = _engine.asStateFlow()
@@ -206,6 +223,36 @@ class ForgeSessionController(
   fun trustProject() {
     workspace.setTrusted(project, true)
     context.invalidate()
+  }
+
+  // ----------------------------------------------------------------------------------- /undo, /diff
+
+  /** What /undo would do for the last turn that can be undone (a backup snapshot is taken), or why it cannot. */
+  suspend fun planUndo(): Result<com.google.ai.edge.gallery.forge.checkpoints.Checkpoints.UndoPlan> = runCatching {
+    if (_running.value) throw IllegalStateException("Attends la fin du tour (ou Arrêter) avant d'annuler.")
+    val cp = _engine.value.state.value.undoable ?: throw IllegalStateException("Rien à annuler : aucun changement de l'agent enregistré dans cette session.")
+    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { checkpoints.planUndo(cp.turn, cp.pre, cp.post) }
+  }
+
+  /** Applies [plan] (after the user's confirmation), records it and tells the agent at its next turn. */
+  suspend fun applyUndo(plan: com.google.ai.edge.gallery.forge.checkpoints.Checkpoints.UndoPlan): Result<com.google.ai.edge.gallery.forge.checkpoints.Checkpoints.UndoResult> = runCatching {
+    if (_running.value) throw IllegalStateException("Un tour a démarré : annulation abandonnée.")
+    val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { checkpoints.applyUndo(plan) }
+    val e = _engine.value
+    e.record(com.google.ai.edge.gallery.forge.journal.ForgeEvent.Undo(plan.turn, r.restored, r.skipped, r.backup, r.after))
+    e.forgetReads(r.restored)
+    e.note("annulation", com.google.ai.edge.gallery.forge.checkpoints.UndoTexts.forUser(plan.turn, r), forModel = false)
+    e.noteForNextTurn(com.google.ai.edge.gallery.forge.checkpoints.UndoTexts.forModel(plan.turn, r))
+    r
+  }
+
+  /** Changes of the last turn ([session] false) or of the whole session, up to now. */
+  suspend fun diff(session: Boolean): Result<List<Pair<com.google.ai.edge.gallery.forge.checkpoints.FileChange, String>>> = runCatching {
+    val cps = _engine.value.state.value.checkpoints
+    val from = (if (session) cps.firstOrNull() else cps.lastOrNull()) ?: throw IllegalStateException("Aucun changement de l'agent dans cette session.")
+    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+      if (!session && from.post != null) checkpoints.diff(from.pre, from.post) else checkpoints.diffToNow(from.pre).second
+    }
   }
 
   val waitingForUser: Boolean

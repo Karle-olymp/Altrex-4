@@ -4,7 +4,11 @@ import com.google.ai.edge.gallery.agent.AgentContextFitter
 import com.google.ai.edge.gallery.agent.AgentToolCall
 import com.google.ai.edge.gallery.agent.StreamSplitter
 import com.google.ai.edge.gallery.agent.ToolCalling
+import com.google.ai.edge.gallery.forge.checkpoints.SnapshotStore
 import com.google.ai.edge.gallery.forge.journal.ForgeEvent
+import com.google.ai.edge.gallery.forge.tools.Mentions
+import com.google.ai.edge.gallery.forge.web.WebPort
+import com.google.ai.edge.gallery.tools.AgentShell
 import com.google.ai.edge.gallery.forge.journal.SessionJournal
 import com.google.ai.edge.gallery.forge.journal.SessionState
 import com.google.ai.edge.gallery.forge.journal.apply
@@ -47,6 +51,10 @@ class ForgeEngine(
   private val context: ForgeContext,
   private val limits: ForgeLimits = ForgeLimits.forModel(model),
   private val clock: () -> Long = System::currentTimeMillis,
+  /** Shadow snapshots before the agent's changes (/undo, /diff); null: none (tests, no storage). */
+  private val snapshots: SnapshotStore? = null,
+  /** WebFetch and WebSearch; null: those tools answer that the web is not available. */
+  private val web: WebPort? = null,
 ) {
   /** What the screen shows live, besides the journal: the answer being written, the running tool. */
   data class Live(
@@ -90,6 +98,26 @@ class ForgeEngine(
   @Volatile private var openCall: Pair<String, String>? = null
 
   private var turnStartedAt = 0L
+
+  /** Snapshot « avant » of the current turn, taken before its first change. */
+  @Volatile private var preRev: String? = null
+
+  /** Notes for the model at the start of the next turn (an /undo done meanwhile). */
+  private val nextTurnNotes = java.util.concurrent.ConcurrentLinkedQueue<String>()
+
+  /** Adds [text] for the model to the next request (e.g. « the user undid turn 3 »). */
+  fun noteForNextTurn(text: String) {
+    nextTurnNotes.add(text)
+  }
+
+  /** Writes an event of the screen's own (an /undo) into the journal. */
+  fun record(e: ForgeEvent) = append(e)
+
+  /** Files whose content the model has just been given whole (@fichier): they count as read. */
+  fun markRead(rel: String, bytes: ByteArray) = tracker.record(rel, bytes)
+
+  /** After /undo, the agent must read these files again before changing them. */
+  fun forgetReads(paths: List<String>) = paths.forEach { tracker.forget(it) }
 
   private val _fileChanges = MutableStateFlow(0)
   /** Bumped after each successful Write, Edit or Bash: the Aperçu reloads its page. */
@@ -169,8 +197,17 @@ class ForgeEngine(
     turnStartedAt = clock()
     val turn = _state.value.lastTurn + 1
     _live.value = Live(running = true)
+    preRev = null
     append(ForgeEvent.TurnStart(turn))
     append(ForgeEvent.User(turn, request))
+    while (true) {
+      val n = nextTurnNotes.poll() ?: break
+      append(ForgeEvent.Note(turn, "contexte", n, forModel = true, shown = false))
+    }
+    runCatching { Mentions.expand(request, paths) }.getOrNull()?.let { x ->
+      append(ForgeEvent.Note(turn, "contexte", x.text, forModel = true, shown = false))
+      for ((rel, bytes) in x.wholeFiles) tracker.record(rel, bytes)
+    }
     when {
       mode.isPlan -> append(ForgeEvent.Note(turn, "mode", ForgePrompts.PLAN_REMINDER, forModel = true, shown = false))
       announcedMode != null && announcedMode != mode ->
@@ -178,7 +215,7 @@ class ForgeEngine(
     }
     announcedMode = mode
     return try {
-      loop(turn)
+      loop(turn).also { afterChanges(turn) }
     } catch (e: CancellationException) {
       synchronized(this) {
         closeOpenCall(turn)
@@ -186,9 +223,48 @@ class ForgeEngine(
       }
       throw e
     } catch (e: Exception) {
-      end(turn, "error", e.message ?: e.javaClass.simpleName)
+      end(turn, "error", e.message ?: e.javaClass.simpleName).also { runCatching { afterChanges(turn) } }
     } finally {
       _live.value = Live()
+    }
+  }
+
+  /** Before the turn's first change (Write, Edit, MultiEdit, a command that may write): the « avant » snapshot. */
+  private suspend fun beforeChange(turn: Int) {
+    val store = snapshots ?: return
+    if (preRev != null) return
+    _live.value = _live.value.copy(toolProgress = "Instantané du projet…")
+    val rev = try {
+      store.snapshot("Forge : avant le tour $turn")
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      preRev = ""
+      append(ForgeEvent.Note(turn, "info", "Instantané impossible avant ce tour (${e.message ?: e.javaClass.simpleName}) : /undo ne pourra pas l'annuler.", forModel = false))
+      null
+    }
+    _live.value = _live.value.copy(toolProgress = "")
+    if (rev != null) {
+      preRev = rev
+      append(ForgeEvent.Checkpoint(turn, "avant", rev, store.kind))
+    }
+  }
+
+  /** End of a turn that changed something: the « après » snapshot and the files it changed. */
+  private suspend fun afterChanges(turn: Int) {
+    val store = snapshots ?: return
+    val pre = preRev?.takeIf { it.isNotEmpty() } ?: return
+    preRev = null
+    if (forced) return
+    try {
+      val post = store.snapshot("Forge : après le tour $turn")
+      val files = store.changes(pre, post).filter { it.kind != "D" }.map { it.path }
+      append(ForgeEvent.Checkpoint(turn, "apres", post, store.kind, files))
+      if (files.isNotEmpty()) _fileChanges.value++
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      // Without « après », /undo compares with the state of the moment.
     }
   }
 
@@ -342,8 +418,12 @@ class ForgeEngine(
         val modelText = clip(outcome.modelText)
         openCall = null
         append(ForgeEvent.ToolResult(turn, id, name, status, modelText, outcome.summary, outcome.detail.take(MAX_DETAIL), outcome.added, outcome.removed, outcome.path))
-        if (outcome.status == ToolOutcome.Status.OK && (name == ForgeToolSpecs.WRITE || name == ForgeToolSpecs.EDIT || name == ForgeToolSpecs.BASH)) {
+        if (outcome.status == ToolOutcome.Status.OK && (name in SessionState.WRITERS || name == ForgeToolSpecs.BASH)) {
           _fileChanges.value++
+        }
+        if (outcome.conflict || (outcome.status == ToolOutcome.Status.ERROR && com.google.ai.edge.gallery.forge.tools.FileTracker.isChangedError(outcome.detail))) {
+          val file = outcome.path ?: ForgeToolSpecs.str(call.arguments, "file_path", "path", "file")
+          append(ForgeEvent.Note(turn, "conflit", "Conflit sur $file : le fichier a changé en dehors de Forge depuis que l'agent l'a lu. Rien n'a été écrasé ; l'agent doit le relire.", forModel = false))
         }
         if (outcome.status == ToolOutcome.Status.OK) {
           outcome.path?.let { p -> context.onPathTouched(p)?.let { append(ForgeEvent.Note(turn, "memoire", it, forModel = true, shown = false)) } }
@@ -410,6 +490,33 @@ class ForgeEngine(
               ForgeToolSpecs.bool(a, "replace_all", "replaceAll"),
             ),
           )
+        ForgeToolSpecs.MULTI_EDIT -> {
+          val arr = ForgeToolSpecs.array(a, "edits", "changes")
+          val edits =
+            (0 until (arr?.length() ?: 0)).mapNotNull { i ->
+              val o = arr!!.optJSONObject(i) ?: return@mapNotNull null
+              FileTools.EditSpec(
+                ForgeToolSpecs.text(o, "old_string", "oldString", "old").orEmpty(),
+                ForgeToolSpecs.text(o, "new_string", "newString", "new").orEmpty(),
+                ForgeToolSpecs.bool(o, "replace_all", "replaceAll"),
+              )
+            }
+          writeChecked(id, "MultiEdit", files.prepareMultiEdit(ForgeToolSpecs.str(a, "file_path", "path", "file"), edits))
+        }
+        ForgeToolSpecs.WEB_FETCH -> {
+          val url = ForgeToolSpecs.str(a, "url", "href", "link").trim()
+          if (url.isEmpty()) return ToolOutcome.error("WebFetch demande une « url ».")
+          val w = web ?: return ToolOutcome.error("Le web n'est pas disponible dans cette session.")
+          _live.value = _live.value.copy(toolProgress = "Lecture de la page…")
+          w.fetch(url, ForgeToolSpecs.str(a, "prompt", "question").ifEmpty { null }, limits.maxResultChars - 400)
+        }
+        ForgeToolSpecs.WEB_SEARCH -> {
+          val q = ForgeToolSpecs.str(a, "query", "q", "search").trim()
+          if (q.isEmpty()) return ToolOutcome.error("WebSearch demande une « query ».")
+          val w = web ?: return ToolOutcome.error("Le web n'est pas disponible dans cette session.")
+          _live.value = _live.value.copy(toolProgress = "Recherche…")
+          w.search(q, limits.maxResultChars - 400)
+        }
         ForgeToolSpecs.GLOB -> search.glob(ForgeToolSpecs.str(a, "pattern", "glob"), ForgeToolSpecs.str(a, "path").ifEmpty { null })
         ForgeToolSpecs.GREP ->
           search.grep(
@@ -510,6 +617,9 @@ class ForgeEngine(
         is FileTools.Prepared.Ready -> prepared.write
       }
     permit(id, tool, ForgeAction.WriteFile(w.rel, w.isNew), w.diff.text, isDiff = true)?.let { return it.copy(path = w.rel) }
+    // The user may have changed the file while the approval waited: never overwrite it silently.
+    files.changedSincePrepared(w)?.let { return ToolOutcome.error(it).copy(path = w.rel, conflict = true) }
+    beforeChange(_state.value.lastTurn)
     return files.commit(w)
   }
 
@@ -519,6 +629,7 @@ class ForgeEngine(
     val background = ForgeToolSpecs.bool(a, "run_in_background", "background")
     val justification = ForgeToolSpecs.str(a, "justification").ifEmpty { null }
     permit(id, "Bash", ForgeAction.RunCommand(command, justification), command, isDiff = false)?.let { return it }
+    if (!AgentShell.isReadOnly(command)) beforeChange(_state.value.lastTurn)
     shell.ensureReady { p -> _live.value = _live.value.copy(toolProgress = p) }?.let { return ToolOutcome.error(it) }
     if (background) {
       val job = shell.startJob(command)

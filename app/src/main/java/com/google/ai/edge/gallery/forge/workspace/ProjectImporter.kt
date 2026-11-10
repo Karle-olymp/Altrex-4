@@ -126,6 +126,47 @@ object ProjectImporter {
   private const val MIGRATED_KEY = "forge_migrated_uri"
 
   /** The project folder of the former Code screen, when it is still readable and not yet brought in. */
+  /**
+   * [ALTREX] A file picked with 📎, copied into the project as `.altrex/pieces/<nom>` (10 Mo au
+   * plus; never over an existing file). Returns its path in the project, for an `@` mention.
+   */
+  fun attach(context: Context, projectDir: File, uri: Uri): Result<String> = runCatching {
+    var name = "piece"
+    context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+      if (c.moveToFirst()) c.getString(0)?.let { name = it }
+    }
+    name = attachmentName(name)
+    val dir = File(projectDir, ".altrex/pieces").apply { mkdirs() }
+    var target = File(dir, name)
+    var n = 2
+    while (target.exists()) target = File(dir, name.substringBeforeLast('.', name) + "-" + n++ + (if (name.contains('.')) "." + name.substringAfterLast('.') else ""))
+    val input = context.contentResolver.openInputStream(uri) ?: throw java.io.IOException("fichier illisible")
+    input.use { inp ->
+      target.outputStream().use { out ->
+        val buf = ByteArray(64 * 1024)
+        var total = 0L
+        while (true) {
+          val r = inp.read(buf)
+          if (r < 0) break
+          total += r
+          if (total > MAX_ATTACHMENT) {
+            out.close()
+            target.delete()
+            throw java.io.IOException("plus de 10 Mo")
+          }
+          out.write(buf, 0, r)
+        }
+      }
+    }
+    ".altrex/pieces/" + target.name
+  }
+
+  /** A safe file name: no folders, no leading dot, only letters, digits and `._-`. */
+  fun attachmentName(raw: String): String =
+    raw.substringAfterLast('/').replace(Regex("[^\\p{L}\\p{N}._-]+"), "_").trimStart('.', '_').take(80).ifEmpty { "piece" }
+
+  private const val MAX_ATTACHMENT = 10L * 1024 * 1024
+
   fun pendingOldProject(context: Context): Pair<Uri, String>? {
     val p = context.getSharedPreferences(OLD_PREFS, Context.MODE_PRIVATE)
     val raw = p.getString(OLD_KEY, null) ?: return null

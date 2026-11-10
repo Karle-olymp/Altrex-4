@@ -23,6 +23,9 @@ object ForgeCommands {
       Command("sessions", "/sessions", "Retour à l'accueil de Forge (projets et sessions)."),
       Command("confiance", "/confiance", "Fait confiance à ce projet : son ALTREX.md sera lu."),
       Command("limites", "/limites", "Rappelle les limites d'un tour (étapes, jetons, durée)."),
+      Command("undo", "/undo", "Annule les modifications du dernier tour de l'agent (après confirmation ; tes propres changements sont gardés)."),
+      Command("diff", "/diff [session]", "Modifications du dernier tour, ou de toute la session."),
+      Command("checkpoints", "/checkpoints", "Liste des instantanés pris avant les modifications de l'agent."),
       Command("arreter", "/arreter", "Arrête le tour en cours."),
     )
 
@@ -52,6 +55,9 @@ object ForgeCommands {
       "stop" to "arreter",
       "arrêter" to "arreter",
       "trust" to "confiance",
+      "annuler" to "undo",
+      "instantanes" to "checkpoints",
+      "instantanés" to "checkpoints",
     )
 
   /** Commands whose name starts with what follows "/" (suggestions above the input). */

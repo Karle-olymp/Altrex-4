@@ -84,12 +84,13 @@ class SearchAndTodoTest {
   @Test
   fun toolSpecs_frozenNamesAndValidJson() {
     assertEquals(
-      listOf("Read", "Write", "Edit", "Glob", "Grep", "Bash", "BashOutput", "KillShell", "TodoWrite", "ExitPlanMode", "AskUserQuestion"),
+      // Version 1.2: the eleven of version 1 keep their place, the new ones come after.
+      listOf("Read", "Write", "Edit", "Glob", "Grep", "Bash", "BashOutput", "KillShell", "TodoWrite", "ExitPlanMode", "AskUserQuestion", "MultiEdit", "WebFetch", "WebSearch"),
       ForgeToolSpecs.specs.map { it.name },
     )
     val prompt = ToolCalling.systemPrompt(ForgeToolSpecs.specs, "x")
     val lines = prompt.substringAfter("<tools>\n").substringBefore("</tools>").lines().filter { it.startsWith("{") }
-    assertEquals(11, lines.size)
+    assertEquals(14, lines.size)
     for (l in lines) JSONObject(l)
     val todo = JSONObject(lines.first { it.contains("\"TodoWrite\"") })
     assertEquals("array", todo.getJSONObject("function").getJSONObject("parameters").getJSONObject("properties").getJSONObject("todos").getString("type"))

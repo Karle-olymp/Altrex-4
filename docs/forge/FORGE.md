@@ -138,7 +138,7 @@ Un onglet du projet où le modèle et toi concevez : architecture, flux, schéma
 |---|---|---|
 | **0. Le look** | Fait : B + C choisis (maquettes dans `docs/forge/maquettes/`) | S |
 | **1. Fondations** | Dossier de travail commun ; nouvel écran (projets, flux à cartes, ligne d'état) ; outils `Glob`, `Grep`, `TodoWrite`, `ExitPlanMode`, `AskUserQuestion` aux noms de Claude Code ; sélecteur de modes et mode Plan ; refus avec motif ; lecture avant écriture ; limites, rappel anti-boucle ; journal de session avec reprise après interruption ; `ALTREX.md` et `/init` ; `/doctor` ; commandes `/` de base ; service de premier plan et notifications ; moteur ré-entrant. **Code fait le 2026-11-05 (voir § 14), à essayer sur le téléphone** | L |
-| **2. Confort** | Diff et retours Git (`/undo`, `/diff`) ; `@fichier` ; sessions complètes ; compaction à deux niveaux ; `WebFetch`, `MultiEdit` ; rangée de livrables ; connecteurs et skills ; modes Apprentissage et Build (première version) | L |
+| **2. Confort** | Diff et retours Git (`/undo`, `/diff`) ; `@fichier` ; sessions complètes ; compaction à deux niveaux ; `WebFetch`, `MultiEdit` ; rangée de livrables ; connecteurs et skills ; modes Apprentissage et Build (première version). **En cours depuis le 2026-11-10 (voir § 18)** | L |
 | **3. Aperçu, scan, Blueprint** | Aperçu vérifié ; `/scan` ; terminal du projet ; Blueprint (première version) | M à L |
 | **4. Plus loin** | Sous-agents, hooks à notre format, commandes `/` à toi, modes personnalisés, Blueprint avancé, relecteur d'approbations | L |
 
@@ -295,3 +295,18 @@ Analyse du 2026-11-10.
 - **Licence de `aayushch/laya` :** non vérifiée.
 
 Ordre proposé : chargement manuel et calcul (fait) → étape 2 de Forge → test de Laya → Kali en option → n8n.
+
+## 18. Statut de l'étape 2 « Confort » (2026-11-10)
+
+En trois phases, chacune compilée, testée et enregistrée (commit local) avant la suivante. **Rien n'a encore été essayé sur le téléphone.** Hors périmètre, gardés pour plus tard : éditeur CodeMirror et barre de touches (étape 2b), Blueprint (étape 3), sous-agents (étape 4), connecteurs et skills dans Forge.
+
+**Phase A : Git et fichiers** (`forge/checkpoints`, `forge/web`, `tools/Mentions.kt`, `ui/ForgeChanges.kt`)
+- Instantanés automatiques autour des modifications de l'agent : « avant » à la première écriture du tour (Write, Edit, MultiEdit, commande Bash qui n'est pas en lecture seule), « après » en fin de tour avec la liste des fichiers changés (Bash compris). Dépôt Git **fantôme** `/root/projets/.instantanes/<projet>.git` (GIT_DIR à part, sans hooks, identité « Altrex Forge ») : jamais de commit sur la branche de l'utilisateur. **Repli** si git ne répond pas dans le Linux : copies dédupliquées par contenu dans `files/forge/instantanes/<projet>/` (mêmes commandes ; fichiers de plus de 2 Mo non couverts). Les identifiants distinguent les deux sortes, les anciens instantanés restent utilisables.
+- `/undo` (confirmation avec la liste des fichiers) : sauvegarde d'abord, remet les fichiers du dernier tour, supprime ceux que l'agent a créés, **laisse tels quels** ceux que l'utilisateur a modifiés depuis, et remet tout comme avant si quelque chose échoue ; l'agent est prévenu au tour suivant. `/diff [session]` en cartes `+N −M` dépliables ; `/checkpoints` (liste, annuler, diff). Aussi dans le menu ⋮.
+- `@fichier` : sélecteur à recherche floue dans la saisie ; contenu injecté borné (8 000 caractères par fichier, 20 000 en tout), un fichier donné en entier compte comme lu. 📎 : pièce jointe copiée dans `.altrex/pieces/` puis mentionnée.
+- Outils `MultiEdit` (tout ou rien, un seul accord), `WebFetch` (HTTPS public seulement : localhost, IP privées, CGNAT, IPv6 locales et redirections vers elles refusées ; 2 Mo, 20 s ; texte extrait), `WebSearch` (clé Brave des Réglages, sinon message clair). `docs/forge/OUTILS.md` passe en **version 1.2** (compatible : ajouts après les 11 outils).
+- Fichier changé hors de Forge : le jeton de version refusait déjà l'écriture ; en plus, le fichier est relu juste avant d'écrire (l'utilisateur a pu le modifier pendant l'attente de l'accord) et un conflit est montré dans le fil, jamais d'écrasement silencieux ; l'aperçu ouvert se recharge quand le fichier change, même hors de Forge.
+- « Fichiers produits » : calculés aussi depuis l'instantané (fichiers créés par Bash compris) ; chaque puce ouvre un menu : ouvrir dans l'aperçu, partager, copier le contenu, copier le chemin.
+
+**Non vérifié sans téléphone (phase A)** : git du Linux sur `/root/projets` sous PRoot (droits, durée d'un instantané sur un gros projet), choix git/copies au premier instantané, partage par FileProvider d'un fichier de `files/forge/projets`, sélecteur de pièces jointes, WebFetch et Brave réels (certificats, proxy, réseau mobile), rechargement de l'aperçu par sondage toutes les 1,5 s.
+

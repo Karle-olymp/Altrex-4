@@ -57,7 +57,17 @@ data class SessionState(
   val updated: Long,
   /** Files changed by the agent in the last finished turn (« fichiers produits »). */
   val lastTurnFiles: List<String>,
+  /** Snapshots of the shadow store, one entry per turn that changed something (oldest first). */
+  val checkpoints: List<TurnCheckpoint> = emptyList(),
+  /** Turns whose changes were undone (/undo). */
+  val undone: Set<Int> = emptySet(),
 ) {
+  data class TurnCheckpoint(val turn: Int, val pre: String, val post: String?, val store: String, val files: List<String>, val ts: Long)
+
+  /** The last turn whose changes can still be undone, or null. */
+  val undoable: TurnCheckpoint?
+    get() = checkpoints.lastOrNull { it.turn !in undone }
+
   companion object {
     fun fold(events: List<ForgeEvent>, defaultMode: ForgeMode = ForgeMode.DEFAULT): SessionState {
       var id = ""
@@ -75,6 +85,8 @@ data class SessionState(
       var open = false
       var lastEnd: String? = null
       var updated = 0L
+      val checkpoints = LinkedHashMap<Int, TurnCheckpoint>()
+      val undone = HashSet<Int>()
       for (e in events) {
         if (e.ts > updated) updated = e.ts
         when (e) {
@@ -120,6 +132,11 @@ data class SessionState(
           }
           is ForgeEvent.Answer -> questions[e.id]?.let { i -> feed[i] = (feed[i] as FeedItem.Question).copy(answer = e.answer) }
           is ForgeEvent.Note -> if (e.shown) feed.add(FeedItem.Note(e.turn, e.kind, e.text))
+          is ForgeEvent.Checkpoint ->
+            if (e.phase == "avant") checkpoints[e.turn] = TurnCheckpoint(e.turn, e.rev, null, e.store, emptyList(), e.ts)
+            else checkpoints[e.turn]?.let { checkpoints[e.turn] = it.copy(post = e.rev, files = e.files) }
+          is ForgeEvent.Undo -> undone.add(e.turn)
+          is ForgeEvent.Compaction, is ForgeEvent.Summary -> Unit
           is ForgeEvent.TurnEnd -> {
             open = false
             lastEnd = e.reason
@@ -129,10 +146,11 @@ data class SessionState(
       }
       val lastFiles =
         events.filterIsInstance<ForgeEvent.ToolResult>()
-          .filter { it.turn == lastTurn && it.status == "ok" && it.path != null && (it.name == "Write" || it.name == "Edit") }
+          .filter { it.turn == lastTurn && it.status == "ok" && it.path != null && it.name in WRITERS }
           .mapNotNull { it.path }
+          .plus(checkpoints[lastTurn]?.takeIf { lastTurn !in undone }?.files.orEmpty())
           .distinct()
-      return SessionState(id, project, model, title, feed, todos, mode, grants, lastTurn, open, lastEnd, updated, lastFiles)
+      return SessionState(id, project, model, title, feed, todos, mode, grants, lastTurn, open, lastEnd, updated, lastFiles, checkpoints.values.toList(), undone)
     }
 
     /**
@@ -140,6 +158,9 @@ data class SessionState(
      * answer), the current turn [currentTurn] in full (each answer with its tool calls, then the
      * tool results). Notes for the model are added to the next message the model reads.
      */
+    /** Tools that write a file themselves (their results carry its path). */
+    val WRITERS = setOf("Write", "Edit", "MultiEdit")
+
     fun modelMessages(events: List<ForgeEvent>, currentTurn: Int): List<AgentMsg> {
       val out = ArrayList<AgentMsg>()
       val byTurn = events.groupBy { turnOf(it) }
@@ -165,6 +186,10 @@ data class SessionState(
         is ForgeEvent.Answer -> e.turn
         is ForgeEvent.Note -> e.turn
         is ForgeEvent.TurnEnd -> e.turn
+        is ForgeEvent.Checkpoint -> e.turn
+        is ForgeEvent.Undo -> e.turn
+        is ForgeEvent.Compaction -> e.turn
+        is ForgeEvent.Summary -> e.turn
         else -> 0
       }
 

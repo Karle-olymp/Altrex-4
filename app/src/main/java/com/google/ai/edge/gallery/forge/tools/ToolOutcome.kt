@@ -19,6 +19,8 @@ data class ToolOutcome(
   val path: String? = null,
   /** The tool itself asks the turn to end (the user pressed « Arrêter » in an approval). */
   val stopTurn: Boolean = false,
+  /** The file changed outside Forge since the agent read it: shown in the feed as a conflict. */
+  val conflict: Boolean = false,
 ) {
   enum class Status { OK, ERROR, REFUSED }
 

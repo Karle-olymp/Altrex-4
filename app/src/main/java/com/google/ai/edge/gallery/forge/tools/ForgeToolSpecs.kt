@@ -25,9 +25,15 @@ object ForgeToolSpecs {
   const val TODO_WRITE = "TodoWrite"
   const val EXIT_PLAN_MODE = "ExitPlanMode"
   const val ASK_USER_QUESTION = "AskUserQuestion"
+  const val MULTI_EDIT = "MultiEdit"
+  const val WEB_FETCH = "WebFetch"
+  const val WEB_SEARCH = "WebSearch"
 
   private const val TODO_ITEM_SCHEMA =
     """{"type":"object","properties":{"content":{"type":"string","description":"La tâche, à l'impératif."},"status":{"type":"string","enum":["pending","in_progress","completed"]},"activeForm":{"type":"string","description":"La même tâche en cours, ex. « Écriture des tests »."}},"required":["content","status"]}"""
+
+  private const val EDIT_ITEM_SCHEMA =
+    """{"type":"object","properties":{"old_string":{"type":"string","description":"Le texte exact à remplacer."},"new_string":{"type":"string","description":"Le nouveau texte."},"replace_all":{"type":"boolean","description":"Remplacer toutes les occurrences."}},"required":["old_string","new_string"]}"""
 
   val specs: List<AgentToolSpec> =
     listOf(
@@ -124,6 +130,28 @@ object ForgeToolSpecs {
           AgentToolParam("options", "array", "Les réponses proposées, courtes.", itemsSchema = """{"type":"string"}"""),
         ),
       ),
+      // Version 1.2 (step 2): added at the end, so the first eleven keep their place.
+      AgentToolSpec(
+        MULTI_EDIT,
+        "Plusieurs remplacements dans un même fichier déjà lu, en un seul appel : appliqués dans l'ordre, tous ou aucun. Chaque old_string suit les règles d'Edit et porte sur le texte laissé par les remplacements précédents.",
+        listOf(
+          AgentToolParam("file_path", "string", "Chemin du fichier dans le projet."),
+          AgentToolParam("edits", "array", "Les remplacements, dans l'ordre.", itemsSchema = EDIT_ITEM_SCHEMA),
+        ),
+      ),
+      AgentToolSpec(
+        WEB_FETCH,
+        "Lit une page web publique (https seulement) et renvoie son texte, sans balises. Pour trouver une page, utilise d'abord WebSearch.",
+        listOf(
+          AgentToolParam("url", "string", "L'adresse complète, en https://."),
+          AgentToolParam("prompt", "string", "Ce que tu cherches dans la page : les passages qui en parlent viennent en premier.", required = false),
+        ),
+      ),
+      AgentToolSpec(
+        WEB_SEARCH,
+        "Cherche sur le web (Brave Search) et renvoie des titres, des adresses et des extraits. Lis ensuite la page utile avec WebFetch.",
+        listOf(AgentToolParam("query", "string", "La recherche, en quelques mots.")),
+      ),
     )
 
   val names: Set<String> = specs.map { it.name }.toSet()
@@ -139,6 +167,9 @@ object ForgeToolSpecs {
         "runcommand", "shell" -> BASH
         "checkjob" -> BASH_OUTPUT
         "todo", "todos" -> TODO_WRITE
+        "edits" -> MULTI_EDIT
+        "fetch", "fetchurl", "readurl" -> WEB_FETCH
+        "search", "recherche" -> WEB_SEARCH
         else -> null
       }
   }
