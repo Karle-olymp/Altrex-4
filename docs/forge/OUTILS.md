@@ -1,6 +1,6 @@
 # Forge : outils et prompts figés (étape 1)
 
-Version 1.3 du 2026-11-11 (la version 1 a été figée à la fin de l'étape 1 d'Altrex Forge ; la 1.1 suit les essais sur téléphone ; la 1.2 est celle de la phase A de l'étape 2 ; la 1.3 celle de sa phase B : compaction, mode léger, saisie pendant le travail ; voir les « Changements » à la fin). Compatible : les 11 premiers outils, leurs paramètres et leurs résultats ne changent pas ; les ajouts viennent après eux. **Référence pour le dataset Argora** : les exemples d'entraînement reprennent exactement ces noms d'outils, ces paramètres, ce format d'appel, ces formats de résultat et ces textes. Toute modification passe par une nouvelle version de ce document.
+Version 1.4 du 2026-11-11 (la version 1 a été figée à la fin de l'étape 1 d'Altrex Forge ; la 1.1 suit les essais sur téléphone ; la 1.2 est celle de la phase A de l'étape 2 ; la 1.3 celle de sa phase B : compaction, mode léger, saisie pendant le travail ; la 1.4 celle de sa phase C : modes Build et Apprentissage ; voir les « Changements » à la fin). Compatible : les 11 premiers outils, leurs paramètres et leurs résultats ne changent pas ; les ajouts viennent après eux. **Référence pour le dataset Argora** : les exemples d'entraînement reprennent exactement ces noms d'outils, ces paramètres, ce format d'appel, ces formats de résultat et ces textes. Toute modification passe par une nouvelle version de ce document.
 
 Sources dans le code (un test unitaire vérifie que chaque outil, chaque paramètre et la requête de `/init` figurent ici) :
 - schémas : `app/src/main/java/com/google/ai/edge/gallery/forge/tools/ForgeToolSpecs.kt` ;
@@ -168,7 +168,7 @@ Deux axes : bac à sable (`LECTURE` / `PROJET` / `TOTAL`) × approbation (`DEMAN
 
 ## 6. Commandes `/`
 
-`/aide`, `/init`, `/doctor`, `/plan [demande]`, `/mode demander|auto|plan|tout`, `/scan [page]`, `/apercu`, `/nouvelle`, `/sessions`, `/confiance`, `/limites`, `/arreter`, et (1.2) `/undo` (alias `/annuler`), `/diff [session]`, `/checkpoints` (alias `/instantanes`), et (1.3) `/reglages` (alias `/réglages`, `/settings`). Une commande inconnue n'est pas envoyée au modèle.
+`/aide`, `/init`, `/doctor`, `/plan [demande]`, `/mode demander|auto|plan|tout`, `/scan [page]`, `/apercu`, `/nouvelle`, `/sessions`, `/confiance`, `/limites`, `/arreter`, et (1.2) `/undo` (alias `/annuler`), `/diff [session]`, `/checkpoints` (alias `/instantanes`), et (1.3) `/reglages` (alias `/réglages`, `/settings`), et (1.4) `/build [idée | fin]`, `/apprendre [oui | non]` (alias `/apprentissage`). Une commande inconnue n'est pas envoyée au modèle.
 
 **Instantanés et `/undo` (1.2).** Avant la première modification d'un tour (Write, Edit, MultiEdit, ou une commande Bash qui n'est pas en lecture seule, une fois l'accord donné), Forge prend un instantané « avant » ; à la fin du tour, un instantané « après » et la liste des fichiers changés (y compris par Bash). Stockage : dépôt Git **fantôme** `/root/projets/.instantanes/<projet>.git` (GIT_DIR à part, GIT_WORK_TREE = le projet, identité « Altrex Forge », sans hooks) quand git répond dans le Linux ; sinon, repli : copies dédupliquées par contenu dans le stockage privé de l'appli (`files/forge/instantanes/<projet>/`). Jamais de commit sur la branche de l'utilisateur ni d'écriture dans son `.git`. Exclus : `.git`, `node_modules`, `.gradle`, `__pycache__`, `.venv`, `venv`, `.next`, `.cache`, `.altrex` (sauf `.altrex/plans/`), fichiers de plus de 2 Mo. `/undo` annule le dernier tour non annulé, après confirmation : il prend d'abord un instantané de sauvegarde, remet les fichiers changés par l'agent pendant ce tour (supprime ceux qu'il a créés), **laisse tels quels** ceux que l'utilisateur a modifiés depuis la fin du tour (listés), et en cas d'échec remet tout comme avant l'annulation. Le modèle en est informé au tour suivant (note de contexte) : `<rappel-forge>L'utilisateur a annulé les modifications de ton tour <n> (/undo) : <fichiers> remis comme avant ; laissés tels quels car modifiés par lui depuis : <fichiers>. Relis ces fichiers avant de les modifier.</rappel-forge>` (les fichiers remis doivent être relus avant Write/Edit). `/diff` : cartes par fichier `+N −M` (dernier tour, ou `session` : depuis le premier instantané).
 
@@ -260,11 +260,55 @@ TodoWrite(todos) : liste complète [{"content": "…", "status": "pending|in_pro
 </tools>
 ```
 
+En mode Plan (et au début d'un Build), deux lignes s'ajoutent avant `</tools>` (1.4) :
+
+```
+ExitPlanMode(plan) : présente le plan complet en Markdown ; l'utilisateur le valide avec un bouton.
+AskUserQuestion(question, options?) : pose une question à l'utilisateur, avec des réponses proposées.
+```
+
 Les autres outils restent acceptés s'ils sont appelés (mêmes schémas qu'au § 2). **LiteRT-LM** : la conversation du moteur est gardée d'une étape à l'autre quand la nouvelle requête ne fait qu'ajouter un message à ce qu'elle contient déjà (même prompt système, même historique) ; sinon (compaction, Arrêter, autre modèle, nouveau tour) elle est reconstruite.
 
 **Saisie pendant le travail.** « Orienter » : le message est donné au modèle à sa prochaine étape, dans le tour en cours (et avant qu'il ne termine son tour), sous la forme `<rappel-forge>Message de l'utilisateur pendant ton travail : « <texte> ». Tiens-en compte dès maintenant.</rappel-forge>` (note de journal de sorte `orientation`). « Après » : le message attend la fin du tour, puis part comme une demande normale (pas après Arrêter).
 
 **Réglages de Forge** (`/reglages`, fichier `files/forge/reglages.json`) : mode léger, nombre d'étapes par tour (cloud, local ; 3 à 200), durée d'un tour (2 à 240 min), ALTREX.md global (éditeur dans l'appli, lu au tour suivant).
+
+## 10. Modes Build et Apprentissage (1.4)
+
+La liste d'outils et le prompt système ne changent pas : ces modes passent par des rappels ajoutés à la demande du tour, et par des tours lancés par Forge lui-même.
+
+**Apprentissage** (interrupteur de la feuille « Mode de travail », `/apprendre`). Ajouté à la demande de chaque tour tant qu'il est actif, texte exact :
+
+```
+<rappel-forge>Mode Apprentissage : l'utilisateur veut apprendre en faisant. Avant chaque outil, dis en une phrase ce que tu vas faire et pourquoi. Explique simplement le code que tu lis ou écris, avec les mots exacts du métier. Ne fais pas à sa place ce qu'il peut faire lui-même : guide-le pas à pas et laisse-le écrire, sauf s'il te demande clairement de le faire. Termine ta réponse par un petit exercice lié à ce qui vient d'être vu. Au tour suivant, vérifie sa réponse ou son code (lis le fichier) avant d'aller plus loin, et pose une question courte pour t'assurer qu'il a compris.</rappel-forge>
+```
+
+**Build** (carte « Build » de l'accueil, interrupteur de la feuille « Mode de travail », `/build [idée]`, `/build fin` pour quitter). Déroulé, piloté par l'appli (`forge/engine/BuildMode.kt`) :
+
+1. **Plan.** Forge passe en mode Plan. À la place du rappel du mode Plan, chaque tour reçoit, texte exact :
+
+```
+<rappel-forge>Mode Build, étape 1 : cadrer puis proposer. Lecture seule. Si un choix change l'architecture, pose 1 à 3 questions courtes avec AskUserQuestion ; sinon décide toi-même. Puis présente avec ExitPlanMode un plan complet en Markdown : l'architecture retenue et pourquoi (pile de technologies, 1 ou 2 alternatives écartées en une ligne chacune), les fichiers à créer, les étapes, et à la fin une section exactement de cette forme :
+## Recette
+- Objectif : une phrase vérifiable
+- Fichiers : chemins des fichiers qui doivent exister à la fin, séparés par des virgules
+- Vérifications : `commande qui doit réussir` ; `autre commande` (ou aucune)
+- Aperçu : page à ouvrir, par exemple index.html (ou aucun)
+La recette doit contenir au moins une preuve vérifiable : Forge la contrôlera lui-même avant de déclarer le projet terminé. Ne modifie rien avant la validation du plan.</rappel-forge>
+```
+
+   Un plan sans recette vérifiable n'est pas montré à l'utilisateur ; ExitPlanMode renvoie l'erreur : `Plan Build incomplet : ajoute à la fin une section « ## Recette » avec « - Objectif : … » et au moins une preuve vérifiable parmi « - Fichiers : … », « - Vérifications : `commande` » et « - Aperçu : fichier ». Puis présente de nouveau le plan avec ExitPlanMode.` Une vérification dangereuse (§ 5) est refusée de même : `Recette refusée : la vérification `<commande>` est une commande dangereuse. Remplace-la par une commande de test sans risque, puis présente de nouveau le plan.` Limites de la recette : 12 fichiers, 5 commandes de 300 caractères.
+2. **Construction.** Le plan validé (bouton), le mode devient celui d'avant le plan, ou « Éditions auto » si c'était « Demander » (les commandes restent demandées). Le résultat d'ExitPlanMode reçoit, après le texte habituel : `Mode Build : construis maintenant tout le projet en autonomie, sans poser de question sauf blocage réel. Quand tu penses avoir fini, lance toi-même les vérifications de la recette. Forge les relancera ensuite : le Build n'est terminé que si elles passent. Ne propose pas d'améliorations maintenant.`
+3. **Juge d'achèvement.** À la fin de chaque tour (fin normale ou limite d'étapes), l'appli contrôle elle-même la recette, sans le modèle : chaque fichier existe et n'est pas vide ; chaque commande se termine avec le code 0 dans le Linux du projet (120 s de silence, 5 min au plus) ; l'aperçu existe et tous les fichiers locaux qu'il référence (`src`, `href`) existent (pour `http://localhost:PORT`, le serveur répond). Une preuve qui échoue lance un tour automatique dont la demande est : `Vérification automatique du Build (tour <t> sur <T>, essai <e> sur <E>) : le projet n'est pas encore terminé.\n<rapport : une ligne « ✓ … » ou « ✗ … : raison » par preuve>\nCorrige la cause, relance toi-même ce qui a échoué, puis réponds brièvement. Si tu ne peux pas avancer, dis précisément ce qui bloque.` Limites (Réglages de Forge) : 8 tours, 3 essais de correction d'un même échec ; au-delà, le Build est « bloqué » et attend un message de l'utilisateur (qui relance, compteurs remis à zéro). Un tour arrêté ou en erreur met le Build en pause. Pendant un Build en cours, un message de l'utilisateur reçoit le rappel `<rappel-forge>Mode Build en cours. Recette du Build · objectif : <objectif> · Fichiers attendus : … · Vérifications : … · Aperçu : …. Travaille en autonomie jusqu'à ce que ces preuves passent ; Forge les contrôle à la fin de ton tour.</rappel-forge>`.
+4. **Propositions, une seule fois.** Quand toutes les preuves passent, un dernier tour automatique en lecture seule, demande exacte :
+
+```
+Le Build est vérifié : toutes les preuves de la recette passent. Dernière étape, une seule fois : sans rien modifier, propose une liste classée et courte (8 points au plus) de ce qui améliorerait ce projet : fonctions à ajouter, corrections ou risques (sécurité, accessibilité, performance), technologies mieux adaptées que celles utilisées ; pour chaque point, le gain et l'effort. N'applique rien : l'utilisateur choisira.
+```
+
+   Toute écriture ou commande qui n'est pas en lecture seule y est refusée : `Tour de propositions : rien n'est modifié ici. Décris l'amélioration ; l'utilisateur décidera de l'appliquer.` Le Build est alors terminé ; les messages suivants sont des tours ordinaires.
+
+**Journal (1.4)** : `learning` (`on`), `build` (`turn`, `state` = ouvert, recette, preuve_ko, preuve_ok, pause, bloque, termine ou ferme ; `tour`, `essai`, `text`, `recipe` = JSON `objective`, `files`, `checks`, `preview`), et `auto` = true sur un `user` écrit par Forge (tours automatiques d'un Build).
 
 ## Changements de la version 1.1 (2026-11-05)
 
@@ -288,3 +332,10 @@ Après le premier essai sur téléphone (Groq, gpt-oss-120b) :
 - **Contexte** (§ 9) : compaction à deux niveaux (trace récupérable, puis résumé), mode léger (prompt court et 7 outils décrits ; mêmes noms, mêmes paramètres, même format d'appel), saisie pendant le travail (« Orienter », « Après »), réglages.
 - **Commande** `/reglages`.
 - Compatible : aucun outil, paramètre ni résultat de la version 1.2 ne change. Les exemples Argora écrits avec la 1.2 restent valables ; ceux du mode léger reprennent le prompt du § 9.
+
+## Changements de la version 1.4 (2026-11-11, étape 2, phase C)
+
+- **Modes Build et Apprentissage** (§ 10) : rappels, erreurs d'ExitPlanMode en mode Build, tours automatiques, juge d'achèvement, types de journal `learning` et `build`, champ `auto` de `user`.
+- **Mode léger** : lignes ExitPlanMode et AskUserQuestion ajoutées en mode Plan (§ 9).
+- **Commandes** `/build`, `/apprendre`.
+- Compatible : aucun outil, paramètre ni résultat des versions précédentes ne change.

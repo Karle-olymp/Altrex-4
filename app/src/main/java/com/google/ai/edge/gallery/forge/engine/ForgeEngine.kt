@@ -125,6 +125,46 @@ class ForgeEngine(
     return any
   }
 
+  // --------------------------------------------------------------- Apprentissage and Build modes
+
+  val learning: Boolean
+    get() = _state.value.learning
+
+  /** Apprentissage on or off; takes effect at the next turn. */
+  fun setLearning(on: Boolean) {
+    if (on == learning) return
+    append(ForgeEvent.Learning(on))
+    append(ForgeEvent.Note(_state.value.lastTurn, "info", if (on) "Mode Apprentissage activé : Forge explique ce qu'il fait, propose des exercices et te laisse faire." else "Mode Apprentissage désactivé.", forModel = false))
+  }
+
+  /** Starts a Build: Plan mode until the plan (with its recipe) is validated ([BuildRunner]). */
+  fun openBuild() {
+    if (_state.value.build?.active == true) return
+    // Building alone needs file edits without a question each time; commands are still asked.
+    if (!mode.isPlan) setMode(Preset.PLAN.mode)
+    if (beforePlan == Preset.DEMANDER.mode) beforePlan = Preset.EDITIONS_AUTO.mode
+    append(ForgeEvent.Build(_state.value.lastTurn, ForgeEvent.Build.OPEN, text = "Mode Build : décris ton idée. Forge propose une architecture à valider, construit seul, vérifie, puis propose des améliorations une seule fois."))
+  }
+
+  /** Leaves the Build mode (`/build fin`). */
+  fun closeBuild() {
+    if (_state.value.build?.active != true) return
+    append(ForgeEvent.Build(_state.value.lastTurn, ForgeEvent.Build.CLOSED, text = "Mode Build quitté."))
+  }
+
+  /** A step of the Build, written by [BuildRunner]. */
+  fun buildEvent(state: String, tour: Int, essai: Int, text: String) {
+    append(ForgeEvent.Build(_state.value.lastTurn, state, tour, essai, text))
+  }
+
+  /** What Forge does between two turns of a Build (the judge's checks), on the status line. */
+  fun progress(text: String) {
+    _live.value = if (text.isEmpty()) Live() else Live(running = true, toolProgress = text)
+  }
+
+  /** The current turn may only read (the proposals of a finished Build). */
+  @Volatile private var readOnlyTurn = false
+
   /** Adds [text] for the model to the next request (e.g. « the user undid turn 3 »). */
   fun noteForNextTurn(text: String) {
     nextTurnNotes.add(text)
@@ -210,7 +250,8 @@ class ForgeEngine(
     get() = _live.value.running
 
   /** Runs one turn for [request]. Returns how it ended ("done", "stopped", "limit", "error", "blocked"). */
-  suspend fun runTurn(request: String): String {
+  suspend fun runTurn(request: String, auto: Boolean = false, readOnly: Boolean = false): String {
+    readOnlyTurn = readOnly
     stopRequested = false
     forced = false
     openCall = null
@@ -219,7 +260,7 @@ class ForgeEngine(
     _live.value = Live(running = true)
     preRev = null
     append(ForgeEvent.TurnStart(turn))
-    append(ForgeEvent.User(turn, request))
+    append(ForgeEvent.User(turn, request, auto = auto))
     while (true) {
       val n = nextTurnNotes.poll() ?: break
       append(ForgeEvent.Note(turn, "contexte", n, forModel = true, shown = false))
@@ -228,12 +269,17 @@ class ForgeEngine(
       append(ForgeEvent.Note(turn, "contexte", x.text, forModel = true, shown = false))
       for ((rel, bytes) in x.wholeFiles) tracker.record(rel, bytes)
     }
+    val build = _state.value.build?.takeIf { it.active }
     when {
+      mode.isPlan && build?.state == ForgeEvent.Build.OPEN -> append(ForgeEvent.Note(turn, "mode", ForgePrompts.BUILD_PLAN_REMINDER, forModel = true, shown = false))
       mode.isPlan -> append(ForgeEvent.Note(turn, "mode", ForgePrompts.PLAN_REMINDER, forModel = true, shown = false))
       announcedMode != null && announcedMode != mode ->
         append(ForgeEvent.Note(turn, "mode", ForgePrompts.modeReminder(mode), forModel = true, shown = false))
     }
     announcedMode = mode
+    val recipe = build?.recipe
+    if (recipe != null && !auto && !readOnly) append(ForgeEvent.Note(turn, "mode", ForgePrompts.buildWorkReminder(recipe), forModel = true, shown = false))
+    if (learning && !readOnly) append(ForgeEvent.Note(turn, "mode", ForgePrompts.LEARNING_REMINDER, forModel = true, shown = false))
     return try {
       loop(turn).also { afterChanges(turn) }
     } catch (e: CancellationException) {
@@ -245,6 +291,7 @@ class ForgeEngine(
     } catch (e: Exception) {
       end(turn, "error", e.message ?: e.javaClass.simpleName).also { runCatching { afterChanges(turn) } }
     } finally {
+      readOnlyTurn = false
       _live.value = Live()
     }
   }
@@ -297,7 +344,7 @@ class ForgeEngine(
     val guard = LoopGuard()
     val started = clock()
     val system =
-      if (light) context.lightPrompt().trim() + "\n\n" + ForgePrompts.LIGHT_TOOLS
+      if (light) context.lightPrompt().trim() + "\n\n" + (if (mode.isPlan) ForgePrompts.LIGHT_TOOLS.replace("</tools>", ForgePrompts.LIGHT_PLAN_TOOLS + "\n</tools>") else ForgePrompts.LIGHT_TOOLS)
       else ToolCalling.systemPrompt(ForgeToolSpecs.specs, context.systemPrompt())
     var usedChars = 0L
     var steps = 0
@@ -675,6 +722,7 @@ class ForgeEngine(
 
   /** Asks the policy (and maybe the user) for [action]; null when it may go on. */
   private suspend fun permit(id: String, tool: String, action: ForgeAction, detail: String, isDiff: Boolean): ToolOutcome? {
+    if (readOnlyTurn && PermissionPolicy.decide(Preset.PLAN.mode, grants, action) !is Decision.Allow) return ToolOutcome.refused(ForgePrompts.PROPOSALS_ONLY)
     when (val d = PermissionPolicy.decide(mode, grants, action)) {
       Decision.Allow -> return null
       is Decision.Deny -> return ToolOutcome.refused(d.reason)
@@ -843,6 +891,13 @@ class ForgeEngine(
   private suspend fun exitPlan(turn: Int, id: String, plan: String): ToolOutcome {
     if (!mode.isPlan) return ToolOutcome.error(ForgePrompts.NOT_IN_PLAN)
     if (plan.trim().length < 20) return ToolOutcome.error("Le plan est vide ou trop court : donne le plan complet en Markdown.")
+    // Build mode: the plan carries the recipe Forge will check; without a proof it is sent back.
+    val building = _state.value.build?.state == ForgeEvent.Build.OPEN
+    val recipe = if (building) BuildRecipe.parse(plan) else null
+    if (building) {
+      if (recipe == null || !recipe.hasProof) return ToolOutcome.error(ForgePrompts.BUILD_NEEDS_RECIPE)
+      recipe.checks.firstOrNull { PermissionPolicy.isDangerous(it) }?.let { return ToolOutcome.error(ForgePrompts.buildDangerousCheck(it)) }
+    }
     append(ForgeEvent.Plan(turn, id, plan.trim()))
     val review = interactions.reviewPlan(id, plan.trim())
     return when (review.outcome) {
@@ -852,7 +907,9 @@ class ForgeEngine(
         append(ForgeEvent.PlanDecision(turn, id, approved = true, feedback = review.feedback, mode = next.key()))
         mode = next
         announcedMode = next
-        ToolOutcome(ToolOutcome.Status.OK, ToolOutcome.json("result" to ForgePrompts.planApproved(next, saved), "status" to "ok"), summary = "plan validé", path = saved)
+        if (recipe != null) append(ForgeEvent.Build(turn, ForgeEvent.Build.RECIPE, tour = 1, text = recipe.describe(), recipe = recipe.toJson()))
+        val text = ForgePrompts.planApproved(next, saved) + if (recipe != null) " " + ForgePrompts.BUILD_GO else ""
+        ToolOutcome(ToolOutcome.Status.OK, ToolOutcome.json("result" to text, "status" to "ok"), summary = "plan validé", path = saved)
       }
       PlanReview.Outcome.A_MODIFIER -> {
         append(ForgeEvent.PlanDecision(turn, id, approved = false, feedback = review.feedback))

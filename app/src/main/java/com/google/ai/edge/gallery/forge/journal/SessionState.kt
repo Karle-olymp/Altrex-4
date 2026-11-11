@@ -61,7 +61,29 @@ data class SessionState(
   val checkpoints: List<TurnCheckpoint> = emptyList(),
   /** Turns whose changes were undone (/undo). */
   val undone: Set<Int> = emptySet(),
+  /** Apprentissage mode on (the agent explains, gives exercises, checks understanding). */
+  val learning: Boolean = false,
+  /** The Build of this session, if any (its last step, its recipe). */
+  val build: BuildStatus? = null,
 ) {
+  data class BuildStatus(val state: String, val recipe: com.google.ai.edge.gallery.forge.engine.BuildRecipe?, val tour: Int, val essai: Int) {
+    /** A Build that still drives the turns (not finished, not left). */
+    val active: Boolean
+      get() = state != ForgeEvent.Build.DONE && state != ForgeEvent.Build.CLOSED
+
+    /** Short label for the screen: « Build · plan », « Build · tour 2 », « Build · bloqué ». */
+    val label: String
+      get() =
+        when (state) {
+          ForgeEvent.Build.OPEN -> "Build · plan"
+          ForgeEvent.Build.BLOCKED -> "Build · bloqué"
+          ForgeEvent.Build.PAUSE -> "Build · pause"
+          ForgeEvent.Build.DONE -> "Build terminé"
+          ForgeEvent.Build.CLOSED -> ""
+          else -> "Build · tour ${tour.coerceAtLeast(1)}"
+        }
+  }
+
   data class TurnCheckpoint(val turn: Int, val pre: String, val post: String?, val store: String, val files: List<String>, val ts: Long)
 
   /** The last turn whose changes can still be undone, or null. */
@@ -87,6 +109,8 @@ data class SessionState(
       var updated = 0L
       val checkpoints = LinkedHashMap<Int, TurnCheckpoint>()
       val undone = HashSet<Int>()
+      var learning = false
+      var build: BuildStatus? = null
       for (e in events) {
         if (e.ts > updated) updated = e.ts
         when (e) {
@@ -102,8 +126,12 @@ data class SessionState(
             open = true
           }
           is ForgeEvent.User -> {
-            feed.add(FeedItem.UserText(e.turn, e.text))
-            if (title.isEmpty()) title = e.text.lineSequence().first().take(60)
+            if (e.auto) {
+              feed.add(FeedItem.Note(e.turn, "build", e.text))
+            } else {
+              feed.add(FeedItem.UserText(e.turn, e.text))
+              if (title.isEmpty()) title = e.text.lineSequence().first().take(60)
+            }
           }
           is ForgeEvent.Assistant ->
             if (e.display.isNotBlank() || e.thinking.isNotBlank()) feed.add(FeedItem.AssistantText(e.turn, e.display, e.thinking))
@@ -137,6 +165,12 @@ data class SessionState(
             else checkpoints[e.turn]?.let { checkpoints[e.turn] = it.copy(post = e.rev, files = e.files) }
           is ForgeEvent.Undo -> undone.add(e.turn)
           is ForgeEvent.Compaction, is ForgeEvent.Summary -> Unit
+          is ForgeEvent.Learning -> learning = e.on
+          is ForgeEvent.Build -> {
+            val recipe = com.google.ai.edge.gallery.forge.engine.BuildRecipe.fromJson(e.recipe) ?: build?.recipe?.takeIf { e.state != ForgeEvent.Build.OPEN }
+            build = BuildStatus(e.state, recipe, e.tour, e.essai)
+            if (e.text.isNotEmpty()) feed.add(FeedItem.Note(e.turn, if (e.state == ForgeEvent.Build.BLOCKED) "blocage" else "build", e.text))
+          }
           is ForgeEvent.TurnEnd -> {
             open = false
             lastEnd = e.reason
@@ -150,7 +184,7 @@ data class SessionState(
           .mapNotNull { it.path }
           .plus(checkpoints[lastTurn]?.takeIf { lastTurn !in undone }?.files.orEmpty())
           .distinct()
-      return SessionState(id, project, model, title, feed, todos, mode, grants, lastTurn, open, lastEnd, updated, lastFiles, checkpoints.values.toList(), undone)
+      return SessionState(id, project, model, title, feed, todos, mode, grants, lastTurn, open, lastEnd, updated, lastFiles, checkpoints.values.toList(), undone, learning, build)
     }
 
     /**
@@ -208,6 +242,8 @@ data class SessionState(
         is ForgeEvent.Checkpoint -> e.turn
         is ForgeEvent.Undo -> e.turn
         is ForgeEvent.Compaction -> e.turn
+        is ForgeEvent.Learning -> 0
+        is ForgeEvent.Build -> e.turn
         is ForgeEvent.Summary -> e.turn
         else -> 0
       }

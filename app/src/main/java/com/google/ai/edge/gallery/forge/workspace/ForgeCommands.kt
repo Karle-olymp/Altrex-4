@@ -27,6 +27,8 @@ object ForgeCommands {
       Command("diff", "/diff [session]", "Modifications du dernier tour, ou de toute la session."),
       Command("checkpoints", "/checkpoints", "Liste des instantanés pris avant les modifications de l'agent."),
       Command("reglages", "/reglages", "Réglages de Forge : mode léger, limites d'un tour, ALTREX.md global."),
+      Command("build", "/build [idée | fin]", "Mode Build : une idée, un plan à valider, puis Forge construit seul et vérifie (« fin » pour quitter)."),
+      Command("apprendre", "/apprendre [oui | non]", "Mode Apprentissage : Forge explique, propose des exercices et te laisse faire."),
       Command("arreter", "/arreter", "Arrête le tour en cours."),
     )
 
@@ -58,6 +60,8 @@ object ForgeCommands {
       "trust" to "confiance",
       "annuler" to "undo",
       "réglages" to "reglages",
+      "apprentissage" to "apprendre",
+      "learn" to "apprendre",
       "settings" to "reglages",
       "instantanes" to "checkpoints",
       "instantanés" to "checkpoints",

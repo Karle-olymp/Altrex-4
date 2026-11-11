@@ -83,6 +83,65 @@ object ForgePrompts {
   fun steering(text: String): String =
     "<rappel-forge>Message de l'utilisateur pendant ton travail : « ${text.trim()} ». Tiens-en compte dès maintenant.</rappel-forge>"
 
+  /** Light mode in Plan mode (and Build): the two tools a plan needs, added to [LIGHT_TOOLS]. */
+  const val LIGHT_PLAN_TOOLS =
+    "ExitPlanMode(plan) : présente le plan complet en Markdown ; l'utilisateur le valide avec un bouton.\n" +
+      "AskUserQuestion(question, options?) : pose une question à l'utilisateur, avec des réponses proposées."
+
+  /** Apprentissage mode (1.4): added to the request of each turn while it is on. */
+  const val LEARNING_REMINDER =
+    "<rappel-forge>Mode Apprentissage : l'utilisateur veut apprendre en faisant. Avant chaque outil, dis en une phrase ce que tu vas " +
+      "faire et pourquoi. Explique simplement le code que tu lis ou écris, avec les mots exacts du métier. Ne fais pas à sa place ce " +
+      "qu'il peut faire lui-même : guide-le pas à pas et laisse-le écrire, sauf s'il te demande clairement de le faire. Termine ta " +
+      "réponse par un petit exercice lié à ce qui vient d'être vu. Au tour suivant, vérifie sa réponse ou son code (lis le fichier) " +
+      "avant d'aller plus loin, et pose une question courte pour t'assurer qu'il a compris.</rappel-forge>"
+
+  /** Build mode (1.4), before the plan is validated: replaces [PLAN_REMINDER]. */
+  const val BUILD_PLAN_REMINDER =
+    "<rappel-forge>Mode Build, étape 1 : cadrer puis proposer. Lecture seule. Si un choix change l'architecture, pose 1 à 3 questions " +
+      "courtes avec AskUserQuestion ; sinon décide toi-même. Puis présente avec ExitPlanMode un plan complet en Markdown : " +
+      "l'architecture retenue et pourquoi (pile de technologies, 1 ou 2 alternatives écartées en une ligne chacune), les fichiers à " +
+      "créer, les étapes, et à la fin une section exactement de cette forme :\n" +
+      "## Recette\n" +
+      "- Objectif : une phrase vérifiable\n" +
+      "- Fichiers : chemins des fichiers qui doivent exister à la fin, séparés par des virgules\n" +
+      "- Vérifications : `commande qui doit réussir` ; `autre commande` (ou aucune)\n" +
+      "- Aperçu : page à ouvrir, par exemple index.html (ou aucun)\n" +
+      "La recette doit contenir au moins une preuve vérifiable : Forge la contrôlera lui-même avant de déclarer le projet terminé. " +
+      "Ne modifie rien avant la validation du plan.</rappel-forge>"
+
+  const val BUILD_NEEDS_RECIPE =
+    "Plan Build incomplet : ajoute à la fin une section « ## Recette » avec « - Objectif : … » et au moins une preuve vérifiable parmi " +
+      "« - Fichiers : … », « - Vérifications : `commande` » et « - Aperçu : fichier ». Puis présente de nouveau le plan avec ExitPlanMode."
+
+  fun buildDangerousCheck(command: String): String =
+    "Recette refusée : la vérification `$command` est une commande dangereuse. Remplace-la par une commande de test sans risque, puis présente de nouveau le plan."
+
+  /** Added to the result of ExitPlanMode when a Build's plan is validated. */
+  const val BUILD_GO =
+    "Mode Build : construis maintenant tout le projet en autonomie, sans poser de question sauf blocage réel. Quand tu penses avoir " +
+      "fini, lance toi-même les vérifications de la recette. Forge les relancera ensuite : le Build n'est terminé que si elles " +
+      "passent. Ne propose pas d'améliorations maintenant."
+
+  /** Build mode, a user's message while the Build is under way. */
+  fun buildWorkReminder(recipe: BuildRecipe): String =
+    "<rappel-forge>Mode Build en cours. " + recipe.describe().replace("\n", " · ") +
+      ". Travaille en autonomie jusqu'à ce que ces preuves passent ; Forge les contrôle à la fin de ton tour.</rappel-forge>"
+
+  /** The automatic turn after a failed check of the recipe. */
+  fun buildRetry(report: String, tour: Int, maxTurns: Int, essai: Int, maxTries: Int): String =
+    "Vérification automatique du Build (tour $tour sur $maxTurns, essai $essai sur $maxTries) : le projet n'est pas encore terminé.\n" +
+      report + "\nCorrige la cause, relance toi-même ce qui a échoué, puis réponds brièvement. Si tu ne peux pas avancer, dis précisément ce qui bloque."
+
+  /** The single automatic turn at the end of a verified Build (read only). */
+  const val BUILD_PROPOSALS =
+    "Le Build est vérifié : toutes les preuves de la recette passent. Dernière étape, une seule fois : sans rien modifier, propose une " +
+      "liste classée et courte (8 points au plus) de ce qui améliorerait ce projet : fonctions à ajouter, corrections ou risques " +
+      "(sécurité, accessibilité, performance), technologies mieux adaptées que celles utilisées ; pour chaque point, le gain et " +
+      "l'effort. N'applique rien : l'utilisateur choisira."
+
+  const val PROPOSALS_ONLY = "Tour de propositions : rien n'est modifié ici. Décris l'amélioration ; l'utilisateur décidera de l'appliquer."
+
   fun environment(project: String, linuxPath: String, model: String, date: String, gitBranch: String?): String =
     buildString {
       append("# Environnement\n")

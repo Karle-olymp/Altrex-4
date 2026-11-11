@@ -14,6 +14,9 @@ data class ForgeSettings(
   val maxStepsCloud: Int? = null,
   val maxStepsLocal: Int? = null,
   val maxMinutes: Int? = null,
+  /** Build mode: turns at most, and corrections of the same failed check at most. */
+  val buildMaxTurns: Int? = null,
+  val buildMaxTries: Int? = null,
 ) {
   enum class Light(val label: String) {
     AUTO("Auto (modèles locaux lents)"),
@@ -26,6 +29,8 @@ data class ForgeSettings(
       maxStepsCloud?.let { o.put("maxStepsCloud", it) }
       maxStepsLocal?.let { o.put("maxStepsLocal", it) }
       maxMinutes?.let { o.put("maxMinutes", it) }
+      buildMaxTurns?.let { o.put("buildMaxTurns", it) }
+      buildMaxTries?.let { o.put("buildMaxTries", it) }
     }
 
   companion object {
@@ -33,6 +38,8 @@ data class ForgeSettings(
     const val MAX_STEPS = 200
     const val MIN_MINUTES = 2
     const val MAX_MINUTES = 240
+    const val MAX_BUILD_TURNS = 30
+    const val MAX_BUILD_TRIES = 10
 
     fun file(workspace: ForgeWorkspace) = File(workspace.base, "reglages.json")
 
@@ -47,6 +54,8 @@ data class ForgeSettings(
           maxStepsCloud = opt("maxStepsCloud", MIN_STEPS, MAX_STEPS),
           maxStepsLocal = opt("maxStepsLocal", MIN_STEPS, MAX_STEPS),
           maxMinutes = opt("maxMinutes", MIN_MINUTES, MAX_MINUTES),
+          buildMaxTurns = opt("buildMaxTurns", 1, MAX_BUILD_TURNS),
+          buildMaxTries = opt("buildMaxTries", 1, MAX_BUILD_TRIES),
         )
       }.getOrDefault(ForgeSettings())
 

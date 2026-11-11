@@ -206,6 +206,25 @@ class ForgeSessionController(
     _queue.value = _queue.value.filterIndexed { i, _ -> i != index }
   }
 
+  // --------------------------------------------------------------- Apprentissage and Build modes
+
+  private fun buildRunner(engine: ForgeEngine) =
+    com.google.ai.edge.gallery.forge.engine.BuildRunner(
+      engine,
+      com.google.ai.edge.gallery.forge.engine.CompletionJudge(workspace.paths(project), LinuxShellPort(appContext, project)),
+      maxTurns = settings.buildMaxTurns ?: com.google.ai.edge.gallery.forge.engine.BuildRunner.DEFAULT_MAX_TURNS,
+      maxTries = settings.buildMaxTries ?: com.google.ai.edge.gallery.forge.engine.BuildRunner.DEFAULT_MAX_TRIES,
+    )
+
+  fun setLearning(on: Boolean) = _engine.value.setLearning(on)
+
+  /** Opens the Build mode (Plan until the plan is validated); the next message is the idea. */
+  fun openBuild() {
+    if (!_running.value) _engine.value.openBuild()
+  }
+
+  fun closeBuild() = _engine.value.closeBuild()
+
   @Volatile private var turnJob: Job? = null
   /** Number of the current turn: a stuck turn that ends late never closes the next one. */
   @Volatile private var turnSeq = 0
@@ -220,7 +239,7 @@ class ForgeSessionController(
     turnJob =
       ForgeRuntime.scope.launch {
         try {
-          engine.runTurn(text.trim())
+          if (engine.state.value.build?.active == true) buildRunner(engine).run(text.trim()) else engine.runTurn(text.trim())
         } catch (e: CancellationException) {
           // Stop: the engine has closed the turn in the journal.
         } finally {

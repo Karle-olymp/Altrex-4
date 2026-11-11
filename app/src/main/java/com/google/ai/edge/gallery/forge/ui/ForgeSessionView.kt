@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -110,6 +111,9 @@ data class SessionActions(
   /** The project's files, for the `@` picker. */
   val listFiles: () -> List<String> = { emptyList() },
   /** While the agent works: « Orienter » (next step) and « Après » (queued). */
+  /** The Apprentissage switch and the Build switch of the « Mode de travail » sheet. */
+  val onLearning: (Boolean) -> Unit = {},
+  val onBuild: (Boolean) -> Unit = {},
   val onSteer: (String) -> Unit = {},
   val onEnqueue: (String) -> Unit = {},
   val onDequeue: (Int) -> Unit = {},
@@ -153,10 +157,19 @@ fun ForgeSessionView(ui: SessionUi, actions: SessionActions) {
       }
     }
     if (showModes) {
-      ModeSheet(current = ui.state.mode, onPick = {
-        showModes = false
-        actions.onMode(it)
-      }, onDismiss = { showModes = false })
+      ModeSheet(
+        current = ui.state.mode,
+        onPick = {
+          showModes = false
+          actions.onMode(it)
+        },
+        onDismiss = { showModes = false },
+        learning = ui.state.learning,
+        build = ui.state.build?.takeIf { it.active }?.label,
+        canSwitch = !ui.running,
+        onLearning = actions.onLearning,
+        onBuild = actions.onBuild,
+      )
     }
   }
 }
@@ -391,7 +404,7 @@ private fun InputBar(ui: SessionUi, a: SessionActions, onModes: () -> Unit) {
       }
     }
     Column(Modifier.padding(12.dp)) {
-      ForgeTextField(text, { text = it }, if (ui.running) "Oriente l'agent, ou prépare la suite…" else if (ui.state.mode.isPlan) "Décris ce qu'il faut planifier…" else "Demande une modification…", maxLines = 6)
+      ForgeTextField(text, { text = it }, if (ui.running) "Oriente l'agent, ou prépare la suite…" else if (ui.state.build?.state == com.google.ai.edge.gallery.forge.journal.ForgeEvent.Build.OPEN) "Build : décris ton idée de projet…" else if (ui.state.mode.isPlan) "Décris ce qu'il faut planifier…" else "Demande une modification…", maxLines = 6)
       Spacer(Modifier.height(10.dp))
       Row(verticalAlignment = Alignment.CenterVertically) {
         val mode = ui.state.mode
@@ -401,7 +414,8 @@ private fun InputBar(ui: SessionUi, a: SessionActions, onModes: () -> Unit) {
         ) {
           Icon(modeIcon(mode), null, tint = if (mode.preset == Preset.TOUT_AUTORISER) p.warn else p.accent, modifier = Modifier.size(18.dp))
           Spacer(Modifier.width(8.dp))
-          Text(mode.label, style = ForgeType.bodyStrong, color = p.text)
+          val extra = listOfNotNull(ui.state.build?.takeIf { it.active }?.label, if (ui.state.learning) "Apprentissage" else null)
+          Text((listOf(mode.label) + extra).joinToString(" · "), style = ForgeType.bodyStrong, color = p.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 190.dp))
           Icon(Icons.Outlined.ExpandMore, null, tint = p.muted, modifier = Modifier.size(18.dp))
         }
         IconButton(onClick = { if (!text.startsWith("/")) text = "/" + text }) { Text("/", style = ForgeType.title, color = p.muted) }

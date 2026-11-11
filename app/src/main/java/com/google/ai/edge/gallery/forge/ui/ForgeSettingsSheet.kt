@@ -49,6 +49,8 @@ fun ForgeSettingsSheet(
   var cloud by remember { mutableStateOf(settings.maxStepsCloud?.toString().orEmpty()) }
   var localSteps by remember { mutableStateOf(settings.maxStepsLocal?.toString().orEmpty()) }
   var minutes by remember { mutableStateOf(settings.maxMinutes?.toString().orEmpty()) }
+  var buildTurns by remember { mutableStateOf(settings.buildMaxTurns?.toString().orEmpty()) }
+  var buildTries by remember { mutableStateOf(settings.buildMaxTries?.toString().orEmpty()) }
   ModalBottomSheet(onDismissRequest = onDismiss, containerColor = p.surface, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
     Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState())) {
       Text("Réglages de Forge", style = ForgeType.title, color = p.text)
@@ -82,6 +84,10 @@ fun ForgeSettingsSheet(
         color = p.faint,
       )
       Spacer(Modifier.height(10.dp))
+      SectionHeader("MODE BUILD (VIDE = PAR DÉFAUT)")
+      LimitField("Tours au plus (8)", buildTurns) { buildTurns = it }
+      LimitField("Essais de correction d'une même vérification (3)", buildTries) { buildTries = it }
+      Spacer(Modifier.height(10.dp))
       SectionHeader("MÉMOIRE")
       ForgeButton("Modifier l'ALTREX.md global", onClick = onEditMemory)
       Text("Lu dans tous tes projets, avant leur propre ALTREX.md.", style = ForgeType.monoSmall, color = p.faint, modifier = Modifier.padding(top = 4.dp))
@@ -95,6 +101,8 @@ fun ForgeSettingsSheet(
               maxStepsCloud = num(cloud, ForgeSettings.MIN_STEPS, ForgeSettings.MAX_STEPS),
               maxStepsLocal = num(localSteps, ForgeSettings.MIN_STEPS, ForgeSettings.MAX_STEPS),
               maxMinutes = num(minutes, ForgeSettings.MIN_MINUTES, ForgeSettings.MAX_MINUTES),
+              buildMaxTurns = num(buildTurns, 1, ForgeSettings.MAX_BUILD_TURNS),
+              buildMaxTries = num(buildTries, 1, ForgeSettings.MAX_BUILD_TRIES),
             )
           )
         })

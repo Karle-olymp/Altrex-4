@@ -192,6 +192,8 @@ fun ForgeScreen(modelManagerViewModel: ModelManagerViewModel, navigateUp: () -> 
             if (idea != null) {
               pendingIdea = null
               startPlan = false
+              // [ALTREX] The Build card opens the Build mode: plan, autonomous build, proof, proposals.
+              controller.openBuild()
               if (idea.isNotBlank()) {
                 // [ALTREX] Creating a project with an idea is an explicit request: load if needed.
                 val error = modelManagerViewModel.ensureLoaded(context, task, model)
@@ -352,6 +354,14 @@ private fun SessionScreen(
           "diff" -> showDiff(session = c.arg.trim().lowercase().startsWith("session"))
           "checkpoints" -> showCheckpoints = true
           "reglages" -> showSettings = true
+          "apprendre" -> controller.setLearning(c.arg.trim().lowercase() !in setOf("non", "off", "fin", "stop", "0"))
+          "build" ->
+            if (c.arg.trim().lowercase() in setOf("fin", "non", "off", "stop", "quitter")) {
+              controller.closeBuild()
+            } else {
+              controller.openBuild()
+              if (c.arg.isNotBlank()) send(c.arg)
+            }
           "limites" -> {
             val l = controller.limits
             controller.note(
@@ -428,6 +438,8 @@ private fun SessionScreen(
           attachLauncher.launch("*/*")
         },
         listFiles = { com.google.ai.edge.gallery.forge.tools.Mentions.listFiles(info.dir) },
+        onLearning = controller::setLearning,
+        onBuild = { on -> if (on) controller.openBuild() else controller.closeBuild() },
         onSteer = controller::steer,
         onEnqueue = controller::enqueue,
         onDequeue = controller::dequeue,
@@ -501,11 +513,11 @@ private fun NewProjectDialog(workspace: ForgeWorkspace, onDismiss: () -> Unit, o
   AlertDialog(
     onDismissRequest = onDismiss,
     containerColor = p.surface,
-    title = { Text("Nouveau projet", color = p.text) },
+    title = { Text("Build : nouveau projet", color = p.text) },
     text = {
       CompositionLocalProvider(LocalForgePalette provides p) {
         Column {
-          Text("Décris ton idée : Forge commence en mode Plan (lecture seule) et te propose une architecture à valider.", style = ForgeType.body, color = p.muted)
+          Text("Décris ton idée. Forge propose une architecture à valider (rien n'est écrit avant), construit ensuite seul, vérifie le résultat (fichiers, tests, aperçu), puis te propose des améliorations une seule fois, à la fin.", style = ForgeType.body, color = p.muted)
           androidx.compose.foundation.layout.Spacer(Modifier.padding(4.dp))
           ForgeTextField(idea, {
             idea = it

@@ -22,7 +22,7 @@ sealed class ForgeEvent {
   }
 
   /** What the user typed (or the expanded text of a / command). */
-  data class User(val turn: Int, val text: String, override val ts: Long = 0) : ForgeEvent() {
+  data class User(val turn: Int, val text: String, override val ts: Long = 0, /** Written by Forge itself (a Build's automatic turn), not typed. */ val auto: Boolean = false) : ForgeEvent() {
     override val type = "user"
   }
 
@@ -122,6 +122,31 @@ sealed class ForgeEvent {
     override val type = "summary"
   }
 
+  /** The Apprentissage mode switched on or off (1.4). */
+  data class Learning(val on: Boolean, override val ts: Long = 0) : ForgeEvent() {
+    override val type = "learning"
+  }
+
+  /**
+   * A step of the Build mode (1.4): [state] is one of the constants below ; [recipe] (JSON of
+   * [com.google.ai.edge.gallery.forge.engine.BuildRecipe]) comes with [RECIPE] ; [text] is shown
+   * in the feed.
+   */
+  data class Build(val turn: Int, val state: String, val tour: Int = 0, val essai: Int = 0, val text: String = "", val recipe: String = "", override val ts: Long = 0) : ForgeEvent() {
+    override val type = "build"
+
+    companion object {
+      const val OPEN = "ouvert"
+      const val RECIPE = "recette"
+      const val PROOF_OK = "preuve_ok"
+      const val PROOF_KO = "preuve_ko"
+      const val PAUSE = "pause"
+      const val BLOCKED = "bloque"
+      const val DONE = "termine"
+      const val CLOSED = "ferme"
+    }
+  }
+
   data class Todo(val content: String, val status: String, val activeForm: String = "")
 
   fun toJson(now: Long = ts): JSONObject {
@@ -129,7 +154,7 @@ sealed class ForgeEvent {
     when (this) {
       is SessionStart -> o.put("v", FORMAT_VERSION).put("id", id).put("project", project).put("model", model).put("mode", mode).put("title", title)
       is TurnStart -> o.put("turn", turn)
-      is User -> o.put("turn", turn).put("text", text)
+      is User -> o.put("turn", turn).put("text", text).also { if (auto) it.put("auto", true) }
       is Assistant -> o.put("turn", turn).put("raw", raw).put("display", display).also { if (thinking.isNotEmpty()) it.put("thinking", thinking) }
       is ToolCall -> o.put("turn", turn).put("id", id).put("name", name).put("args", args)
       is ToolResult -> {
@@ -164,6 +189,12 @@ sealed class ForgeEvent {
       is Undo -> o.put("turn", turn).put("restored", org.json.JSONArray(restored)).put("skipped", org.json.JSONArray(skipped)).put("backup", backup).put("after", after)
       is Compaction -> o.put("turn", turn).put("ids", org.json.JSONArray(ids))
       is Summary -> o.put("turn", turn).put("upto", upto).put("text", text)
+      is Learning -> o.put("on", on)
+      is Build -> {
+        o.put("turn", turn).put("state", state).put("tour", tour).put("essai", essai)
+        if (text.isNotEmpty()) o.put("text", text)
+        if (recipe.isNotEmpty()) o.put("recipe", recipe)
+      }
     }
     return o
   }
@@ -183,7 +214,7 @@ sealed class ForgeEvent {
       return when (o.optString("t")) {
         "session" -> SessionStart(o.optString("id"), o.optString("project"), o.optString("model"), o.optString("mode"), o.optString("title"), ts)
         "turn_start" -> TurnStart(turn, ts)
-        "user" -> User(turn, o.optString("text"), ts)
+        "user" -> User(turn, o.optString("text"), ts, o.optBoolean("auto"))
         "assistant" -> Assistant(turn, o.optString("raw"), o.optString("display"), o.optString("thinking"), ts)
         "tool_call" -> ToolCall(turn, o.optString("id"), o.optString("name"), o.optString("args"), ts)
         "tool_result" ->
@@ -211,6 +242,8 @@ sealed class ForgeEvent {
         "undo" -> Undo(turn, strings(o, "restored"), strings(o, "skipped"), o.optString("backup"), o.optString("after"), ts)
         "compaction" -> Compaction(turn, strings(o, "ids"), ts)
         "summary" -> Summary(turn, o.optInt("upto"), o.optString("text"), ts)
+        "learning" -> Learning(o.optBoolean("on"), ts)
+        "build" -> Build(turn, o.optString("state"), o.optInt("tour"), o.optInt("essai"), o.optString("text"), o.optString("recipe"), ts)
         else -> null
       }
     }

@@ -38,6 +38,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material.icons.outlined.Construction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -64,10 +65,20 @@ import kotlinx.coroutines.withContext
 /** [ALTREX] « Mode de travail » (maquette 03-plan-modes): the four chips, honest about PRoot. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ModeSheet(current: ForgeMode, onPick: (ForgeMode) -> Unit, onDismiss: () -> Unit) {
+fun ModeSheet(
+  current: ForgeMode,
+  onPick: (ForgeMode) -> Unit,
+  onDismiss: () -> Unit,
+  learning: Boolean = false,
+  /** Label of the running Build (« Build · tour 2 »), null when the Build mode is off. */
+  build: String? = null,
+  canSwitch: Boolean = true,
+  onLearning: (Boolean) -> Unit = {},
+  onBuild: (Boolean) -> Unit = {},
+) {
   val p = LocalForgePalette.current
   ModalBottomSheet(onDismissRequest = onDismiss, containerColor = p.surface, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-    Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
+    Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState())) {
       Text("Mode de travail", style = ForgeType.title, color = p.text)
       Text("Ce que Forge peut faire sans te demander", style = ForgeType.body, color = p.muted, modifier = Modifier.padding(bottom = 14.dp))
       if (current.preset == null) {
@@ -101,14 +112,24 @@ fun ModeSheet(current: ForgeMode, onPick: (ForgeMode) -> Unit, onDismiss: () -> 
         }
       }
       Spacer(Modifier.height(12.dp))
-      Row(Modifier.fillMaxWidth().clip(shape()).border(1.dp, p.line, shape()).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.AutoMirrored.Outlined.MenuBook, null, tint = p.faint)
+      Row(Modifier.fillMaxWidth().clip(shape()).border(1.dp, if (build != null) p.accent else p.line, shape()).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Outlined.Construction, null, tint = if (build != null) p.accent else p.muted)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-          Text("Mode Apprentissage", style = ForgeType.bodyStrong, color = p.muted)
-          Text("Explique chaque outil et le code écrit. Arrive à l'étape 2.", style = ForgeType.body, color = p.faint)
+          Text(build ?: "Mode Build", style = ForgeType.bodyStrong, color = p.text)
+          Text("Une idée → un plan à valider → Forge construit seul, vérifie (fichiers, tests, aperçu), puis propose des améliorations une fois.", style = ForgeType.body, color = p.muted)
         }
-        Switch(checked = false, onCheckedChange = null, enabled = false)
+        Switch(checked = build != null, onCheckedChange = { onBuild(it) }, enabled = canSwitch)
+      }
+      Spacer(Modifier.height(8.dp))
+      Row(Modifier.fillMaxWidth().clip(shape()).border(1.dp, if (learning) p.accent else p.line, shape()).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.AutoMirrored.Outlined.MenuBook, null, tint = if (learning) p.accent else p.muted)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+          Text("Mode Apprentissage", style = ForgeType.bodyStrong, color = p.text)
+          Text("Forge explique ce qu'il fait et pourquoi, propose de petits exercices, vérifie que tu as compris, et te laisse faire.", style = ForgeType.body, color = p.muted)
+        }
+        Switch(checked = learning, onCheckedChange = { onLearning(it) })
       }
       Spacer(Modifier.height(12.dp))
       Row(verticalAlignment = Alignment.CenterVertically) {
