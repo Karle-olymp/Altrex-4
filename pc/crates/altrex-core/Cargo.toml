@@ -1,0 +1,19 @@
+[package]
+name = "altrex-core"
+description = "Noyau de Forge pour PC : moteur, outils, autorisations, journal, aperçu, modèles."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_json = { version = "1", features = ["preserve_order"] }
+regex = "1"
+ureq = { version = "2", default-features = false, features = ["tls"] }
+aes-gcm = "0.10"
+getrandom = "0.2"
+base64 = "0.22"
+similar = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }

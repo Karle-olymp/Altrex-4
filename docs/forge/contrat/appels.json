@@ -1,0 +1,115 @@
+{
+ "version": 1,
+ "cas": [
+  {
+   "texte": "Je lis le fichier.\n<tool_call>\n{\"name\": \"Read\", \"arguments\": {\"file_path\": \"src/a.js\"}}\n</tool_call>",
+   "appels": [
+    {
+     "nom": "Read",
+     "arguments": {
+      "file_path": "src/a.js"
+     }
+    }
+   ],
+   "affiche": "Je lis le fichier."
+  },
+  {
+   "texte": "<tool_call>\n{\"name\": \"Glob\", \"arguments\": {\"pattern\": \"**/*.ts\"}}\n</tool_call>\n<tool_call>\n{\"name\": \"Grep\", \"arguments\": {\"pattern\": \"TODO\", \"case_insensitive\": true, \"context\": 2}}\n</tool_call>",
+   "appels": [
+    {
+     "nom": "Glob",
+     "arguments": {
+      "pattern": "**/*.ts"
+     }
+    },
+    {
+     "nom": "Grep",
+     "arguments": {
+      "pattern": "TODO",
+      "case_insensitive": true,
+      "context": 2
+     }
+    }
+   ],
+   "affiche": ""
+  },
+  {
+   "texte": "<tool_call>\n{\"name\":\"Bash\",\"arguments\":{\"command\":\"ls\"}}",
+   "appels": [
+    {
+     "nom": "Bash",
+     "arguments": {
+      "command": "ls"
+     }
+    }
+   ],
+   "affiche": ""
+  },
+  {
+   "texte": "{\"name\":\"Glob\",\"arguments\":{\"pattern\":\"*.md\"}}",
+   "appels": [
+    {
+     "nom": "Glob",
+     "arguments": {
+      "pattern": "*.md"
+     }
+    }
+   ],
+   "affiche": ""
+  },
+  {
+   "texte": "<tool_call>\n{\"name\":\"Read\",\"parameters\":{\"file_path\":\"x\"}}\n</tool_call>",
+   "appels": [
+    {
+     "nom": "Read",
+     "arguments": {
+      "file_path": "x"
+     }
+    }
+   ],
+   "affiche": ""
+  },
+  {
+   "texte": "<tool_call>\n{\"name\":\"Read\",\"arguments\":\"{\\\"file_path\\\":\\\"x\\\"}\"}\n</tool_call>",
+   "appels": [
+    {
+     "nom": "Read",
+     "arguments": {
+      "file_path": "x"
+     }
+    }
+   ],
+   "affiche": ""
+  },
+  {
+   "texte": "<tool_call>\nRead a.js\n</tool_call>",
+   "appels": [
+    {
+     "nom": "",
+     "arguments": {}
+    }
+   ],
+   "affiche": ""
+  },
+  {
+   "texte": "<think>je réfléchis</think>Bonjour",
+   "appels": [],
+   "affiche": "Bonjour"
+  },
+  {
+   "texte": "<think>pas fini",
+   "appels": [],
+   "affiche": ""
+  },
+  {
+   "texte": "{\"a\": 1}",
+   "appels": [],
+   "affiche": "{\"a\": 1}"
+  },
+  {
+   "texte": "Voilà, c'est fait.",
+   "appels": [],
+   "affiche": "Voilà, c'est fait."
+  }
+ ]
+}

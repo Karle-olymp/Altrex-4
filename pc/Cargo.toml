@@ -1,0 +1,18 @@
+# Altrex PC : noyau Forge en Rust (altrex-core) et application de bureau (altrex-pc).
+# Voir docs/pc/PLAN.md et docs/pc/README.md.
+[workspace]
+resolver = "2"
+members = ["crates/altrex-core"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

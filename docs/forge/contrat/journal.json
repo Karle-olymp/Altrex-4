@@ -1,0 +1,220 @@
+{
+ "version": 1,
+ "lignes": [
+  {
+   "t": "session",
+   "ts": 1000,
+   "v": 1,
+   "id": "s20261111-101500-a1",
+   "project": "mon-site",
+   "model": "Argora 9B",
+   "mode": "PROJET/DEMANDER",
+   "title": ""
+  },
+  {
+   "t": "turn_start",
+   "ts": 1001,
+   "turn": 1
+  },
+  {
+   "t": "user",
+   "ts": 1002,
+   "turn": 1,
+   "text": "Ajoute un bouton\nsur la page d'accueil"
+  },
+  {
+   "t": "assistant",
+   "ts": 1003,
+   "turn": 1,
+   "raw": "Je lis.\n<tool_call>\n{\"name\":\"Read\",\"arguments\":{\"file_path\":\"index.html\"}}\n</tool_call>",
+   "display": "Je lis.",
+   "thinking": "voyons"
+  },
+  {
+   "t": "tool_call",
+   "ts": 1004,
+   "turn": 1,
+   "id": "t1c1",
+   "name": "Read",
+   "args": "{\"file_path\":\"index.html\"}"
+  },
+  {
+   "t": "tool_result",
+   "ts": 1005,
+   "turn": 1,
+   "id": "t1c1",
+   "name": "Read",
+   "status": "ok",
+   "model": "{\"file\":\"index.html\",\"lines\":\"1-2/2\",\"content\":\"     1\\t<h1>Bonjour</h1>\",\"status\":\"ok\"}",
+   "summary": "2 l.",
+   "path": "index.html"
+  },
+  {
+   "t": "todos",
+   "ts": 1006,
+   "turn": 1,
+   "items": [
+    {
+     "content": "Ajouter le bouton",
+     "status": "completed",
+     "activeForm": "Ajout du bouton"
+    },
+    {
+     "content": "Tester",
+     "status": "pending",
+     "activeForm": ""
+    }
+   ]
+  },
+  {
+   "t": "approval",
+   "ts": 1007,
+   "turn": 1,
+   "id": "t1c2",
+   "decision": "toujours",
+   "grant": "*fichiers*",
+   "key": "write:index.html"
+  },
+  {
+   "t": "approval",
+   "ts": 1008,
+   "turn": 1,
+   "id": "t1c3",
+   "decision": "non",
+   "reason": "pas maintenant",
+   "key": "cmd:npm install"
+  },
+  {
+   "t": "approval",
+   "ts": 1009,
+   "turn": 1,
+   "id": "t1c4",
+   "decision": "toujours",
+   "grant": "git",
+   "key": "cmd:git add ."
+  },
+  {
+   "t": "tool_result",
+   "ts": 1010,
+   "turn": 1,
+   "id": "t1c2",
+   "name": "Edit",
+   "status": "ok",
+   "model": "{\"file\":\"index.html\",\"replacements\":1,\"added\":1,\"removed\":0,\"status\":\"ok\"}",
+   "summary": "+1 −0",
+   "detail": "+<button>OK</button>",
+   "added": 1,
+   "path": "index.html"
+  },
+  {
+   "t": "note",
+   "ts": 1011,
+   "turn": 1,
+   "kind": "rappel",
+   "text": "<rappel-forge>…</rappel-forge>",
+   "forModel": true,
+   "shown": false
+  },
+  {
+   "t": "checkpoint",
+   "ts": 1012,
+   "turn": 1,
+   "phase": "avant",
+   "rev": "abc123",
+   "store": "git",
+   "files": []
+  },
+  {
+   "t": "turn_end",
+   "ts": 1013,
+   "turn": 1,
+   "reason": "done"
+  },
+  {
+   "t": "mode",
+   "ts": 1014,
+   "mode": "LECTURE/JAMAIS"
+  },
+  {
+   "t": "turn_start",
+   "ts": 1015,
+   "turn": 2
+  },
+  {
+   "t": "user",
+   "ts": 1016,
+   "turn": 2,
+   "text": "Prépare un plan"
+  },
+  {
+   "t": "plan",
+   "ts": 1017,
+   "turn": 2,
+   "id": "t2c1",
+   "markdown": "# Plan\n1. Faire"
+  },
+  {
+   "t": "plan_decision",
+   "ts": 1018,
+   "turn": 2,
+   "id": "t2c1",
+   "approved": true,
+   "feedback": "",
+   "mode": "PROJET/JAMAIS"
+  },
+  {
+   "t": "question",
+   "ts": 1019,
+   "turn": 2,
+   "id": "t2c2",
+   "question": "React ou Vue ?",
+   "options": [
+    "React",
+    "Vue"
+   ]
+  },
+  {
+   "t": "answer",
+   "ts": 1020,
+   "turn": 2,
+   "id": "t2c2",
+   "answer": "React"
+  },
+  {
+   "t": "build",
+   "ts": 1021,
+   "turn": 2,
+   "state": "ouvert",
+   "tour": 0,
+   "essai": 0
+  },
+  {
+   "t": "turn_end",
+   "ts": 1022,
+   "turn": 2,
+   "reason": "stopped",
+   "detail": "Arrêté par l'utilisateur."
+  },
+  {
+   "t": "turn_start",
+   "ts": 1023,
+   "turn": 3
+  }
+ ],
+ "etat": {
+  "mode": "PROJET/JAMAIS",
+  "programmes": [
+   "git"
+  ],
+  "fichiers": true,
+  "refus": {
+   "cmd:npm install": "pas maintenant"
+  },
+  "taches_total": 2,
+  "taches_terminees": 1,
+  "titre": "Ajoute un bouton",
+  "dernier_tour": 3,
+  "tour_ouvert": true,
+  "derniere_fin": "stopped"
+ }
+}
