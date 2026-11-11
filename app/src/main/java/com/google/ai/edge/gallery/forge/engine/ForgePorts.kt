@@ -18,6 +18,10 @@ interface ModelPort {
   /** A model on the phone: smaller limits by default. */
   val local: Boolean
 
+  /** What runs it: "litert", "llamacpp", "space", "cloud" (light mode, conversation reuse). */
+  val runtime: String
+    get() = if (local) "local" else "cloud"
+
   /** One answer to [messages], streamed to [onChunk]; returns the whole raw text. */
   suspend fun generate(system: String, messages: List<AgentMsg>, onChunk: (String) -> Unit): String
 
@@ -107,6 +111,27 @@ interface ForgeContext {
 
   /** Text to give the model when it first works in [rel] (an ALTREX.md of a sub-folder), or null. */
   fun onPathTouched(rel: String): String? = null
+
+  /** The short instructions of the light mode (environment and memory included, tools block not). */
+  fun lightPrompt(): String = systemPrompt()
+}
+
+/**
+ * [ALTREX] The light mode, for slow local models (docs/forge/FORGE.md §18): 7 tools in a compact
+ * block, a system prompt under 600 tokens, shorter results. Never for a cloud model (its native
+ * tool calls are built from the full block).
+ */
+object LightMode {
+  /** Below this history budget (≈ 12 k tokens of context), a local model is « small ». */
+  const val SMALL_BUDGET_CHARS = 24_000
+
+  fun decide(model: ModelPort, pref: com.google.ai.edge.gallery.forge.workspace.ForgeSettings.Light): Boolean =
+    when {
+      !model.local -> false
+      pref == com.google.ai.edge.gallery.forge.workspace.ForgeSettings.Light.ON -> true
+      pref == com.google.ai.edge.gallery.forge.workspace.ForgeSettings.Light.OFF -> false
+      else -> model.runtime == "litert" || model.historyBudgetChars < SMALL_BUDGET_CHARS
+    }
 }
 
 /**
@@ -123,6 +148,16 @@ data class ForgeLimits(
   val readLines: Int,
 ) {
   companion object {
+    /** Defaults for [model], then the light mode and the user's settings (« Réglages de Forge »). */
+    fun forModel(model: ModelPort, light: Boolean, settings: com.google.ai.edge.gallery.forge.workspace.ForgeSettings): ForgeLimits {
+      var l = forModel(model)
+      if (light) l = l.copy(maxSteps = 15, maxResultChars = 1_500, readLines = 80)
+      val steps = if (model.local) settings.maxStepsLocal else settings.maxStepsCloud
+      steps?.let { l = l.copy(maxSteps = it) }
+      settings.maxMinutes?.let { l = l.copy(maxDurationMs = it * 60_000L) }
+      return l
+    }
+
     fun forModel(model: ModelPort): ForgeLimits =
       if (model.local) {
         val small = model.historyBudgetChars < 16_000

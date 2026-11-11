@@ -77,11 +77,18 @@ class ForgeSessionController(
         model.instance is com.google.ai.edge.gallery.runtime.CloudModelInstance -> "cloud, appels d'outils natifs"
         model.runtimeType == com.google.ai.edge.gallery.data.RuntimeType.LLAMA_CPP -> "llama.cpp, protocole texte <tool_call>"
         model.runtimeType == com.google.ai.edge.gallery.data.RuntimeType.REMOTE -> "Space distant, protocole texte"
-        else -> "LiteRT-LM, protocole texte (conversation reconstruite à chaque étape)"
-      }
+        else -> "LiteRT-LM, protocole texte (conversation gardée d'une étape à l'autre quand c'est possible)"
+      } + if (_engine.value.light) " · mode léger" else ""
+
+  /** « Réglages de Forge » (light mode, limits), read at each new engine. */
+  @Volatile var settings: com.google.ai.edge.gallery.forge.workspace.ForgeSettings = com.google.ai.edge.gallery.forge.workspace.ForgeSettings.load(workspace)
+    private set
 
   val limits: com.google.ai.edge.gallery.forge.engine.ForgeLimits
-    get() = com.google.ai.edge.gallery.forge.engine.ForgeLimits.forModel(RuntimeModelPort(model))
+    get() {
+      val port = RuntimeModelPort(model)
+      return com.google.ai.edge.gallery.forge.engine.ForgeLimits.forModel(port, com.google.ai.edge.gallery.forge.engine.LightMode.decide(port, settings.light), settings)
+    }
 
   val context = ProjectContext(workspace, project, { modelName })
 
@@ -131,11 +138,13 @@ class ForgeSessionController(
 
   private fun buildEngine(m: Model): ForgeEngine {
     val port = RuntimeModelPort(m, appContext)
+    val light = com.google.ai.edge.gallery.forge.engine.LightMode.decide(port, settings.light)
     return ForgeEngine(
       journal, port, workspace.paths(project), LinuxShellPort(appContext, project), interactions, context,
-      limits = com.google.ai.edge.gallery.forge.engine.ForgeLimits.forModel(port),
+      limits = com.google.ai.edge.gallery.forge.engine.ForgeLimits.forModel(port, light, settings),
       snapshots = snapshots,
       web = web,
+      light = light,
     )
   }
 
@@ -152,6 +161,50 @@ class ForgeSessionController(
   }
 
   fun setMode(mode: ForgeMode) = _engine.value.setMode(mode)
+
+  /** New settings: saved, and the engine rebuilt (between turns) so the light mode and limits apply. */
+  fun applySettings(s: com.google.ai.edge.gallery.forge.workspace.ForgeSettings) {
+    com.google.ai.edge.gallery.forge.workspace.ForgeSettings.save(workspace, s)
+    settings = s
+    if (_running.value) {
+      rebuildAfterTurn = true
+      return
+    }
+    rebuild()
+  }
+
+  @Volatile private var rebuildAfterTurn = false
+
+  private fun rebuild() {
+    rebuildAfterTurn = false
+    val mode = _engine.value.mode
+    _engine.value = buildEngine(model).also { it.setMode(mode) }
+  }
+
+  /** The user's global ALTREX.md was edited: the next prompt reads it. */
+  fun memoryChanged() = context.invalidate()
+
+  // ------------------------------------------------------------------------- typing while it works
+
+  private val _queue = MutableStateFlow<List<String>>(emptyList())
+  /** Messages to send after the running turn, in order (« Après »). */
+  val queue: StateFlow<List<String>> = _queue.asStateFlow()
+
+  /** « Orienter »: the message reaches the agent at its next step; otherwise it is a normal send. */
+  fun steer(text: String) {
+    if (text.isBlank()) return
+    if (_running.value) _engine.value.steer(text) else send(text)
+  }
+
+  /** « Après »: queued, sent when the running turn ends well (not after Stop). */
+  fun enqueue(text: String) {
+    if (text.isBlank()) return
+    if (_running.value) _queue.value = _queue.value + text.trim() else send(text)
+  }
+
+  fun dequeue(index: Int) {
+    _queue.value = _queue.value.filterIndexed { i, _ -> i != index }
+  }
 
   @Volatile private var turnJob: Job? = null
   /** Number of the current turn: a stuck turn that ends late never closes the next one. */
@@ -184,6 +237,17 @@ class ForgeSessionController(
     turnJob = null
     clearPending()
     ForgeRuntime.turnEnded(appContext, this@ForgeSessionController)
+    onTurnFinished()
+  }
+
+  /** After a turn: the next queued message, unless the user stopped the turn. */
+  private fun onTurnFinished() {
+    if (rebuildAfterTurn) rebuild()
+    val end = _engine.value.state.value.lastEnd
+    val next = _queue.value.firstOrNull() ?: return
+    if (end == "stopped" || end == "interrupted") return
+    _queue.value = _queue.value.drop(1)
+    send(next)
   }
 
   private fun clearPending() {

@@ -40,6 +40,24 @@ class RuntimeModelPort(private val model: Model, private val appContext: Context
   override val local: Boolean
     get() = model.runtimeType != RuntimeType.REMOTE
 
+  override val runtime: String
+    get() =
+      when {
+        model.instance is CloudModelInstance -> "cloud"
+        model.runtimeType == RuntimeType.LLAMA_CPP -> "llamacpp"
+        model.runtimeType == RuntimeType.REMOTE -> "space"
+        else -> "litert"
+      }
+
+  /** What the engine's conversation holds now (LiteRT-LM), for [ConversationReuse]. */
+  @Volatile private var heldSystem: String? = null
+  @Volatile private var held: List<AgentMsg>? = null
+  @Volatile private var heldInstance: Any? = null
+
+  /** Number of steps that reused the conversation instead of rebuilding it (status, tests). */
+  @Volatile var reused = 0
+    private set
+
   override val historyBudgetChars: Int
     get() {
       if (model.instance is CloudModelInstance) return 120_000
@@ -59,9 +77,14 @@ class RuntimeModelPort(private val model: Model, private val appContext: Context
     if (model.runtimeType.usesTextProtocol) {
       input = LlamaHelper.chatRequest(listOf("system" to system) + messages.map { it.role to it.content })
     } else {
-      val history = messages.dropLast(1).map { if (it.role == "user") Message.user(it.content) else Message.model(it.content) }
-      helper.resetConversation(model = model, systemInstruction = Contents.of(system), initialMessages = history)
-      SharedModelSession.markConversationReplaced(model.name)
+      if (heldInstance === model.instance && ConversationReuse.canContinue(heldSystem, held, system, messages)) {
+        reused++
+      } else {
+        val history = messages.dropLast(1).map { if (it.role == "user") Message.user(it.content) else Message.model(it.content) }
+        helper.resetConversation(model = model, systemInstruction = Contents.of(system), initialMessages = history)
+        SharedModelSession.markConversationReplaced(model.name)
+      }
+      held = null
       input = messages.lastOrNull()?.content.orEmpty()
     }
     val done = CompletableDeferred<String>()
@@ -82,14 +105,24 @@ class RuntimeModelPort(private val model: Model, private val appContext: Context
       onError = { message -> if (!done.isCompleted) done.completeExceptionally(IllegalStateException(message)) },
     )
     return try {
-      done.await()
+      val text = done.await()
+      if (!model.runtimeType.usesTextProtocol && !stoppedEarly) {
+        heldSystem = system
+        heldInstance = model.instance
+        held = messages + AgentMsg("assistant", ConversationReuse.normalize(text))
+      }
+      text
     } catch (e: CancellationException) {
       helper.stopResponse(model)
       throw e
     } finally {
       current = null
+      stoppedEarly = false
     }
   }
+
+  /** Stop cut the answer: the conversation no longer matches the history, it is rebuilt next time. */
+  @Volatile private var stoppedEarly = false
 
   /**
    * [ALTREX] Cloud models, called directly ([CloudApi.chat]) rather than through the chat helper:
@@ -161,6 +194,8 @@ class RuntimeModelPort(private val model: Model, private val appContext: Context
   }
 
   override fun stop() {
+    stoppedEarly = true
+    held = null
     abort?.abort()
     // The engine goes on at once with what was written; the runtime stops in its own time.
     current?.let { d -> d.complete(partial?.let { synchronized(it) { it.toString() } }.orEmpty()) }

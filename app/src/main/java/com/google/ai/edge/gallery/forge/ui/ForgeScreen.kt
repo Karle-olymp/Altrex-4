@@ -274,6 +274,9 @@ private fun SessionScreen(
   var diffView by remember { mutableStateOf<Pair<String, List<Pair<com.google.ai.edge.gallery.forge.checkpoints.FileChange, String>>>?>(null) }
   var undoPlan by remember { mutableStateOf<com.google.ai.edge.gallery.forge.checkpoints.Checkpoints.UndoPlan?>(null) }
   var showCheckpoints by remember { mutableStateOf(false) }
+  var showSettings by remember { mutableStateOf(false) }
+  var memoryText by remember { mutableStateOf<String?>(null) }
+  val queue by controller.queue.collectAsState()
   var attachTo by remember { mutableStateOf<((String) -> Unit)?>(null) }
   val attachLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -348,6 +351,7 @@ private fun SessionScreen(
           "undo" -> planUndo()
           "diff" -> showDiff(session = c.arg.trim().lowercase().startsWith("session"))
           "checkpoints" -> showCheckpoints = true
+          "reglages" -> showSettings = true
           "limites" -> {
             val l = controller.limits
             controller.note(
@@ -396,6 +400,7 @@ private fun SessionScreen(
         questionId = question?.callId,
         planId = plan?.callId,
         projectRoot = info.dir,
+        queue = queue,
       ),
     actions =
       SessionActions(
@@ -423,8 +428,42 @@ private fun SessionScreen(
           attachLauncher.launch("*/*")
         },
         listFiles = { com.google.ai.edge.gallery.forge.tools.Mentions.listFiles(info.dir) },
+        onSteer = controller::steer,
+        onEnqueue = controller::enqueue,
+        onDequeue = controller::dequeue,
       ),
   )
+  if (showSettings) {
+    ForgeSettingsSheet(
+      settings = controller.settings,
+      current = controller.limits,
+      light = engine.light,
+      local = controller.modelIsLocal,
+      onSave = {
+        controller.applySettings(it)
+        showSettings = false
+        Toast.makeText(context, if (running) "Enregistré : s'applique après ce tour." else "Réglages enregistrés.", Toast.LENGTH_SHORT).show()
+      },
+      onEditMemory = {
+        scope.launch {
+          memoryText = withContext(Dispatchers.IO) { runCatching { controller.workspace.globalMemory.readText() }.getOrDefault("") }
+        }
+      },
+      onDismiss = { showSettings = false },
+    )
+  }
+  memoryText?.let { initial ->
+    GlobalMemoryDialog(initial, onSave = { t ->
+      memoryText = null
+      scope.launch {
+        withContext(Dispatchers.IO) {
+          com.google.ai.edge.gallery.forge.tools.FileTools.writeAtomically(controller.workspace.globalMemory, t.toByteArray(Charsets.UTF_8))
+        }
+        controller.memoryChanged()
+        Toast.makeText(context, "ALTREX.md global enregistré (lu au prochain tour).", Toast.LENGTH_SHORT).show()
+      }
+    }, onDismiss = { memoryText = null })
+  }
   diffView?.let { (title, entries) -> DiffSheet(title, entries) { diffView = null } }
   undoPlan?.let { plan ->
     UndoDialog(plan, onConfirm = {

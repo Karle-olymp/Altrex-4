@@ -86,6 +86,8 @@ data class SessionUi(
   val planId: String?,
   /** The project folder on the phone (produced files: share, copy). */
   val projectRoot: java.io.File = java.io.File("."),
+  /** Messages waiting for the end of the turn (« Après »). */
+  val queue: List<String> = emptyList(),
 )
 
 /** Callbacks of the session view. */
@@ -107,6 +109,10 @@ data class SessionActions(
   val onAttach: ((String) -> Unit) -> Unit = {},
   /** The project's files, for the `@` picker. */
   val listFiles: () -> List<String> = { emptyList() },
+  /** While the agent works: « Orienter » (next step) and « Après » (queued). */
+  val onSteer: (String) -> Unit = {},
+  val onEnqueue: (String) -> Unit = {},
+  val onDequeue: (Int) -> Unit = {},
 )
 
 /** [ALTREX] A Forge session (maquette B-technique/02-session; C when the Plan mode is on). */
@@ -130,7 +136,7 @@ fun ForgeSessionView(ui: SessionUi, actions: SessionActions) {
           Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "Plus", tint = p.muted) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-              for ((label, cmd) in listOf("Nouvelle session" to "/nouvelle", "Modifications (/diff)" to "/diff", "Annuler le dernier tour (/undo)" to "/undo", "Instantanés (/checkpoints)" to "/checkpoints", "Vérifier les outils (/doctor)" to "/doctor", "Mémoire du projet (/init)" to "/init", "Scanner avec SecurCode" to "/scan", "Commandes (/aide)" to "/aide")) {
+              for ((label, cmd) in listOf("Nouvelle session" to "/nouvelle", "Modifications (/diff)" to "/diff", "Annuler le dernier tour (/undo)" to "/undo", "Instantanés (/checkpoints)" to "/checkpoints", "Réglages de Forge" to "/reglages", "Vérifier les outils (/doctor)" to "/doctor", "Mémoire du projet (/init)" to "/init", "Scanner avec SecurCode" to "/scan", "Commandes (/aide)" to "/aide")) {
                 DropdownMenuItem(text = { Text(label) }, onClick = {
                   menu = false
                   actions.onCommand(cmd)
@@ -302,7 +308,7 @@ private fun Feed(ui: SessionUi, a: SessionActions, modifier: Modifier) {
         is FeedItem.UserText -> UserBubble(it.text)
         is FeedItem.AssistantText -> AssistantBlock(it.text, it.thinking)
         is FeedItem.ToolCard -> ToolCard(it, if (it.result == null) ui.live.toolProgress else null, ui.running)
-        is FeedItem.Note -> NoteBlock(it.kind, it.text)
+        is FeedItem.Note -> if (it.kind == SessionState.ORIENTATION) UserBubble("↪ " + it.text) else NoteBlock(it.kind, it.text)
         is FeedItem.TurnEnd -> TurnEndBlock(it.reason, it.detail)
         is FeedItem.Plan -> PlanCard(it, pending = ui.planId == it.id, onValidate = a.onPlanValidate, onChanges = a.onPlanChanges, onRefuse = a.onPlanRefuse)
         is FeedItem.Question -> QuestionCard(it, pending = ui.questionId == it.id, onAnswer = a.onAnswer)
@@ -373,8 +379,19 @@ private fun InputBar(ui: SessionUi, a: SessionActions, onModes: () -> Unit) {
         }
       }
     }
+    if (ui.queue.isNotEmpty()) {
+      Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+        for ((i, q) in ui.queue.withIndex()) {
+          Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("après le tour", style = ForgeType.monoSmall, color = p.faint, modifier = Modifier.width(96.dp))
+            Text(q, style = ForgeType.body, color = p.muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text("✕", style = ForgeType.bodyStrong, color = p.muted, modifier = Modifier.clickable { a.onDequeue(i) }.padding(horizontal = 10.dp, vertical = 4.dp))
+          }
+        }
+      }
+    }
     Column(Modifier.padding(12.dp)) {
-      ForgeTextField(text, { text = it }, if (ui.state.mode.isPlan) "Décris ce qu'il faut planifier…" else "Demande une modification…", maxLines = 6)
+      ForgeTextField(text, { text = it }, if (ui.running) "Oriente l'agent, ou prépare la suite…" else if (ui.state.mode.isPlan) "Décris ce qu'il faut planifier…" else "Demande une modification…", maxLines = 6)
       Spacer(Modifier.height(10.dp))
       Row(verticalAlignment = Alignment.CenterVertically) {
         val mode = ui.state.mode
@@ -392,6 +409,21 @@ private fun InputBar(ui: SessionUi, a: SessionActions, onModes: () -> Unit) {
         IconButton(onClick = { a.onAttach { m -> text = (text.trimEnd() + " " + m + " ").trimStart() } }) { Icon(Icons.Outlined.AttachFile, "Joindre un fichier", tint = p.muted) }
         Spacer(Modifier.weight(1f))
         if (ui.running) {
+          // Typing while the agent works: « Orienter » now, or « Après » the turn.
+          if (text.isNotBlank()) {
+            Text("Orienter", style = ForgeType.bodyStrong, color = p.accent, modifier = Modifier.clip(shape()).border(1.dp, p.accent, shape()).clickable {
+              val t = text.trim()
+              text = ""
+              a.onSteer(t)
+            }.padding(horizontal = 10.dp, vertical = 14.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Après", style = ForgeType.bodyStrong, color = p.muted, modifier = Modifier.clip(shape()).border(1.dp, p.line2, shape()).clickable {
+              val t = text.trim()
+              text = ""
+              a.onEnqueue(t)
+            }.padding(horizontal = 10.dp, vertical = 14.dp))
+            Spacer(Modifier.width(6.dp))
+          }
           Box(Modifier.size(52.dp).clip(shape()).border(1.dp, p.del, shape()).clickable(onClick = a.onStop), contentAlignment = Alignment.Center) {
             Icon(Icons.Outlined.Stop, "Arrêter", tint = p.del)
           }

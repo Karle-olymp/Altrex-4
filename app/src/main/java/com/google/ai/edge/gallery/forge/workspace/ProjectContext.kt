@@ -24,6 +24,7 @@ class ProjectContext(
   /** Forget the built prompt (ALTREX.md written by /init, trust changed, other model). */
   fun invalidate() {
     cached = null
+    cachedLight = null
   }
 
   override fun systemPrompt(): String =
@@ -44,5 +45,30 @@ class ProjectContext(
         }
         .also { cached = it }
 
+  private var cachedLight: String? = null
+
+  override fun lightPrompt(): String =
+    cachedLight
+      ?: buildString {
+          append(ForgePrompts.LIGHT_INSTRUCTIONS)
+          append("\n")
+          append(
+            ForgePrompts.lightEnvironment(
+              project = project,
+              linuxPath = paths.linuxPath,
+              model = modelName(),
+              date = SimpleDateFormat("EEEE d MMMM yyyy", Locale.FRANCE).format(Date(clock())),
+            )
+          )
+          memory.startText(workspace.info(project).trusted)?.let { m ->
+            append("\n\n").append(if (m.length > LIGHT_MEMORY_CHARS) m.take(LIGHT_MEMORY_CHARS) + "\n[… mémoire coupée en mode léger …]" else m)
+          }
+        }
+        .also { cachedLight = it }
+
   override fun onPathTouched(rel: String): String? = memory.onPathTouched(rel, workspace.info(project).trusted)
+
+  companion object {
+    const val LIGHT_MEMORY_CHARS = 2_500
+  }
 }

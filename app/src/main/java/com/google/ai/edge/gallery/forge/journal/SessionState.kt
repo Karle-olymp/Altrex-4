@@ -161,15 +161,34 @@ data class SessionState(
     /** Tools that write a file themselves (their results carry its path). */
     val WRITERS = setOf("Write", "Edit", "MultiEdit")
 
+    /** Note kind of a message typed while the agent works (« Orienter »). */
+    const val ORIENTATION = "orientation"
+
     fun modelMessages(events: List<ForgeEvent>, currentTurn: Int): List<AgentMsg> {
       val out = ArrayList<AgentMsg>()
-      val byTurn = events.groupBy { turnOf(it) }
+      // Compaction (1.2): tombstones (level 1), and the last summary (level 2) standing for the
+      // first events of the journal; the journal itself is never changed.
+      val tomb = events.filterIsInstance<ForgeEvent.Compaction>().flatMapTo(HashSet()) { it.ids }
+      val sid = events.filterIsInstance<ForgeEvent.SessionStart>().firstOrNull()?.id.orEmpty()
+      val summary = events.filterIsInstance<ForgeEvent.Summary>().lastOrNull()?.takeIf { it.upto in 1..events.size }
+      val base = if (summary != null) events.drop(summary.upto) else events
+      val byTurn = base.groupBy { turnOf(it) }
       for (turn in byTurn.keys.filter { it in 1..currentTurn }.sorted()) {
         val ev = byTurn[turn].orEmpty()
-        if (turn < currentTurn) condensed(ev, out) else full(ev, out)
+        if (turn < currentTurn) condensed(ev, out) else full(ev, out, tomb, sid)
+      }
+      if (summary != null) {
+        val cut = events.take(summary.upto)
+        val request = cut.filterIsInstance<ForgeEvent.User>().filter { it.turn == currentTurn }.joinToString("\n\n") { it.text }.ifEmpty { null }
+        val header = com.google.ai.edge.gallery.forge.engine.ForgePrompts.summaryHeader(summary.text, request)
+        val first = out.firstOrNull()
+        if (first != null && first.role == "user") out[0] = first.copy(content = header + "\n\n" + first.content) else out.add(0, AgentMsg("user", header))
       }
       return out
     }
+
+    /** Where a tombstoned result is kept whole for the model (`.altrex/sorties/`). */
+    fun spillPath(sessionId: String, callId: String): String = ".altrex/sorties/" + "$sessionId-$callId.txt".replace(Regex("[^A-Za-z0-9._-]"), "_")
 
     private fun turnOf(e: ForgeEvent): Int =
       when (e) {
@@ -213,7 +232,7 @@ data class SessionState(
       out.add(AgentMsg("assistant", text.ifEmpty { "…" }))
     }
 
-    private fun full(ev: List<ForgeEvent>, out: MutableList<AgentMsg>) {
+    private fun full(ev: List<ForgeEvent>, out: MutableList<AgentMsg>, tomb: Set<String> = emptySet(), sid: String = "") {
       val pendingNotes = ArrayList<String>()
       val results = ArrayList<String>()
       fun flushResults() {
@@ -237,13 +256,18 @@ data class SessionState(
             flushResults()
             out.add(AgentMsg("assistant", e.raw.ifBlank { "…" }))
           }
-          is ForgeEvent.ToolResult -> results.add(e.modelText)
+          is ForgeEvent.ToolResult ->
+            results.add(
+              if (e.id in tomb) com.google.ai.edge.gallery.forge.engine.ForgePrompts.tombstone(e.name, e.path, if (e.name == "Read") null else spillPath(sid, e.id))
+              else e.modelText
+            )
           is ForgeEvent.Note -> if (e.forModel) {
+            val text = if (e.kind == ORIENTATION) com.google.ai.edge.gallery.forge.engine.ForgePrompts.steering(e.text) else e.text
             if (results.isEmpty() && out.lastOrNull()?.role == "user") {
               val last = out.last()
-              out[out.lastIndex] = last.copy(content = if (e.kind == "contexte") e.text + "\n\n" + last.content else last.content + "\n\n" + e.text)
+              out[out.lastIndex] = last.copy(content = if (e.kind == "contexte") text + "\n\n" + last.content else last.content + "\n\n" + text)
             } else {
-              pendingNotes.add(e.text)
+              pendingNotes.add(text)
             }
           }
           else -> Unit

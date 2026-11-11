@@ -138,7 +138,7 @@ Un onglet du projet où le modèle et toi concevez : architecture, flux, schéma
 |---|---|---|
 | **0. Le look** | Fait : B + C choisis (maquettes dans `docs/forge/maquettes/`) | S |
 | **1. Fondations** | Dossier de travail commun ; nouvel écran (projets, flux à cartes, ligne d'état) ; outils `Glob`, `Grep`, `TodoWrite`, `ExitPlanMode`, `AskUserQuestion` aux noms de Claude Code ; sélecteur de modes et mode Plan ; refus avec motif ; lecture avant écriture ; limites, rappel anti-boucle ; journal de session avec reprise après interruption ; `ALTREX.md` et `/init` ; `/doctor` ; commandes `/` de base ; service de premier plan et notifications ; moteur ré-entrant. **Code fait le 2026-11-05 (voir § 14), à essayer sur le téléphone** | L |
-| **2. Confort** | Diff et retours Git (`/undo`, `/diff`) ; `@fichier` ; sessions complètes ; compaction à deux niveaux ; `WebFetch`, `MultiEdit` ; rangée de livrables ; connecteurs et skills ; modes Apprentissage et Build (première version). **En cours depuis le 2026-11-10 (voir § 18)** | L |
+| **2. Confort** | Diff et retours Git (`/undo`, `/diff`) ; `@fichier` ; sessions complètes ; compaction à deux niveaux ; `WebFetch`, `MultiEdit` ; rangée de livrables ; connecteurs et skills ; modes Apprentissage et Build (première version). **Phases A et B faites (voir § 18)** | L |
 | **3. Aperçu, scan, Blueprint** | Aperçu vérifié ; `/scan` ; terminal du projet ; Blueprint (première version) | M à L |
 | **4. Plus loin** | Sous-agents, hooks à notre format, commandes `/` à toi, modes personnalisés, Blueprint avancé, relecteur d'approbations | L |
 
@@ -310,3 +310,11 @@ En trois phases, chacune compilée, testée et enregistrée (commit local) avant
 
 **Non vérifié sans téléphone (phase A)** : git du Linux sur `/root/projets` sous PRoot (droits, durée d'un instantané sur un gros projet), choix git/copies au premier instantané, partage par FileProvider d'un fichier de `files/forge/projets`, sélecteur de pièces jointes, WebFetch et Brave réels (certificats, proxy, réseau mobile), rechargement de l'aperçu par sondage toutes les 1,5 s.
 
+**Phase B : contexte et performance** (2026-11-11 ; `engine/ForgeEngine.kt`, `engine/ConversationReuse.kt`, `workspace/ForgeSettings.kt`, `ui/ForgeSettingsSheet.kt`)
+- **Compaction à deux niveaux.** Au-delà de 60 % du budget du modèle, les gros anciens résultats d'outils du tour deviennent des traces récupérables (texte complet dans `.altrex/sorties/`, un Read se relit) ; encore au-delà de 85 %, le modèle résume ce qui précède. Le journal garde tout ; l'écran aussi.
+- **Mode léger** pour les modèles locaux lents (automatique pour LiteRT-LM et les petits contextes, réglable : Auto / Toujours / Jamais) : 7 outils décrits en une ligne chacun (Read, Write, Edit, Bash, Glob, Grep, TodoWrite), prompt système de moins de 600 jetons (au lieu d'environ 2 000), résultats d'outils de 1 500 caractères, 15 étapes par tour. Pour **LiteRT-LM**, la conversation du moteur est gardée d'une étape à l'autre au lieu d'être reconstruite (c'était la cause principale de la lenteur mesurée avec Gemma 4 E4B : tout le prompt était relu à chaque étape).
+- **Saisie pendant que l'agent travaille** : « Orienter » (le message arrive au modèle à sa prochaine étape) ou « Après » (file d'attente visible, annulable, envoyée à la fin du tour).
+- **Réglages de Forge** (menu ⋮, `/reglages`) : mode léger, nombre d'étapes et durée d'un tour, édition de l'**ALTREX.md global** dans l'appli.
+- `docs/forge/OUTILS.md` passe en **version 1.3** (§ 9).
+
+**Non vérifié sans téléphone (phase B)** : gain réel de vitesse de LiteRT-LM avec la conversation gardée (et l'égalité entre ce que le moteur garde et l'historique de Forge quand le modèle écrit un raisonnement) ; comportement de Gemma 4 E4B avec le prompt léger (appels d'outils bien formés ?) ; qualité des résumés d'un petit modèle local ; seuils 60 % / 85 % sur de vraies sessions ; feuillet des réglages et boutons « Orienter » / « Après » sur écran étroit.

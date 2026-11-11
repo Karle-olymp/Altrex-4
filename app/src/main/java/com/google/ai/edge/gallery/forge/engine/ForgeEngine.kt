@@ -55,6 +55,8 @@ class ForgeEngine(
   private val snapshots: SnapshotStore? = null,
   /** WebFetch and WebSearch; null: those tools answer that the web is not available. */
   private val web: WebPort? = null,
+  /** Light mode (slow local models): 7 tools in a compact block, short prompt ([LightMode]). */
+  val light: Boolean = false,
 ) {
   /** What the screen shows live, besides the journal: the answer being written, the running tool. */
   data class Live(
@@ -104,6 +106,24 @@ class ForgeEngine(
 
   /** Notes for the model at the start of the next turn (an /undo done meanwhile). */
   private val nextTurnNotes = java.util.concurrent.ConcurrentLinkedQueue<String>()
+
+  /** Messages typed while the agent works (« Orienter »): given to the model at its next step. */
+  private val steering = java.util.concurrent.ConcurrentLinkedQueue<String>()
+
+  /** « Orienter »: [text] reaches the model at the next step of the running turn. */
+  fun steer(text: String) {
+    if (text.isNotBlank()) steering.add(text.trim())
+  }
+
+  private fun drainSteering(turn: Int): Boolean {
+    var any = false
+    while (true) {
+      val t = steering.poll() ?: break
+      append(ForgeEvent.Note(turn, SessionState.ORIENTATION, t, forModel = true, shown = true))
+      any = true
+    }
+    return any
+  }
 
   /** Adds [text] for the model to the next request (e.g. « the user undid turn 3 »). */
   fun noteForNextTurn(text: String) {
@@ -276,7 +296,9 @@ class ForgeEngine(
   private suspend fun loop(turn: Int): String {
     val guard = LoopGuard()
     val started = clock()
-    val system = ToolCalling.systemPrompt(ForgeToolSpecs.specs, context.systemPrompt())
+    val system =
+      if (light) context.lightPrompt().trim() + "\n\n" + ForgePrompts.LIGHT_TOOLS
+      else ToolCalling.systemPrompt(ForgeToolSpecs.specs, context.systemPrompt())
     var usedChars = 0L
     var steps = 0
     var forceAnswer = false
@@ -296,9 +318,12 @@ class ForgeEngine(
         append(ForgeEvent.Note(turn, "limite", ForgePrompts.STEP_LIMIT, forModel = true, shown = false))
       }
       steps++
-      val messages = SessionState.modelMessages(journal.snapshot(), turn)
-      val requestIndex = requestIndex(messages, turn)
-      val fitted = AgentContextFitter.fit(messages, requestIndex, (model.historyBudgetChars - system.length).coerceAtLeast(2_000))
+      drainSteering(turn)
+      val budget = (model.historyBudgetChars - system.length).coerceAtLeast(2_000)
+      var messages = SessionState.modelMessages(journal.snapshot(), turn)
+      if (compactIfNeeded(turn, messages, budget)) messages = SessionState.modelMessages(journal.snapshot(), turn)
+      val requestIndex = if (journal.snapshot().any { it is ForgeEvent.Summary }) 0 else requestIndex(messages, turn)
+      val fitted = AgentContextFitter.fit(messages, requestIndex, budget)
       val promptChars = system.length + fitted.sumOf { it.content.length }
       usedChars += promptChars
       _contextRatio.value = promptChars.toFloat() / (model.historyBudgetChars.coerceAtLeast(1))
@@ -370,6 +395,8 @@ class ForgeEngine(
       }
 
       if (calls.isEmpty()) {
+        // The user wrote meanwhile (« Orienter »): the agent reads it before ending its turn.
+        if (!forceAnswer && !stopRequested && steering.isNotEmpty()) continue
         if (display.isBlank() && !nudgedEmpty && !forceAnswer) {
           nudgedEmpty = true
           append(ForgeEvent.Note(turn, "vide", ForgePrompts.EMPTY_ANSWER, forModel = true, shown = false))
@@ -438,6 +465,80 @@ class ForgeEngine(
       }
       _live.value = _live.value.copy(tool = null, toolProgress = "")
     }
+  }
+
+  // ------------------------------------------------------------------------------- compaction
+
+  /** Last level 2 summary's position, so that summaries are not made one after the other. */
+  private var lastSummaryAt = 0
+
+  /**
+   * Two levels (docs/forge/FORGE.md §4): over 60 % of the budget, the largest old results of the
+   * turn become tombstones (their full text is kept in `.altrex/sorties/`, Read results are read
+   * again); still over 85 %, the model summarizes what came before its last step. The journal
+   * keeps everything. Returns true when the history changed.
+   */
+  private suspend fun compactIfNeeded(turn: Int, messages: List<com.google.ai.edge.gallery.agent.AgentMsg>, budget: Int): Boolean {
+    val size = messages.sumOf { it.content.length + 16 }
+    if (size <= budget * SOFT) return false
+    val events = journal.snapshot()
+    val done = events.filterIsInstance<ForgeEvent.Compaction>().flatMapTo(HashSet()) { it.ids }
+    val results = events.filterIsInstance<ForgeEvent.ToolResult>().filter { it.turn == turn && it.id !in done }
+    val candidates = results.dropLast(KEEP_RECENT).filter { it.modelText.length > MIN_TOMBSTONE }.sortedByDescending { it.modelText.length }
+    var toSave = size - (budget * TARGET).toInt()
+    val ids = ArrayList<String>()
+    for (r in candidates) {
+      if (toSave <= 0) break
+      if (r.name != ForgeToolSpecs.READ) {
+        runCatching {
+          val f = File(paths.root, SessionState.spillPath(sessionId, r.id))
+          f.parentFile?.mkdirs()
+          val ignore = File(f.parentFile, ".gitignore")
+          if (!ignore.exists()) ignore.writeText("*\n")
+          if (!f.exists()) FileTools.writeAtomically(f, r.modelText.toByteArray(Charsets.UTF_8))
+        }
+      }
+      ids.add(r.id)
+      toSave -= r.modelText.length - 200
+    }
+    var changed = false
+    if (ids.isNotEmpty()) {
+      append(ForgeEvent.Compaction(turn, ids))
+      changed = true
+      if (toSave <= 0) return true
+    }
+    val now = if (changed) SessionState.modelMessages(journal.snapshot(), turn) else messages
+    if (now.sumOf { it.content.length + 16 } <= budget * HARD) return changed
+    return summarize(turn, now, budget) || changed
+  }
+
+  private suspend fun summarize(turn: Int, messages: List<com.google.ai.edge.gallery.agent.AgentMsg>, budget: Int): Boolean {
+    val events = journal.snapshot()
+    val lastAssistant = events.indexOfLast { it is ForgeEvent.Assistant && it.turn == turn }
+    val turnStart = events.indexOfLast { it is ForgeEvent.TurnStart && it.turn == turn }
+    val upto = if (lastAssistant > turnStart) lastAssistant else turnStart
+    val previous = maxOf(lastSummaryAt, events.filterIsInstance<ForgeEvent.Summary>().lastOrNull()?.upto ?: 0)
+    if (upto <= previous + 4 || upto <= 0) return false
+    _live.value = _live.value.copy(toolProgress = "Résumé du contexte…")
+    val transcript = StringBuilder()
+    for (m in messages) transcript.append("### ").append(if (m.role == "user") "utilisateur / outils" else "Forge").append('\n').append(m.content.take(4_000)).append("\n\n")
+    val room = (budget * 0.7).toInt().coerceAtLeast(4_000)
+    val text = if (transcript.length > room) transcript.takeLast(room).toString() else transcript.toString()
+    val raw =
+      try {
+        model.generate(SUMMARY_SYSTEM, listOf(com.google.ai.edge.gallery.agent.AgentMsg("user", text + "\n\n" + ForgePrompts.SUMMARY_REQUEST))) {}
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        ""
+      }
+    _live.value = _live.value.copy(toolProgress = "")
+    val summary = ToolCalling.displayText(ToolCalling.stripThinking(raw)).trim().take(MAX_SUMMARY)
+    if (summary.length < 40) return false
+    lastSummaryAt = upto
+    append(ForgeEvent.Summary(turn, upto, summary))
+    append(ForgeEvent.Note(turn, "info", "Contexte presque plein : les échanges précédents ont été résumés pour le modèle (le journal complet est gardé).", forModel = false))
+    return true
   }
 
   private fun completedTaskInLastTodos(turn: Int): Boolean {
@@ -800,6 +901,13 @@ class ForgeEngine(
 
   companion object {
     const val MAX_CALLS_PER_STEP = 4
+    private const val SOFT = 0.6
+    private const val TARGET = 0.45
+    private const val HARD = 0.85
+    private const val KEEP_RECENT = 2
+    private const val MIN_TOMBSTONE = 400
+    private const val MAX_SUMMARY = 3_000
+    private const val SUMMARY_SYSTEM = "Tu résumes une session de travail de Forge, l'agent de programmation d'Altrex, pour qu'elle continue sans les anciens messages."
     const val DEFAULT_TIMEOUT_S = CommandWait.DEFAULT_IDLE_S
     const val MAX_TIMEOUT_S = CommandWait.MAX_IDLE_S
     private const val PROGRESS_LINES = 4
