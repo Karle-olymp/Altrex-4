@@ -6,8 +6,16 @@
 // Un outil qui échoue rend son résultat complet (ce que lit le modèle) comme erreur : c'est voulu.
 #![allow(clippy::result_large_err)]
 
+pub mod apercu;
 pub mod appels;
+pub mod coffre;
 pub mod commandes;
+pub mod espace;
 pub mod journal;
+pub mod llama;
+pub mod memoire;
+pub mod modeles;
+pub mod moteur;
 pub mod outils;
 pub mod permissions;
+pub mod shell;
