@@ -191,7 +191,7 @@ pub fn separer_cwd(brut: &str) -> (String, Option<String>) {
 
 impl Shell {
     pub fn nouveau(projet: &Path, dialecte: Dialecte) -> Shell {
-        let projet = projet.canonicalize().unwrap_or_else(|_| projet.to_path_buf());
+        let projet = crate::outils::canoniser(projet).unwrap_or_else(|_| projet.to_path_buf());
         Shell {
             cwd: Mutex::new(projet.clone()),
             projet,

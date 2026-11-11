@@ -1,6 +1,7 @@
 //! Le moteur de bout en bout, avec un faux modèle et un faux écran : outils, autorisations, mode
 //! Plan, rappels, journal.
 
+#![cfg_attr(windows, allow(dead_code, unused_imports))]
 mod commun;
 
 use altrex_core::commandes::Dialecte;
@@ -160,6 +161,8 @@ fn arreter_finit_le_tour() {
     assert!(!p.join("x").exists());
 }
 
+// Lance de vraies commandes sh.
+#[cfg(unix)]
 #[test]
 fn commandes_lecture_libre_ecriture_demandee() {
     let p = dossier("moteur");
@@ -196,6 +199,8 @@ fn commandes_lecture_libre_ecriture_demandee() {
     assert!(!d[0].est_diff);
 }
 
+// Lance de vraies commandes sh.
+#[cfg(unix)]
 #[test]
 fn tout_autoriser_demande_quand_meme_le_risque() {
     let p = dossier("moteur");
@@ -217,6 +222,8 @@ fn tout_autoriser_demande_quand_meme_le_risque() {
     assert!(!p.join(".git/config").exists());
 }
 
+// Lance de vraies commandes sh.
+#[cfg(unix)]
 #[test]
 fn mode_plan_lecture_seule_puis_validation() {
     let p = dossier("moteur");

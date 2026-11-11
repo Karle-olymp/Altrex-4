@@ -151,7 +151,7 @@ Chaque étape se vérifie par les tests et la compilation, puis tu l'essaies sur
 - **Qualité du modèle** : un modèle faible se perd dans un long chantier ; limites, anti-boucle et compaction aident mais ne remplacent pas un bon modèle.
 - **Taille du chantier** : c'est le plus gros de l'appli. D'où les étapes.
 - **Migration de l'ancien Code** : ses projets (dossiers du téléphone) devront être importés vers l'espace commun.
-- **PC** : le format des projets, de `ALTREX.md` et des sessions sera pensé pour qu'une future version PC puisse les relire ; la version PC elle-même reste à part.
+- **PC** : la version PC a démarré le 2026-11-11 (§ 19). Elle est écrite en Rust (`pc/`), à part de l'appli Android ; les deux moteurs restent alignés par un contrat partagé (`docs/forge/contrat/`). Le risque est la divergence : tout changement de comportement de Forge commence par un cas ajouté au contrat.
 
 ## 11. À décider
 
@@ -343,3 +343,13 @@ En trois phases, chacune compilée, testée et enregistrée (commit local) avant
 **Non vérifié sans téléphone (phase C)** : qu'un vrai modèle écrive bien la section « ## Recette » au format attendu (le format toléré est large, mais un petit modèle local peut l'oublier : il reçoit alors l'erreur et doit recommencer) ; durée et fiabilité des commandes de vérification sous PRoot ; le contrôle de l'aperçu est **statique** (fichiers liés présents), il n'exécute pas la page : les erreurs JavaScript ne sont pas vues avant le rapport d'aperçu de l'étape 3 ; rendu de la feuille « Mode de travail » (deux interrupteurs) et de la puce de mode allongée sur écran étroit ; comportement pédagogique réel du mode Apprentissage selon le modèle.
 
 **Tests de l'étape 2** : `Step2FilesTest` (instantanés, /undo, @fichier, MultiEdit, web), `Step2ContextTest` (compaction, mode léger, réutilisation de conversation, orientation, réglages), `Step2ModesTest` (recette, juge d'achèvement, limites de tours et d'essais, propositions une seule fois, Apprentissage, journal).
+
+## 19. Version PC (2026-11-11)
+
+Décision et étude : `docs/pc/PLAN.md` ; compilation, usage et limites : `docs/pc/README.md`.
+
+- **Architecture** : un noyau en Rust (`pc/crates/altrex-core`) qui réécrit le moteur de Forge sans interface, et une application de bureau (`pc/crates/altrex-pc`, egui). Aucun fichier de l'appli Android n'a été modifié. Raisons : exécutable de quelques Mo au lieu d'une JVM embarquée, `.exe` Windows produit depuis Linux, aucun risque de régression Android. Prix : le moteur est réécrit, pas réutilisé.
+- **Contrat partagé** (`docs/forge/contrat/`) : les schémas des 14 outils (§ 2 de `OUTILS.md`, vérifiés des deux côtés), le format du journal (version 1), et des vecteurs de test lus par les tests Kotlin (`ContratPartageTest`) et Rust (`tests/contrat.rs`) : lecture des commandes, autorisations, appels d'outils, journal.
+- **Ce qui change sur PC** : pas de PRoot ni d'Alpine, donc un shell natif (PowerShell sous Windows, `sh` ailleurs) et **pas de bac à sable** ; le prompt système et la description de l'outil Bash décrivent la machine et son shell, les noms et paramètres des outils ne changent pas. Les modèles locaux passent par `llama-server` (protocole texte de `OUTILS.md`), les modèles cloud par leurs API. Un projet peut être un dossier existant du disque.
+- **État** : squelette qui tourne (projets, session de bout en bout, 12 outils sur 14, autorisations, mode Plan, journal, aperçu local, clés chiffrées). Restent à porter : compaction, `/undo` et `/diff`, WebFetch et WebSearch, commandes `/`, mode léger, Build et Apprentissage (liste complète dans `docs/pc/README.md`).
+- **Pour le dataset Argora** : rien ne change. Le texte vu par un modèle local sur PC est celui de `OUTILS.md` (même bloc d'outils, même format d'appel et de résultat) ; seules deux descriptions d'outils et le texte d'environnement du prompt système nomment l'ordinateur au lieu du téléphone.

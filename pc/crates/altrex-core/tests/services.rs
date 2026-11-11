@@ -1,5 +1,6 @@
 //! Shell natif, aperçu, coffre, espace de travail, mémoire, clients des modèles, llama-server.
 
+#![cfg_attr(windows, allow(dead_code, unused_imports))]
 mod commun;
 
 use altrex_core::apercu::{self, Apercu};
@@ -111,6 +112,64 @@ fn shell_silence_arriere_plan_et_arret() {
     let debut = Instant::now();
     let f = s.executer("sleep 30", NORMALE, &arret).unwrap();
     assert!(f.arretee && debut.elapsed() < Duration::from_secs(2));
+}
+
+/// Sous Windows seulement (exécuté par la CI, pas dans le conteneur Linux où ce code a été écrit).
+#[cfg(windows)]
+#[test]
+fn shell_powershell_sous_windows() {
+    let p = dossier("shell-ps");
+    fs::create_dir(p.join("sous")).unwrap();
+    let s = Shell::nouveau(&p, Dialecte::PowerShell);
+    let non = AtomicBool::new(false);
+    let f = s
+        .executer("Write-Output 'un'; Set-Location sous", NORMALE, &non)
+        .unwrap();
+    assert_eq!(f.code, 0, "{}", f.sortie);
+    assert!(f.sortie.contains("un"));
+    assert!(
+        f.cwd.as_deref().unwrap().to_lowercase().ends_with("\\sous"),
+        "{:?}",
+        f.cwd
+    );
+    assert!(s
+        .executer("(Get-Location).Path", NORMALE, &non)
+        .unwrap()
+        .sortie
+        .to_lowercase()
+        .ends_with("\\sous"));
+    assert_eq!(s.executer("cmd /c exit 7", NORMALE, &non).unwrap().code, 7);
+    assert_eq!(
+        s.executer("Write-Output \"a'b`$c é\"", NORMALE, &non)
+            .unwrap()
+            .sortie
+            .trim(),
+        "a'b$c é"
+    );
+    // Arrêter tue l'arbre de processus en moins de 2 s.
+    let arret = Arc::new(AtomicBool::new(false));
+    let a = arret.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(500));
+        a.store(true, Ordering::SeqCst);
+    });
+    let debut = Instant::now();
+    assert!(
+        s.executer("Start-Sleep -Seconds 30", NORMALE, &arret)
+            .unwrap()
+            .arretee
+    );
+    assert!(debut.elapsed() < Duration::from_secs(3));
+    // Un chemin absolu « C:\… » du projet est accepté par les outils de fichiers, quelle que soit la casse.
+    let c = altrex_core::outils::Chemins::nouveau(&p);
+    let abs = c.racine.join("sous").join("a.txt");
+    assert_eq!(c.resoudre(&abs.to_string_lossy()).unwrap().rel, "sous/a.txt");
+    assert_eq!(
+        c.resoudre(&abs.to_string_lossy().to_uppercase())
+            .map(|r| r.rel.to_lowercase()),
+        Some("sous/a.txt".into())
+    );
+    assert!(c.resoudre("C:\\Windows\\win.ini").is_none());
 }
 
 #[test]

@@ -272,7 +272,7 @@ impl Espace {
         if let Some(deja) = self
             .lister()
             .into_iter()
-            .find(|p| p.dossier.canonicalize().ok().as_deref() == Some(&reel))
+            .find(|p| crate::outils::canoniser(&p.dossier).ok().as_deref() == Some(&reel))
         {
             return Ok(deja.nom);
         }

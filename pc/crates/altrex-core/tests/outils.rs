@@ -1,3 +1,4 @@
+#![cfg_attr(windows, allow(dead_code, unused_imports))]
 use altrex_core::commandes::{self, Dialecte};
 use altrex_core::journal::{self, Evenement, Journal};
 use altrex_core::outils::fichiers::{Fichiers, Suivi};
@@ -134,6 +135,22 @@ fn chemins_hors_du_projet() {
     }
     let _ = fs::remove_dir_all(d);
     let _ = fs::remove_dir_all(dehors);
+}
+
+#[test]
+fn chemins_de_windows() {
+    use altrex_core::outils::sans_prefixe_verbatim;
+    assert_eq!(
+        sans_prefixe_verbatim(r"\\?\C:\Users\moi\projet"),
+        r"C:\Users\moi\projet"
+    );
+    assert_eq!(sans_prefixe_verbatim(r"C:\Users\moi"), r"C:\Users\moi");
+    assert_eq!(
+        sans_prefixe_verbatim(r"\\?\UNC\serveur\partage"),
+        r"\\?\UNC\serveur\partage",
+        "un partage réseau garde sa forme"
+    );
+    assert_eq!(sans_prefixe_verbatim("/home/moi"), "/home/moi");
 }
 
 #[test]

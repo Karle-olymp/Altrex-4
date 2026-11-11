@@ -71,6 +71,39 @@ impl Resultat {
     }
 }
 
+/// Retire le préfixe « \\?\ » que Windows met devant un chemin résolu (« \\?\C:\projets » → « C:\projets ») :
+/// le modèle, l'utilisateur et PowerShell écrivent les chemins sans lui.
+pub fn sans_prefixe_verbatim(chemin: &str) -> &str {
+    match chemin.strip_prefix(r"\\?\") {
+        Some(reste) if reste.as_bytes().get(1) == Some(&b':') => reste,
+        _ => chemin,
+    }
+}
+
+/// Le chemin réel (liens résolus), sans le préfixe « \\?\ » de Windows.
+pub fn canoniser(p: &Path) -> std::io::Result<PathBuf> {
+    let reel = p.canonicalize()?;
+    Ok(PathBuf::from(sans_prefixe_verbatim(&reel.to_string_lossy())))
+}
+
+/// `chemin` privé de `racine`, si `racine` le contient. Sous Windows, la casse ne compte pas.
+fn sous_racine(chemin: &Path, racine: &Path) -> Option<PathBuf> {
+    if let Ok(r) = chemin.strip_prefix(racine) {
+        return Some(r.to_path_buf());
+    }
+    if cfg!(windows) {
+        let (c, r) = (
+            chemin.to_string_lossy().to_lowercase(),
+            racine.to_string_lossy().to_lowercase(),
+        );
+        if Path::new(&c).starts_with(Path::new(&r)) {
+            let n = racine.components().count();
+            return Some(chemin.components().skip(n).collect());
+        }
+    }
+    None
+}
+
 /// Un chemin résolu dans le projet : `rel` avec des « / », `fichier` sur le disque.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Resolu {
@@ -102,7 +135,7 @@ impl Chemins {
         let p = Path::new(&brut);
         let relatif: PathBuf = if p.is_absolute() {
             let abs = normaliser(p)?;
-            abs.strip_prefix(&self.racine).ok()?.to_path_buf()
+            sous_racine(&abs, &self.racine)?
         } else {
             p.to_path_buf()
         };
@@ -128,10 +161,8 @@ impl Chemins {
             }
             existant = existant.parent()?;
         }
-        let reel = existant.canonicalize().ok()?;
-        if !reel.starts_with(&self.racine) {
-            return None;
-        }
+        let reel = canoniser(existant).ok()?;
+        sous_racine(&reel, &self.racine)?;
         Some(Resolu { rel, fichier })
     }
 }
