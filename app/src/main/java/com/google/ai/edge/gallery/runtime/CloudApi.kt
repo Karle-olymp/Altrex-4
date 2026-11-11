@@ -109,10 +109,10 @@ object CloudApi {
     return prefs.commit()
   }
 
-  open class CloudException(message: String) : IOException(message)
+  open class CloudException(message: String, /** HTTP status, 0 when the error is not an HTTP answer. */ val code: Int = 0) : IOException(message)
 
   /** [ALTREX] HTTP 429: too many requests. [retryAfterMs]: the wait the provider asked for, if it said. */
-  class RateLimited(message: String, val retryAfterMs: Long?) : CloudException(message)
+  class RateLimited(message: String, val retryAfterMs: Long?) : CloudException(message, 429)
 
   /**
    * [ALTREX] Stops a [chat] from another thread: its HTTP connection is closed, so a read blocked
@@ -146,7 +146,7 @@ object CloudApi {
     try {
       val code = conn.responseCode
       val text = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-      if (code !in 200..299) throw CloudException(httpError(provider, code, text))
+      if (code !in 200..299) throw CloudException(httpError(provider, code, text), code)
       val data = JSONObject(text).optJSONArray("data") ?: JSONArray()
       return (0 until data.length())
         .mapNotNull { data.optJSONObject(it)?.optString("id")?.removePrefix("models/")?.takeIf { id -> id.isNotBlank() } }
@@ -546,7 +546,7 @@ object CloudApi {
       val wait = com.google.ai.edge.gallery.forge.engine.RateLimit.parseRetryAfter(conn.getHeaderField("Retry-After"), text)
       throw RateLimited(httpError(provider, code, text), wait)
     }
-    throw CloudException(httpError(provider, code, text))
+    throw CloudException(httpError(provider, code, text), code)
   }
 
   private fun open(url: String, provider: Provider, key: String, readTimeoutMs: Int): HttpURLConnection {

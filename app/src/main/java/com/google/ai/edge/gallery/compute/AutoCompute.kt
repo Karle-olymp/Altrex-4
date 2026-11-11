@@ -57,6 +57,15 @@ object BenchmarkGate {
         "mesure reportée : batterie faible"
       else -> null
     }
+
+  /**
+   * A background measurement starts a second engine beside the loaded one: it needs about the
+   * model's size again in free memory, plus a margin.
+   */
+  fun memoryRefusal(availBytes: Long, fileBytes: Long): String? =
+    if (availBytes < fileBytes + fileBytes / 4 + MEMORY_MARGIN_BYTES) "mesure reportée : mémoire libre insuffisante" else null
+
+  const val MEMORY_MARGIN_BYTES = 600L * 1024 * 1024
 }
 
 /** What the Auto mode does for this load. */
@@ -113,6 +122,34 @@ object AutoSelector {
       return AutoPlan.Use(stable, gateRefusal)
     }
     return AutoPlan.Measure(usable)
+  }
+
+  /**
+   * [ALTREX] The backend to load on NOW, without measuring anything (the measurement runs later,
+   * in the background, see [AutoBenchmark]): the measured choice if there is one, else the last
+   * backend that started well, else the one the model recommends, else the CPU.
+   *
+   * @param excluded backends that failed, crashed or were too slow before.
+   */
+  fun immediate(
+    candidates: List<ComputeChoice>,
+    remembered: AutoRecord?,
+    lastGood: ComputeChoice?,
+    recommended: ComputeChoice?,
+    excluded: Set<ComputeChoice>,
+  ): AutoPlan.Use {
+    val usable = candidates.filter { it !in excluded }
+    if (usable.isEmpty()) {
+      val fallback = if (ComputeChoice.CPU in candidates) ComputeChoice.CPU else candidates.firstOrNull()
+      return AutoPlan.Use(fallback ?: ComputeChoice.CPU, "repli après un échec")
+    }
+    if (remembered != null && remembered.backend in usable) {
+      return AutoPlan.Use(remembered.backend, "mesure gardée", remembered.tokensPerSecond)
+    }
+    if (usable.size == 1) return AutoPlan.Use(usable[0], "seul calcul disponible")
+    if (lastGood != null && lastGood in usable) return AutoPlan.Use(lastGood, "dernier choix qui a fonctionné")
+    if (recommended != null && recommended in usable) return AutoPlan.Use(recommended, "recommandé par le modèle")
+    return AutoPlan.Use(if (ComputeChoice.CPU in usable) ComputeChoice.CPU else usable[0], "choix sûr")
   }
 
   /** The one line shown to the user, as "Auto : GPU, 14 tok/s". */
@@ -206,11 +243,48 @@ class AutoMemory(private val store: KeyValueStore, private val deviceId: String)
     )
     // A remembered choice that now fails is no longer valid.
     if (recall(fp)?.backend == backend) forget(fp.modelName)
+    if (lastSuccess(fp) == backend) store.put(okKey(fp.modelName), null)
   }
 
   /** The user chose a backend again by hand: give it a new chance. */
   fun clearFailures(modelName: String) {
     store.put(failedKey(modelName), null)
+  }
+
+  /** Backends whose background measurement went over its time limit (not retried by itself). */
+  fun slowOf(fp: ModelFingerprint): Set<ComputeChoice> = listed(fp, slowKey(fp.modelName))
+
+  fun markSlow(fp: ModelFingerprint, backend: ComputeChoice) {
+    if (backend == ComputeChoice.AUTO) return
+    val slow = slowOf(fp) + backend
+    store.put(slowKey(fp.modelName), format(mapOf("sig" to fp.signature(deviceId), "f" to slow.joinToString(",") { it.label })))
+    if (recall(fp)?.backend == backend) forget(fp.modelName)
+  }
+
+  /** « Relancer la mesure »: the slow ones get a new chance (crashes and failures do not). */
+  fun clearSlow(modelName: String) {
+    store.put(slowKey(modelName), null)
+  }
+
+  /** Everything Auto must not try by itself: failed, crashed, too slow. */
+  fun excludedOf(fp: ModelFingerprint): Set<ComputeChoice> = failedOf(fp) + slowOf(fp)
+
+  /** The backend the engine last started well on, for this file, app and phone. */
+  fun lastSuccess(fp: ModelFingerprint): ComputeChoice? {
+    val fields = parse(store.get(okKey(fp.modelName)) ?: return null)
+    if (fields["sig"] != fp.signature(deviceId)) return null
+    return ComputeChoice.fromLabel(fields["b"]).takeIf { it != ComputeChoice.AUTO }
+  }
+
+  fun rememberSuccess(fp: ModelFingerprint, backend: ComputeChoice) {
+    if (backend == ComputeChoice.AUTO) return
+    store.put(okKey(fp.modelName), format(mapOf("sig" to fp.signature(deviceId), "b" to backend.label)))
+  }
+
+  private fun listed(fp: ModelFingerprint, key: String): Set<ComputeChoice> {
+    val fields = parse(store.get(key) ?: return emptySet())
+    if (fields["sig"] != fp.signature(deviceId)) return emptySet()
+    return fields["f"].orEmpty().split(',').filter { it.isNotBlank() }.map { ComputeChoice.fromLabel(it) }.filter { it != ComputeChoice.AUTO }.toSet()
   }
 
   /**
@@ -245,6 +319,10 @@ class AutoMemory(private val store: KeyValueStore, private val deviceId: String)
   private fun failedKey(name: String) = "failed|$name"
 
   private fun pendingKey(name: String) = "pending|$name"
+
+  private fun slowKey(name: String) = "slow|$name"
+
+  private fun okKey(name: String) = "ok|$name"
 
   private fun parse(raw: String): Map<String, String> =
     raw.split(';').mapNotNull { part ->

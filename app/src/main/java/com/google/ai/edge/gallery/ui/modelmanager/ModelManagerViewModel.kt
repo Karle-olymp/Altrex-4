@@ -619,6 +619,8 @@ constructor(
     if (!ComputeRuntime.hasLocalCompute(model)) return null
     if (model.instance != null && uiState.value.isModelInitialized(model)) return null
     if (!model.initializing && !uiState.value.isModelInitializing(model)) {
+      // A message is waiting: no background measurement after this load.
+      ComputeRuntime.permitBenchmark(model.name, conversationActive = true)
       initializeModel(context = context, task = task, model = model)
     }
     val reached =

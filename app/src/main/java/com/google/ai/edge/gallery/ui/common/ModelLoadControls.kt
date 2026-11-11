@@ -34,6 +34,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -48,6 +50,9 @@ import com.google.ai.edge.gallery.compute.ComputeRuntime
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.ModelDownloadStatusType
 import com.google.ai.edge.gallery.data.Task
+import com.google.ai.edge.gallery.runtime.RemoteCheck
+import com.google.ai.edge.gallery.runtime.RemoteSpace
+import com.google.ai.edge.gallery.runtime.RemoteState
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 
@@ -87,6 +92,11 @@ fun ModelLoadBar(
   modifier: Modifier = Modifier,
 ) {
   val ui by modelManagerViewModel.uiState.collectAsState()
+  if (RemoteCheck.isRemoteModel(model.name)) {
+    // Cloud models and Spaces: nothing to load; the bar says whether a message would go through.
+    RemoteModelBar(model, modifier, compact = true)
+    return
+  }
   if (!ComputeRuntime.hasLocalCompute(model)) return
   if (ui.modelDownloadStatus[model.name]?.status != ModelDownloadStatusType.SUCCEEDED) return
   val state = rememberLoadState(model, modelManagerViewModel)
@@ -148,6 +158,10 @@ fun ActiveModelCard(
   conversationActive: Boolean,
   modifier: Modifier = Modifier,
 ) {
+  if (RemoteCheck.isRemoteModel(model.name)) {
+    RemoteModelBar(model, modifier, compact = false)
+    return
+  }
   if (!ComputeRuntime.hasLocalCompute(model)) return
   val ui by modelManagerViewModel.uiState.collectAsState()
   if (ui.modelDownloadStatus[model.name]?.status != ModelDownloadStatusType.SUCCEEDED) return
@@ -196,7 +210,32 @@ fun ActiveModelCard(
     if (line.isNotEmpty()) {
       Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+    // Background measurement of the Auto mode: its progress, then its result.
+    if (state == LoadState.LOADED && !st?.bench.isNullOrEmpty()) {
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (st?.benchRunning == true) CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp)
+        Text(st?.bench.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+      }
+    }
     Row(modifier = Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      if (state == LoadState.LOADED && st?.benchRunning == true) {
+        OutlinedButton(onClick = { ComputeRuntime.cancelBench(model.name) }) { Text("Annuler la mesure") }
+      }
+      val faster = st?.suggestion
+      if (state == LoadState.LOADED && faster != null && st.benchRunning != true) {
+        // The measured choice applies at the next load anyway; this reloads now, on request.
+        Button(
+          onClick = {
+            modelManagerViewModel.unloadModel(context, task, model) {
+              android.os.Handler(android.os.Looper.getMainLooper()).post {
+                modelManagerViewModel.loadModel(context, task, model, conversationActive = true)
+              }
+            }
+          }
+        ) {
+          Text("Basculer sur ${ComputeRuntime.title(faster)}")
+        }
+      }
       when (state) {
         LoadState.LOADED ->
           OutlinedButton(
@@ -215,6 +254,74 @@ fun ActiveModelCard(
           Button(onClick = { modelManagerViewModel.loadModel(context, task, model, conversationActive) }) {
             Text("Charger")
           }
+      }
+    }
+  }
+}
+
+/**
+ * [ALTREX] Bar of a cloud model or a Space: « Prêt », « Connexion… », « Hors ligne », « Clé
+ * manquante »…, with « Vérifier la connexion » (a light request, no message sent). No
+ * « Décharger »: nothing is in memory. [compact] (above a chat): hidden once « Prêt ».
+ */
+@Composable
+fun RemoteModelBar(model: Model, modifier: Modifier = Modifier, compact: Boolean) {
+  val context = LocalContext.current
+  val all by RemoteCheck.status.collectAsState()
+  val status = remember(all[model.name], model.name) { RemoteCheck.current(context, model.name) }
+  val isSpace = RemoteSpace.isRemote(model.name)
+  // A cloud check costs nothing (the provider's model list): done once by itself. A Space is only
+  // woken up on request.
+  LaunchedEffect(model.name) {
+    if (!isSpace && RemoteCheck.current(context, model.name).state == RemoteState.UNKNOWN) RemoteCheck.check(context, model.name)
+  }
+  if (compact && status.state == RemoteState.READY) return
+  val shape = RoundedCornerShape(if (compact) 14.dp else 16.dp)
+  val color =
+    when (status.state) {
+      RemoteState.READY -> LoadedGreen
+      RemoteState.UNKNOWN, RemoteState.CHECKING, RemoteState.WAKING -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+      else -> MaterialTheme.colorScheme.error
+    }
+  val base = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = if (compact) 6.dp else 4.dp).clip(shape)
+  Column(
+    modifier =
+      (if (compact) base.background(MaterialTheme.colorScheme.surfaceContainerHigh) else base.border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape))
+        .padding(horizontal = 14.dp, vertical = if (compact) 8.dp else 10.dp),
+    verticalArrangement = Arrangement.spacedBy(4.dp),
+  ) {
+    if (!compact) {
+      Text(
+        if (isSpace) "MODÈLE ACTIF · SPACE HUGGING FACE" else "MODÈLE ACTIF · CLOUD",
+        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+        color = MaterialTheme.colorScheme.primary,
+      )
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      if (status.busy) {
+        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+      } else {
+        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(color))
+      }
+      Text(
+        model.displayName.ifEmpty { model.name },
+        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+        maxLines = 1,
+        overflow = TextOverflow.MiddleEllipsis,
+        modifier = Modifier.weight(1f),
+      )
+      Text(
+        if (status.state == RemoteState.WAKING) "Space en veille" else status.state.label,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+    }
+    if (status.detail.isNotEmpty()) {
+      Text(status.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3)
+    }
+    if (!status.busy) {
+      OutlinedButton(onClick = { RemoteCheck.check(context, model.name) }, modifier = Modifier.padding(top = 2.dp)) {
+        Text(if (status.state == RemoteState.UNKNOWN) "Vérifier la connexion" else "Vérifier de nouveau")
       }
     }
   }

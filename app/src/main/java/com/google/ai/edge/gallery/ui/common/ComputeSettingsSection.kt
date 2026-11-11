@@ -129,15 +129,32 @@ fun ComputeSettingsSection(model: Model, values: SnapshotStateMap<String, Any>) 
       )
     }
     if (current == ComputeChoice.AUTO && backends.size > 1) {
-      TextButton(
-        onClick = {
-          val memory = ComputeRuntime.memory(context)
-          memory.forget(model.name)
-          memory.clearFailures(model.name)
-          Toast.makeText(context, "La mesure sera refaite au prochain chargement.", Toast.LENGTH_SHORT).show()
+      // [ALTREX] The measurement runs in the background, on the loaded model, never during a load.
+      if (!st?.bench.isNullOrEmpty()) {
+        Text(st?.bench.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      }
+      Text(
+        "Le modèle se charge tout de suite sur un choix sûr ; les autres calculs sont testés ensuite, un par un " +
+          "(quelques secondes chacun), et le plus rapide sert au chargement suivant. Un calcul qui plante ou dépasse " +
+          "le délai n'est plus essayé automatiquement.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      if (st?.benchRunning == true) {
+        TextButton(onClick = { ComputeRuntime.cancelBench(model.name) }) { Text("Annuler la mesure") }
+      } else {
+        TextButton(
+          onClick = {
+            val memory = ComputeRuntime.memory(context)
+            memory.forget(model.name)
+            memory.clearSlow(model.name)
+            val why = ComputeRuntime.startBench(context, model)
+            if (why != null && model.instance == null) ComputeRuntime.permitBenchmark(model.name, conversationActive = false)
+            Toast.makeText(context, if (why == null) "Mesure lancée en arrière-plan." else "Mesure non lancée : $why.", Toast.LENGTH_LONG).show()
+          }
+        ) {
+          Text("Relancer la mesure")
         }
-      ) {
-        Text("Refaire la mesure")
       }
     }
   }

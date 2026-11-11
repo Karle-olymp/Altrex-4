@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 /** What the screens show about a model's compute: the line under its name. */
 data class ComputeStatus(
@@ -44,8 +45,13 @@ data class ComputeStatus(
   val line: String = "",
   /** Parameters in use, as "contexte 8192 (auto) · 4 threads (auto)". */
   val params: String = "",
-  /** Step of a load in progress ("Mesure du GPU…"), empty otherwise. */
+  /** Step of a load in progress ("Démarrage sur GPU…"), empty otherwise. */
   val phase: String = "",
+  /** Background measurement: its progress ("Auto : test du GPU…") or its result. */
+  val bench: String = "",
+  val benchRunning: Boolean = false,
+  /** A faster backend was measured: offered as « Basculer sur … » (applied at the next load anyway). */
+  val suggestion: ComputeChoice? = null,
 )
 
 /**
@@ -189,6 +195,111 @@ object ComputeRuntime {
   /** Consumed by the engine helper: true once after [permitBenchmark] outside a conversation. */
   fun takeBenchmarkPermit(modelName: String): Boolean = benchmarkPermits.remove(modelName) == true
 
+  // ---- Background measurement (AutoBenchmark) ------------------------------------------------------
+
+  /** What a loaded model gives to be measured: its backends and the native benchmark call. */
+  class BenchRequest(
+    val fp: ModelFingerprint,
+    val candidates: List<ComputeChoice>,
+    val current: ComputeChoice,
+    val fileBytes: Long,
+    val measure: (ComputeChoice) -> Double?,
+  )
+
+  private val benchRequests = ConcurrentHashMap<String, BenchRequest>()
+  private val benchJobs = ConcurrentHashMap<String, kotlinx.coroutines.Job>()
+  private val benchStop = ConcurrentHashMap<String, Boolean>()
+  private val lastInference = ConcurrentHashMap<String, Long>()
+  private val benchScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
+
+  /** One native measurement at a time, for all models. */
+  private val benchThread by lazy {
+    java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "altrex-bench").apply { isDaemon = true; priority = Thread.MIN_PRIORITY } }
+  }
+
+  /** A conversation counts as active this long after its last generation started. */
+  const val CONVERSATION_QUIET_MS = 90_000L
+
+  /** The engine helper: [modelName] is loaded and can be measured. */
+  fun registerBench(modelName: String, request: BenchRequest) {
+    benchRequests[modelName] = request
+  }
+
+  /** The model is unloaded: no measurement any more. */
+  fun unregisterBench(modelName: String) {
+    benchRequests.remove(modelName)
+    cancelBench(modelName)
+  }
+
+  /** A generation starts: the measurement stops after the backend being tested. */
+  fun onInference(modelName: String) {
+    lastInference[modelName] = System.currentTimeMillis()
+    cancelBench(modelName)
+  }
+
+  fun cancelBench(modelName: String) {
+    if (benchJobs.containsKey(modelName)) benchStop[modelName] = true
+  }
+
+  fun benchRunning(modelName: String): Boolean = benchJobs.containsKey(modelName)
+
+  /**
+   * Starts the background measurement of [model] if it is loaded and nothing forbids it. Returns
+   * null when it started, else why not (shown to the user).
+   */
+  fun startBench(context: Context, model: Model): String? {
+    val name = model.name
+    val req = benchRequests[name] ?: return "la mesure se fera après le prochain chargement manuel"
+    if (benchJobs.containsKey(name)) return "mesure déjà en cours"
+    val talking = System.currentTimeMillis() - (lastInference[name] ?: 0L) < CONVERSATION_QUIET_MS
+    val refusal =
+      BenchmarkGate.refusal(deviceState(context), conversationActive = talking, explicitLoad = true)
+        ?: BenchmarkGate.memoryRefusal(memorySnapshot(context).availBytes, req.fileBytes)
+    if (refusal != null) {
+      setBench(name, "Auto : $refusal", running = false)
+      return refusal
+    }
+    val mem = memory(context)
+    if (AutoBenchmark.order(req.candidates, req.current, mem.excludedOf(req.fp)).size < 2) return "rien à comparer : un seul calcul utilisable"
+    benchStop.remove(name)
+    setBench(name, "Auto : mesure en arrière-plan…", running = true)
+    val bench =
+      AutoBenchmark(
+        memory = mem,
+        start = { b -> kotlinx.coroutines.CompletableDeferred<Double?>().also { d -> benchThread.execute { d.complete(runCatching { req.measure(b) }.getOrNull()) } } },
+        title = { title(it) },
+      )
+    val job =
+      benchScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+        val outcome =
+          try {
+            bench.run(req.fp, req.candidates, req.current, cancelled = { benchStop[name] == true || benchRequests[name] !== req }) { setBench(name, it, running = true) }
+          } catch (e: Throwable) {
+            AutoBenchmark.Outcome.Cancelled(emptyList())
+          }
+        benchJobs.remove(name)
+        benchStop.remove(name)
+        val line = AutoBenchmark.summary(outcome, ::title)
+        _status.update { cur ->
+          val prev = cur[name] ?: return@update cur
+          cur + (name to prev.copy(bench = line, benchRunning = false, suggestion = (outcome as? AutoBenchmark.Outcome.Done)?.switchTo?.takeIf { prev.backend != null }))
+        }
+        if (line.isNotEmpty()) toast(context, line)
+      }
+    benchJobs[name] = job
+    job.start()
+    return null
+  }
+
+  private fun setBench(modelName: String, text: String, running: Boolean) {
+    _status.update { it + (modelName to (it[modelName] ?: ComputeStatus()).copy(bench = text, benchRunning = running, suggestion = null)) }
+  }
+
+  private fun toast(context: Context, message: String) {
+    val app = context.applicationContext
+    android.os.Handler(android.os.Looper.getMainLooper()).post { android.widget.Toast.makeText(app, message, android.widget.Toast.LENGTH_LONG).show() }
+  }
+
   // ---- Status ---------------------------------------------------------------------------------
 
   fun setPhase(modelName: String, phase: String) {
@@ -203,7 +314,7 @@ object ComputeRuntime {
     _status.update { cur ->
       val prev = cur[modelName] ?: return@update cur
       // The line ("Auto : GPU, 14 tok/s") stays: it says what the next load will use.
-      cur + (modelName to prev.copy(backend = null, phase = "", params = ""))
+      cur + (modelName to prev.copy(backend = null, phase = "", params = "", bench = "", benchRunning = false, suggestion = null))
     }
   }
 
@@ -226,7 +337,7 @@ object ComputeRuntime {
         null
       }
     return if (rec != null) AutoSelector.explain(title(rec.backend), rec.tokensPerSecond)
-    else "Auto : mesure au prochain chargement"
+    else "Auto : chargement immédiat, mesure ensuite en arrière-plan"
   }
 
   // ---- Per-model settings (kept between app runs) -------------------------------------------------

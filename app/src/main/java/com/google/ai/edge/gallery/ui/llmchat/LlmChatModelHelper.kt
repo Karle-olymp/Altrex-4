@@ -139,40 +139,21 @@ object LlmChatModelHelper : LlmModelHelper {
           "modèle : il ne sera plus essayé automatiquement.",
       )
     }
-    val failed = memory.failedOf(fp)
+    val failed = memory.excludedOf(fp)
     val mayMeasure = ComputeRuntime.takeBenchmarkPermit(model.name)
     val cpuOk = ComputeChoice.CPU in candidates
     val primary: ComputeChoice
     var primaryTps: Double? = null
     var autoReason = ""
     if (choice == ComputeChoice.AUTO) {
-      val refusal =
-        BenchmarkGate.refusal(
-          ComputeRuntime.deviceState(context),
-          conversationActive = false,
-          explicitLoad = mayMeasure,
-        )
-      when (val plan = AutoSelector.plan(candidates, memory.recall(fp), failed, refusal)) {
-        is AutoPlan.Use -> {
-          primary = plan.backend
-          primaryTps = plan.tokensPerSecond
-          autoReason = plan.reason
-        }
-        is AutoPlan.Measure -> {
-          val samples =
-            plan.backends.map { b ->
-              ComputeRuntime.setPhase(model.name, "Mesure du calcul ${ComputeRuntime.title(b)}…")
-              BenchSample(b, measure(context, modelPath, b, fp, memory))
-            }
-          Log.i(TAG, "Auto measurement for '${model.name}': $samples")
-          for (sample in samples) if (sample.tokensPerSecond == null) memory.markFailed(fp, sample.backend)
-          val pick = AutoSelector.pickFastest(samples)
-          primary = pick ?: if (cpuOk) ComputeChoice.CPU else candidates.first()
-          primaryTps = samples.firstOrNull { it.backend == primary }?.tokensPerSecond
-          if (pick != null) memory.remember(fp, pick, primaryTps, System.currentTimeMillis())
-          autoReason = "mesuré"
-        }
-      }
+      // The model loads at once on a safe choice; the backends are compared afterwards, in the
+      // background (AutoBenchmark), and the result applies at the next load.
+      val recommended =
+        ComputeChoice.fromLabel(model.accelerators.firstOrNull()?.label).takeIf { it != ComputeChoice.AUTO }
+      val plan = AutoSelector.immediate(candidates, memory.recall(fp), memory.lastSuccess(fp), recommended, failed)
+      primary = plan.backend
+      primaryTps = plan.tokensPerSecond
+      autoReason = plan.reason
     } else {
       // A backend that failed for this file runs on the CPU until the user picks it again.
       primary = if (choice in failed && cpuOk) ComputeChoice.CPU else choice
@@ -284,8 +265,8 @@ object LlmChatModelHelper : LlmModelHelper {
           context,
           "${ComputeRuntime.title(primary)} indisponible pour ce modèle : ${ComputeRuntime.title(attempt)} utilisé à la place.",
         )
-        if (choice == ComputeChoice.AUTO) memory.remember(fp, attempt, null, System.currentTimeMillis())
       }
+      if (choice == ComputeChoice.AUTO) memory.rememberSuccess(fp, attempt)
       val used = ComputeRuntime.title(attempt)
       val line =
         when {
@@ -300,6 +281,16 @@ object LlmChatModelHelper : LlmModelHelper {
       ComputeRuntime.setLoaded(model.name, attempt, line, params)
       model.markInitialized()
       onDone("")
+      // [ALTREX] Loaded: the model can now be measured in the background. It starts by itself only
+      // after a manual "Charger" outside a conversation, when Auto has no measurement yet.
+      ComputeRuntime.registerBench(
+        model.name,
+        ComputeRuntime.BenchRequest(fp, candidates, attempt, java.io.File(modelPath).length()) { b -> measure(context, modelPath, b) },
+      )
+      if (choice == ComputeChoice.AUTO && mayMeasure && memory.recall(fp) == null) {
+        val why = ComputeRuntime.startBench(context, model)
+        Log.i(TAG, "Background Auto measurement for '${model.name}': ${why ?: "started"}")
+      }
       return
     }
 
@@ -342,30 +333,21 @@ object LlmChatModelHelper : LlmModelHelper {
    * crash guard marks the attempt: if a driver kills the app here, Auto never tries it again.
    */
   @OptIn(ExperimentalApi::class)
-  private fun measure(
-    context: Context,
-    modelPath: String,
-    backend: ComputeChoice,
-    fp: ModelFingerprint,
-    memory: AutoMemory,
-  ): Double? {
-    memory.beginAttempt(fp, backend)
+  private fun measure(context: Context, modelPath: String, backend: ComputeChoice): Double? {
     return try {
       val dir = java.io.File(context.cacheDir, "litert_bench").apply { mkdirs() }
       val info =
         com.google.ai.edge.litertlm.benchmark(
           modelPath = modelPath,
           backend = backendFor(context, backend),
-          prefillTokens = 64,
-          decodeTokens = 32,
+          prefillTokens = com.google.ai.edge.gallery.compute.AutoBenchmark.PREFILL_TOKENS,
+          decodeTokens = com.google.ai.edge.gallery.compute.AutoBenchmark.DECODE_TOKENS,
           cacheDir = dir.absolutePath,
         )
       info.lastDecodeTokensPerSecond.takeIf { it > 0.0 }
     } catch (e: Throwable) {
       Log.w(TAG, "Measurement on $backend failed: ${e.message}")
       null
-    } finally {
-      memory.endAttempt(fp)
     }
   }
 
@@ -438,6 +420,7 @@ object LlmChatModelHelper : LlmModelHelper {
     }
 
     val instance = model.instance as LlmModelInstance
+    ComputeRuntime.unregisterBench(model.name)
 
     try {
       instance.conversation.close()
@@ -481,6 +464,7 @@ object LlmChatModelHelper : LlmModelHelper {
     coroutineScope: CoroutineScope?,
     extraContext: Map<String, String>?,
   ) {
+    ComputeRuntime.onInference(model.name)
     val instance = model.instance as? LlmModelInstance
     if (instance == null) {
       onError("LlmModelInstance is not initialized.")
