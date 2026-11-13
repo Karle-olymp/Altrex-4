@@ -1,40 +1,48 @@
 # Altrex
 
-Altrex est une application Android d'IA embarquée ("on-device") qui permet de télécharger,
-exécuter et explorer des modèles de langage **localement sur le téléphone**, sans dépendre
-d'un serveur. Elle s'appuie sur **LiteRT-LM**, **llama.cpp (GGUF)** et **AICore/Gemma**, et
-propose plusieurs espaces : discussion, code, agents, sécurité et benchmark.
+Altrex est un assistant Android en français. Il fait tourner des modèles de langage **sur le
+téléphone** (LiteRT-LM, llama.cpp/GGUF, AICore), et, si tu le choisis, des modèles cloud avec ta
+propre clé ou des Spaces Hugging Face.
 
 > Altrex est un fork de [Google AI Edge Gallery](https://github.com/google-ai-edge/gallery),
 > distribué sous licence Apache 2.0 (voir [LICENSE](LICENSE)).
 
-## Fonctionnalités
+## Ce que fait l'application
 
-- **Chat LLM** — discussion en streaming avec un modèle local (markdown, historique, dictée).
-- **Prompt Lab** ("Code") — expérimentation de prompts et de configurations de modèle.
-- **Agent Chat** — agents avec **Skills** (compétences) et **outils MCP**, gestion de secrets
-  chiffrés.
-- **Assistant de code** — ouverture d'un dossier de projet, explorateur de fichiers, lecture et
-  édition de code assistées par le modèle (diff avant/après).
-- **Sécurité (SecurCode)** — agent en **lecture seule** qui analyse un projet (secrets,
-  dépendances vulnérables, failles).
-- **Model Manager** — import de modèles depuis un fichier local ou Hugging Face, gestion du
-  stockage et des téléchargements.
-- **Benchmark** — mesure des performances des modèles on-device.
-- **Notifications** — rappels planifiés.
+Le menu propose quatre espaces et trois boutons de configuration.
+
+- **Discuter** : la discussion principale. Pièces jointes (photo, caméra, audio, fichier, PDF) et,
+  en option, des outils : skills, connecteurs MCP, actions du téléphone, recherche web et un Linux
+  propre au modèle.
+- **Forge** (Altrex Forge) : un agent de programmation façon Claude Code, dans des projets partagés
+  avec le Terminal (`/root/projets`) : outils Read, Write, Edit, Glob, Grep, Bash…, modes Demander /
+  Éditions auto / Plan / Tout autoriser, aperçu et scan de sécurité SecurCode (`docs/forge/`).
+- **Notes vocales** : dictée, liste, graphe des notes, export Obsidian.
+- **Terminal** : un Linux Alpine (PRoot) pour toi : paquets, Python, git…
+- **Modèles** : télécharger, importer (fichier, Hugging Face), ajouter un modèle cloud ou un
+  Space, benchmark des modèles LiteRT.
+- **Connecteurs** : serveurs MCP distants (OAuth) et locaux.
+- **Réglages** : apparence, modèles et clés, Linux du modèle, mémoire locale (un dossier où le
+  modèle peut piocher), confidentialité, application.
+
+Hors du menu : le panneau « Demander à Altrex » (texte sélectionné, partage, bouton assistant du
+téléphone).
+
+Sans modèle, l'application ouvre un écran de bienvenue qui propose d'en télécharger, d'en
+importer ou d'ajouter un modèle cloud.
 
 ## Stack technique
 
 - **Langage :** Kotlin, **Jetpack Compose** (Material 3)
 - **Build :** Gradle (Kotlin DSL), Android Gradle Plugin
-- **Inférence :** LiteRT-LM, TFLite (GPU/support), llama.cpp (JNI), MediaPipe
+- **Inférence :** LiteRT-LM, llama.cpp (JNI), AICore ; API cloud des fournisseurs choisis
 - **Injection de dépendances :** Hilt ; **sérialisation :** Moshi, kotlinx.serialization, Protobuf
-- **Divers :** Firebase (Analytics, Messaging), Hugging Face (OAuth), Ktor, MCP
+- **Divers :** MCP, Hugging Face, PDFBox, PRoot (Alpine Linux)
 
 ## Prérequis
 
 - **JDK 17** ou plus récent
-- **Android SDK** avec `compileSdk 36`
+- **Android SDK** avec `compileSdk 37`
 - **NDK** et **CMake 3.22.1** (compilation de la partie native `llama.cpp`)
 - Un appareil **arm64-v8a** (ABI supportée : `arm64-v8a` uniquement), **Android 12 (API 31)** minimum
 
@@ -49,7 +57,12 @@ cd Altrex-4
 ./gradlew assembleDebug
 
 # L'APK est généré dans :
-# app/build/outputs/apk/debug/app-debug.apk
+# app/build/outputs/apk/debug/altrex-debug.apk
+
+# APK release (R8 : code réduit et optimisé, ressources inutiles retirées, non débogable)
+./gradlew assembleRelease
+# app/build/outputs/apk/release/altrex-release.apk
+# + app/build/outputs/mapping/release/mapping.txt (à garder avec l'APK)
 ```
 
 Pour installer directement sur un appareil connecté :
@@ -61,23 +74,39 @@ Pour installer directement sur un appareil connecté :
 > La compilation native (`externalNativeBuild` / CMake) nécessite le NDK et ne produit que
 > l'ABI `arm64-v8a`.
 
+Les deux APK sont signés avec la même clé, `debug.keystore` à la racine du dépôt (non suivi par
+git, mots de passe « android ») : l'APK release s'installe par-dessus un APK debug sans perte de
+données. Sans ce fichier, l'APK release est produit non signé.
+
+Une trace de plantage d'un APK release (fenêtre « Altrex s'est arrêté ») a des noms de classes
+raccourcis. Pour la relire, utiliser le `mapping.txt` **du même build** :
+
+```bash
+$ANDROID_HOME/cmdline-tools/latest/bin/retrace app/build/outputs/mapping/release/mapping.txt trace.txt
+```
+
 ## Intégration continue
 
-Le workflow GitHub Actions `.github/workflows/build-debug-apk.yml` compile l'APK de debug
-(déclenchement manuel `workflow_dispatch`) et publie l'artefact dans une release GitHub
-`debug-latest`.
+Le workflow GitHub Actions `.github/workflows/build-debug-apk.yml` lance les tests et compile
+l'APK de debug (pull requests et déclenchement manuel `workflow_dispatch`) ; en manuel, il le
+publie dans la release GitHub `debug-latest`. En manuel seulement, un second job compile l'APK
+release et le garde 14 jours, avec son `mapping.txt`, comme artefact du workflow (rien n'est
+publié).
 
 ## Structure du dépôt
 
 ```
 app/src/main/java/com/google/ai/edge/gallery/
   agent/            Runtime d'agent (boucle ReAct, streaming d'événements)
-  customtasks/      Agent Chat, Skills et serveurs MCP
+  customtasks/      Écran agent de Discuter, skills et serveurs MCP
   data/             Modèles, DataStore, configurations
   runtime/          Aides des moteurs (LiteRT-LM, llama.cpp, AICore)
   skills/           Chargement des Skills (SKILL.md + scripts)
   tools/            Outils exposés au modèle (fichiers, JS, MCP, intents)
-  ui/               Écrans Compose (chat, code, sécurité, modèles, benchmark…)
+  notes/            Notes vocales
+  terminal/         Linux Alpine (PRoot)
+  connectors/       Connecteurs MCP
+  ui/               Écrans Compose (menu, chat, code, modèles, réglages, benchmark…)
 app/src/main/assets/skills/    Skills d'exemple
 app/src/main/cpp/              Sources natives (llama.cpp / ggml)
 app/src/main/res/              Ressources (thème, chaînes, icônes)

@@ -108,7 +108,10 @@ object RemoteSpace {
 
   class SpaceException(message: String) : IOException(message)
 
-  /** Calls [API_NAME] and returns the answer. Blocking: call it on a background thread. */
+  /**
+   * Calls [API_NAME] and returns the answer. Blocking: call it on a background thread. When the
+   * Space streams (its function yields the text so far), [onText] gets that text as it grows.
+   */
   fun generate(
     spaceId: String,
     token: String?,
@@ -116,11 +119,12 @@ object RemoteSpace {
     thinking: Boolean,
     maxTokens: Int,
     isCancelled: () -> Boolean,
+    onText: (String) -> Unit = {},
   ): String {
     val base = baseUrl(spaceId)
     val body = JSONObject().put("data", JSONArray().put(messagesJson).put(thinking).put(maxTokens))
     val eventId = postWithRetry("$base/gradio_api/call/$API_NAME", token, body.toString(), isCancelled)
-    return readResult("$base/gradio_api/call/$API_NAME/$eventId", token, isCancelled)
+    return readResult("$base/gradio_api/call/$API_NAME/$eventId", token, isCancelled, onText)
   }
 
   /** A sleeping Space answers 503 while it starts: retry for up to about 3 minutes. */
@@ -171,13 +175,19 @@ object RemoteSpace {
     }
   }
 
-  private fun readResult(url: String, token: String?, isCancelled: () -> Boolean): String {
+  private fun readResult(
+    url: String,
+    token: String?,
+    isCancelled: () -> Boolean,
+    onText: (String) -> Unit,
+  ): String {
     val conn = open(url, token, readTimeoutMs = 330_000)
     try {
       val code = conn.responseCode
       if (code != 200) throw SpaceException("Le Space a répondu $code au résultat.")
       conn.inputStream.bufferedReader().use { reader ->
         var event = ""
+        var text = ""
         while (true) {
           if (isCancelled()) throw SpaceException("Annulé.")
           val line = reader.readLine() ?: break
@@ -186,6 +196,13 @@ object RemoteSpace {
             line.startsWith("data:") -> {
               val data = line.removePrefix("data:").trim()
               when (event) {
+                "generating" ->
+                  try {
+                    text = parseGenerating(data, text)
+                    onText(text)
+                  } catch (e: Exception) {
+                    Log.d(TAG, "Unreadable partial output", e)
+                  }
                 "complete" -> return parseOutput(data)
                 "error" ->
                   throw SpaceException(
@@ -209,6 +226,28 @@ object RemoteSpace {
     return arr.getString(0)
   }
 
+  /**
+   * A partial output of a streaming function: the whole text so far (["text"]), or, depending on
+   * the Gradio version, a diff of it ([[["append", [], "more"]]]) applied to [current].
+   */
+  internal fun parseGenerating(data: String, current: String): String {
+    val first = JSONArray(data).opt(0)
+    if (first is String) return first
+    if (first !is JSONArray) return current
+    var text = current
+    for (i in 0 until first.length()) {
+      val op = first.optJSONArray(i) ?: continue
+      val path = op.optJSONArray(1)
+      if (path != null && path.length() > 0) continue
+      val value = op.opt(2) as? String ?: continue
+      when (op.optString(0)) {
+        "replace" -> text = value
+        "append" -> text += value
+      }
+    }
+    return text
+  }
+
   private fun open(url: String, token: String?, readTimeoutMs: Int): HttpURLConnection {
     val conn = URL(url).openConnection() as HttpURLConnection
     conn.connectTimeout = 20_000
@@ -223,6 +262,9 @@ object RemoteSpace {
 /** [ALTREX] The loaded state of a remote model: nothing in RAM, only where to send requests. */
 data class RemoteModelInstance(val spaceId: String, val token: String?)
 
+/** [ALTREX] A cloud model ([CloudApi]): its provider and model id; the key is read at each request. */
+data class CloudModelInstance(val provider: CloudApi.Provider, val modelId: String)
+
 /**
  * [ALTREX] [LlmModelHelper] for [RemoteSpace] models. Stateless like llama.cpp: the agent loop sends
  * the full conversation (a [LlamaHelper.chatRequest]) on every turn.
@@ -232,6 +274,9 @@ object RemoteModelHelper : LlmModelHelper {
 
   /** Bumped by Stop: a request compares it with the value it started with. */
   private val stopGen = AtomicInteger(0)
+
+  /** [ALTREX] Cloud requests in flight: Stop closes their connections (a silent stream ends at once). */
+  private val aborts = java.util.concurrent.ConcurrentHashMap.newKeySet<CloudApi.Abort>()
 
   private lateinit var appContext: Context
 
@@ -248,6 +293,20 @@ object RemoteModelHelper : LlmModelHelper {
     coroutineScope: CoroutineScope?,
   ) {
     appContext = context.applicationContext
+    if (CloudApi.isCloud(model.name)) {
+      val (provider, modelId) =
+        CloudApi.parse(model.name) ?: run {
+          onDone("Modèle cloud invalide : ${model.name}")
+          return
+        }
+      if (CloudApi.getKey(appContext, provider) == null) {
+        onDone("Aucune clé ${provider.label} : ajoute-la dans Réglages → Modèles cloud.")
+        return
+      }
+      model.instance = CloudModelInstance(provider, modelId)
+      onDone("")
+      return
+    }
     val spaceId = RemoteSpace.spaceId(model.name)
     if (RemoteSpace.parseSpaceId(spaceId) == null) {
       onDone("Identifiant de Space invalide : $spaceId")
@@ -286,6 +345,10 @@ object RemoteModelHelper : LlmModelHelper {
     coroutineScope: CoroutineScope?,
     extraContext: Map<String, String>?,
   ) {
+    (model.instance as? CloudModelInstance)?.let { cloud ->
+      runCloud(model, cloud, input, resultListener, cleanUpListener, onError, images, audioClips, extraContext)
+      return
+    }
     val instance = model.instance as? RemoteModelInstance
     if (instance == null) {
       onError("Le modèle distant n'est pas initialisé.")
@@ -310,6 +373,13 @@ object RemoteModelHelper : LlmModelHelper {
     val token = RemoteSpace.getToken(appContext) ?: instance.token
     val myGen = stopGen.get()
     scope.launch {
+      // Text already shown: a streaming Space sends the whole text so far, the chat wants pieces.
+      var shown = ""
+      fun show(text: String) {
+        if (stopGen.get() != myGen || !text.startsWith(shown) || text.length == shown.length) return
+        resultListener(text.substring(shown.length), false, null)
+        shown = text
+      }
       try {
         val answer =
           RemoteSpace.generate(
@@ -319,22 +389,27 @@ object RemoteModelHelper : LlmModelHelper {
             thinking = thinking,
             maxTokens = maxTokens,
             isCancelled = { stopGen.get() != myGen },
+            onText = ::show,
           )
         if (stopGen.get() != myGen) {
           cleanUpListener()
           return@launch
         }
-        resultListener(answer, false, null)
+        if (shown.isEmpty()) resultListener(answer, false, null) else show(answer)
         resultListener("", true, null)
-      } catch (e: Exception) {
-        if (stopGen.get() != myGen) {
-          cleanUpListener()
-        } else {
-          Log.w(TAG, "Remote request failed", e)
-          onError(
-            (e as? RemoteSpace.SpaceException)?.message
-              ?: "Space injoignable (${e.javaClass.simpleName}). Vérifie ta connexion."
-          )
+      } catch (e: Throwable) {
+        // [ALTREX] This thread has no handler of its own: anything escaping here closed the app.
+        if (e is kotlinx.coroutines.CancellationException) throw e
+        Log.w(TAG, "Remote request failed", e)
+        runCatching {
+          if (stopGen.get() != myGen) {
+            cleanUpListener()
+          } else {
+            onError(
+              (e as? RemoteSpace.SpaceException)?.message
+                ?: "Space injoignable (${e.javaClass.simpleName}). Vérifie ta connexion."
+            )
+          }
         }
       }
     }
@@ -342,5 +417,89 @@ object RemoteModelHelper : LlmModelHelper {
 
   override fun stopResponse(model: Model) {
     stopGen.incrementAndGet()
+    for (a in aborts) a.abort()
+  }
+
+  /** [ALTREX] Same request and streaming as a Space, through the provider's API ([CloudApi]). */
+  private fun runCloud(
+    model: Model,
+    cloud: CloudModelInstance,
+    input: String,
+    resultListener: ResultListener,
+    cleanUpListener: CleanUpListener,
+    onError: (message: String) -> Unit,
+    images: List<Bitmap>,
+    audioClips: List<ByteArray>,
+    extraContext: Map<String, String>?,
+  ) {
+    if (images.isNotEmpty() || audioClips.isNotEmpty()) {
+      onError("Les images et l'audio ne sont pas encore envoyés aux modèles cloud.")
+      return
+    }
+    val key = CloudApi.getKey(appContext, cloud.provider)
+    if (key == null) {
+      onError("Aucune clé ${cloud.provider.label} : ajoute-la dans Réglages → Modèles cloud.")
+      return
+    }
+    val messagesJson =
+      if (input.startsWith(LlamaHelper.CHAT_REQUEST_PREFIX)) {
+        input.removePrefix(LlamaHelper.CHAT_REQUEST_PREFIX)
+      } else {
+        JSONArray()
+          .put(JSONObject().put("role", "system").put("content", LlamaHelper.getDefaultSystemPrompt()))
+          .put(JSONObject().put("role", "user").put("content", input))
+          .toString()
+      }
+    val thinking = extraContext?.get("enable_thinking") == "true"
+    val maxTokens = model.llmMaxToken.takeIf { it > 0 }?.coerceIn(256, 64_000) ?: 8192
+    val myGen = stopGen.get()
+    val abort = CloudApi.Abort()
+    aborts.add(abort)
+    scope.launch {
+      var shown = ""
+      fun show(text: String) {
+        if (stopGen.get() != myGen || !text.startsWith(shown) || text.length == shown.length) return
+        resultListener(text.substring(shown.length), false, null)
+        shown = text
+      }
+      try {
+        val answer =
+          CloudApi.chat(
+            provider = cloud.provider,
+            modelId = cloud.modelId,
+            key = key,
+            messagesJson = messagesJson,
+            thinking = thinking,
+            maxTokens = maxTokens,
+            isCancelled = { stopGen.get() != myGen },
+            onText = ::show,
+            abort = abort,
+          )
+        if (stopGen.get() != myGen) {
+          cleanUpListener()
+          return@launch
+        }
+        show(answer)
+        resultListener("", true, null)
+      } catch (e: Throwable) {
+        // [ALTREX] Anything (a provider answer nobody expected, memory…) ends as a message in the
+        // chat: this thread has no handler of its own, so an escaped error closed the whole app.
+        if (e is kotlinx.coroutines.CancellationException) throw e
+        Log.w(TAG, "Cloud request failed (${e.javaClass.simpleName})", e)
+        runCatching {
+          if (stopGen.get() != myGen) {
+            cleanUpListener()
+          } else {
+            onError(
+              (e as? CloudApi.CloudException)?.message
+                ?: "${cloud.provider.label} : réponse inattendue (${e.javaClass.simpleName}" +
+                  (e.message?.let { ": " + it.take(120) } ?: "") + ")."
+            )
+          }
+        }
+      } finally {
+        aborts.remove(abort)
+      }
+    }
   }
 }

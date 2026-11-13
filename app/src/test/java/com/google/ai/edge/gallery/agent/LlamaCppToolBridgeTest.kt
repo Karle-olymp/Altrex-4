@@ -19,7 +19,7 @@ package com.google.ai.edge.gallery.agent
 import com.google.ai.edge.gallery.tools.ToolDefinition
 import com.google.ai.edge.gallery.tools.ToolsProvider
 import com.google.ai.edge.gallery.tools.WebSearchTool
-import com.google.ai.edge.gallery.ui.llmsingleturn.AgentToolCall
+import com.google.ai.edge.gallery.agent.AgentToolCall
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -42,7 +42,10 @@ class LlamaCppToolBridgeTest {
     val names = LlamaCppToolBridge.specs.map { it.name }.toSet()
 
     assertEquals(
-      setOf("load_skill", "run_js", "run_intent", "runMcpTool", "webSearch"),
+      setOf(
+        "load_skill", "run_js", "run_intent", "runMcpTool", "webSearch",
+        "run_command", "read_file", "write_file", "edit_file", "check_job",
+      ),
       names,
     )
   }
@@ -54,6 +57,31 @@ class LlamaCppToolBridgeTest {
     assertEquals(1, spec.params.size)
     assertEquals("query", spec.params[0].name)
     assertTrue(spec.params[0].required)
+  }
+
+  @Test
+  fun specs_runCommandTakesACommandAndOptions() {
+    val spec = LlamaCppToolBridge.specs.first { it.name == "run_command" }
+
+    assertEquals(listOf("command", "timeout", "background"), spec.params.map { it.name })
+    assertEquals(listOf(true, false, false), spec.params.map { it.required })
+  }
+
+  @Test
+  fun specs_editFileNeedsPathOldAndNew() {
+    val spec = LlamaCppToolBridge.specs.first { it.name == "edit_file" }
+
+    assertEquals(listOf("path", "old_string", "new_string"), spec.params.filter { it.required }.map { it.name })
+  }
+
+  @Test
+  fun dispatch_runCommandWithoutTheToolIsUnavailable() = runBlocking {
+    val out =
+      LlamaCppToolBridge.dispatch(
+        AgentToolCall("run_command", JSONObject().put("command", "ls"), ""),
+        FakeToolsProvider(emptyList()),
+      )
+    assertTrue(out.contains("not available"))
   }
 
   @Test

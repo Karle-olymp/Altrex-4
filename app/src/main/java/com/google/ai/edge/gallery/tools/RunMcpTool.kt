@@ -20,12 +20,11 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequestParams
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 
-import android.os.Bundle
 import android.util.Log
-import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.common.convertStringToJsonObject
-import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.mcp.McpServersProvider
+import com.google.ai.edge.gallery.proto.McpPermissionPolicy
+import com.google.ai.edge.gallery.proto.McpTool
 import com.google.ai.edge.gallery.skills.SkillsProvider
 import com.google.ai.edge.litertlm.Tool
 import com.google.ai.edge.litertlm.ToolParam
@@ -37,13 +36,36 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 private const val TAG = "AGRunMcpTool"
 
+/** [ALTREX] Longest wait for one MCP tool call. */
+private const val MCP_CALL_TIMEOUT_MS = 90_000L
+
 class RunMcpTool(
   private val mcpServersProvider: McpServersProvider,
   private val skillsProvider: SkillsProvider,
-  private val taskId: String,
 ) : ToolDefinition {
   override val alwaysAllow: Boolean = true
   override var executionContext: ToolExecutionContext? = null
+
+  /** [ALTREX] Whether at least one enabled tool of an enabled server exists (else runMcpTool is not offered). */
+  fun hasActiveTools(): Boolean =
+    mcpServersProvider.mcpServers.any { s -> s.mcpServer.enabled && s.mcpServer.toolsList.any { it.enabled } }
+
+  companion object {
+    /**
+     * [ALTREX] Whether a call must be approved by the user, given the connector's policy and what
+     * the server says of the tool. "Always allow" on a tool wins; a destructive tool is otherwise
+     * always confirmed; reads run freely under the default policy.
+     */
+    fun needsApproval(policy: McpPermissionPolicy, tool: McpTool?): Boolean =
+      when {
+        tool == null -> true
+        tool.alwaysAllow -> false
+        tool.destructive -> true
+        policy == McpPermissionPolicy.MCP_PERMISSION_ALLOW_ALL -> false
+        policy == McpPermissionPolicy.MCP_PERMISSION_ASK_ALL -> true
+        else -> !tool.readOnly
+      }
+  }
 
   /** Runs MCP tool */
   @Tool(description = "Run a MCP tool")
@@ -53,44 +75,42 @@ class RunMcpTool(
   ): Map<String, String> {
     Log.d(TAG, "Run MCP tool:\n- name: $toolName\n- input: ${com.google.ai.edge.gallery.security.SecretRedactor.redact(input)}")
     return runBlocking(Dispatchers.IO) {
+      // [ALTREX] Only enabled tools of enabled servers: a tool the user turned off is never run.
       val serverState =
-        mcpServersProvider.mcpServers.find { serverState ->
-          serverState.mcpServer.toolsList.any { it.name == toolName }
-        }
+        mcpServersProvider.mcpServers
+          .filter { it.mcpServer.enabled }
+          .find { serverState -> serverState.mcpServer.toolsList.any { it.name == toolName && it.enabled } }
 
       if (serverState == null) {
         Log.w(TAG, "MCP server or tool not found for: $toolName")
-        logMcpExecution(success = false, errorType = "tool_not_found")
         return@runBlocking guardMissingEntityWithSkillFallback(name = toolName, type = "Tool")
       }
 
       val client = serverState.client
       if (client == null) {
-        logMcpExecution(success = false, errorType = "client_not_initialized")
         return@runBlocking mapOf("error" to "Client not initialized", "status" to "failed")
       }
 
       // Check if the MCP tool requires user permission. If not always allowed,
       // send an action to ask for permission and wait for the result.
       val mcpTool = serverState.mcpServer.toolsList.find { it.name == toolName }
-      val isAlwaysAllow = mcpTool?.alwaysAllow ?: false
 
-      if (!isAlwaysAllow) {
+      if (needsApproval(serverState.mcpServer.permissionPolicy, mcpTool)) {
         val permissionAction = AskMcpToolCallPermissionAction(toolName = toolName, argument = input)
         // [ALTREX] No screen to ask on: refuse instead of waiting forever. An unanswered dialog
         // counts as a refusal too.
         val channel = executionContext?.actionChannel
         if (channel == null) {
-          logMcpExecution(success = false, errorType = "no_permission_channel")
           return@runBlocking mapOf(
-            "error" to "The user cannot be asked for permission here, so the tool was not run.",
+            "result" to "refused: the user could not be asked to allow this action. Do not try again; tell the user.",
             "status" to "failed",
           )
         }
         channel.send(permissionAction)
+        // Unanswered: refused, and the dialog closes (the screen watches the result).
         val permissionResult =
           withTimeoutOrNull(USER_REPLY_TIMEOUT_MS) { permissionAction.result.await() }
-            ?: PermissionResult.DENY
+            ?: PermissionResult.DENY.also { permissionAction.result.complete(it) }
         if (permissionResult == PermissionResult.DENY) {
           executionContext
             ?.actionChannel
@@ -100,8 +120,10 @@ class RunMcpTool(
                 inProgress = false,
               )
             )
-          logMcpExecution(success = false, errorType = "permission_denied")
-          return@runBlocking mapOf("error" to "Permission denied by user", "status" to "failed")
+          return@runBlocking mapOf(
+            "result" to "refused: the user did not allow this action. Do not try again; tell the user.",
+            "status" to "failed",
+          )
         }
       }
 
@@ -110,21 +132,30 @@ class RunMcpTool(
           ?.actionChannel
           ?.send(
             SkillProgressToolAction(
-              label = "Calling MCP tool \"$toolName\"",
+              label = ProgressLabels.callingMcpTool(toolName),
               inProgress = true,
-              addItemTitle = "Call MCP tool: \"$toolName\"",
-              addItemDescription = "- Input: $input",
+              addItemTitle = "Outil MCP « $toolName »",
+              addItemDescription = "- Entrée : $input",
             )
           )
+        // [ALTREX] A slow or stuck server must not block the agent loop.
         val result =
-        client.callTool(
-          request = CallToolRequest(
-            CallToolRequestParams(
-              name = toolName,
-              arguments = kotlinx.serialization.json.Json.parseToJsonElement(input).jsonObject
+          withTimeoutOrNull(MCP_CALL_TIMEOUT_MS) {
+            client.callTool(
+              request = CallToolRequest(
+                CallToolRequestParams(
+                  name = toolName,
+                  arguments = kotlinx.serialization.json.Json.parseToJsonElement(input).jsonObject
+                )
+              )
             )
-          )
-        )
+          }
+            ?: run {
+              return@runBlocking mapOf(
+                "error" to "The MCP tool did not answer within ${MCP_CALL_TIMEOUT_MS / 1000} s.",
+                "status" to "failed",
+              )
+            }
 
         if (result == null) {
           Log.d(TAG, "Tool execution returned null result")
@@ -136,14 +167,14 @@ class RunMcpTool(
                 inProgress = false,
               )
             )
-          logMcpExecution(success = false, errorType = "null_result")
           return@runBlocking mapOf("error" to "Null result", "status" to "failed")
         }
 
         if (result.isError == true) {
           val errorText =
             result.content.filterIsInstance<TextContent>().joinToString("\n") { it.text ?: "" }
-          Log.e(TAG, "MCP tool \"$toolName\" failed: $errorText")
+          // [ALTREX] The output may hold private data: only its size goes to logcat.
+          Log.e(TAG, "MCP tool \"$toolName\" failed (${errorText.length} chars)")
           executionContext
             ?.actionChannel
             ?.send(
@@ -154,12 +185,11 @@ class RunMcpTool(
                 inProgress = false,
               )
             )
-          logMcpExecution(success = false, errorType = "tool_error")
           return@runBlocking mapOf("error" to errorText, "status" to "failed")
         } else {
           val successText =
             result.content.filterIsInstance<TextContent>().joinToString("\n") { it.text ?: "" }
-          Log.d(TAG, "MCP tool \"$toolName\" succeeded:\n$successText")
+          Log.d(TAG, "MCP tool \"$toolName\" succeeded (${successText.length} chars)")
           executionContext
             ?.actionChannel
             ?.send(
@@ -170,7 +200,6 @@ class RunMcpTool(
                 addItemDescription = successText,
               )
             )
-          logMcpExecution(success = true, errorType = "")
           return@runBlocking mapOf("result" to successText, "status" to "succeeded")
         }
       } catch (e: Exception) {
@@ -185,7 +214,6 @@ class RunMcpTool(
               addItemDescription = e.message ?: "Unknown error",
             )
           )
-        logMcpExecution(success = false, errorType = "exception")
         return@runBlocking mapOf("error" to (e.message ?: "Unknown error"), "status" to "failed")
       }
     }
@@ -204,22 +232,5 @@ class RunMcpTool(
     val isSkill = skillsProvider.loadSkill(name) != null
     val error = if (isSkill) "$type not found. Try to run it as a skill" else "Tool not found"
     return mapOf("error" to error, "status" to "failed")
-  }
-
-  private fun logMcpExecution(success: Boolean, errorType: String) {
-    Log.d(
-      TAG,
-      "Analytics: mcp_execution, capability_name=$taskId, success=$success, error_type=$errorType",
-    )
-    firebaseAnalytics?.logEvent(
-      GalleryEvent.MCP_EXECUTION.id,
-      Bundle().apply {
-        putString("capability_name", taskId)
-        putBoolean("success", success)
-        if (errorType.isNotEmpty()) {
-          putString("error_type", errorType)
-        }
-      },
-    )
   }
 }

@@ -131,8 +131,11 @@ class AskAltrexPanelSession(
     fun downloaded(m: Model) = state.modelDownloadStatus[m.name]?.status == ModelDownloadStatusType.SUCCEEDED
     val loaded = chat.models.firstOrNull { it.instance != null && usable(it) }
     val selected = chat.models.firstOrNull { it.name == state.selectedModel.name && usable(it) && downloaded(it) }
+    // [ALTREX] Then the last model the user loaded, not the first of the list.
+    val lastName = com.google.ai.edge.gallery.compute.ComputeRuntime.lastModel(context).get()
+    val last = chat.models.firstOrNull { it.name == lastName && usable(it) && downloaded(it) }
     val first = chat.models.firstOrNull { usable(it) && downloaded(it) }
-    return (loaded ?: selected ?: first)?.let { chat to it }
+    return (loaded ?: selected ?: last ?: first)?.let { chat to it }
   }
 
   /** Waits for the model list, then loads the model if the chat has not already done it. */

@@ -16,7 +16,6 @@
 
 package com.google.ai.edge.gallery.ui.common
 
-import android.os.Bundle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,8 +52,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
-import com.google.ai.edge.gallery.BuildConfig
-import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.customtasks.agentchat.agentSkillTopK
 import com.google.ai.edge.gallery.customtasks.agentchat.agentSkillTopKAdjusted
@@ -66,7 +63,6 @@ import com.google.ai.edge.gallery.data.ModelDownloadStatusType
 import com.google.ai.edge.gallery.data.RuntimeType
 import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.data.convertValueToTargetType
-import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 
@@ -93,6 +89,8 @@ fun ModelPageAppBar(
   shouldShowHistoryButton: Boolean = false,
   onHistoryClicked: (Model) -> Unit = {},
   onExportClicked: (() -> Unit)? = null,
+  // [ALTREX] A conversation is going on: "Charger" from the picker then never measures backends.
+  conversationActive: Boolean = true,
 ) {
   var showConfigDialog by remember { mutableStateOf(false) }
   val modelManagerUiState by modelManagerViewModel.uiState.collectAsState()
@@ -121,6 +119,7 @@ fun ModelPageAppBar(
             initialModel = model,
             modelManagerViewModel = modelManagerViewModel,
             onModelSelected = onModelSelected,
+            conversationActive = conversationActive,
           )
         }
       }
@@ -157,7 +156,8 @@ fun ModelPageAppBar(
       // actions never overlap the centered model chip.
       Row(verticalAlignment = Alignment.CenterVertically) {
         if (showConfigButton) {
-          val enableConfigButton = !isModelInitializing && !inProgress && isModelInitialized
+          // [ALTREX] Also before loading: compute and parameters are chosen before "Charger".
+          val enableConfigButton = !isModelInitializing && !inProgress
           IconButton(
             onClick = { showConfigDialog = true },
             enabled = enableConfigButton,
@@ -249,9 +249,14 @@ fun ModelPageAppBar(
     ) {
       modelConfigs.removeIf { it.key == ConfigKeys.ENABLE_SPECULATIVE_DECODING }
     }
+    // [ALTREX] Compute and model parameters have their own section (only what the engine offers).
+    val sectionKeys = computeSectionKeys(model)
+    val genericConfigs = modelConfigs.filter { it.key.label !in sectionKeys }
     ConfigDialog(
       title = stringResource(R.string.config_dialog_title),
-      configs = modelConfigs,
+      configs = genericConfigs,
+      extraContent = { values -> ComputeSettingsSection(model = model, values = values) },
+      resetValues = model.configs.associate { it.key.label to it.defaultValue },
       initialValues = model.configValues,
       onDismissed = { showConfigDialog = false },
       onOk = { curConfigValues, oldSystemPrompt, newSystemPrompt ->
@@ -284,18 +289,6 @@ fun ModelPageAppBar(
         }
         val systemPromptChanged = newSystemPrompt != oldSystemPrompt
 
-        if (!same || systemPromptChanged) {
-          firebaseAnalytics?.logEvent(
-            GalleryEvent.MODEL_CONFIG_CHANGE.id,
-            Bundle().apply {
-              putString("model_id", model.name)
-              putString("capability_name", task.id)
-              putString("model_version", model.version)
-              putString("app_version", BuildConfig.VERSION_NAME)
-            },
-          )
-        }
-
         if (same) {
           if (systemPromptChanged) {
             onSystemPromptChanged(newSystemPrompt)
@@ -307,6 +300,13 @@ fun ModelPageAppBar(
         val oldConfigValues = model.configValues
         model.prevConfigValues = oldConfigValues
         model.configValues = curConfigValues
+        // [ALTREX] Kept between app runs; a backend chosen again by hand gets a new chance.
+        com.google.ai.edge.gallery.compute.ComputeRuntime.saveModelSettings(context, model)
+        if (
+          oldConfigValues[ConfigKeys.ACCELERATOR.label] != curConfigValues[ConfigKeys.ACCELERATOR.label]
+        ) {
+          com.google.ai.edge.gallery.compute.ComputeRuntime.memory(context).clearFailures(model.name)
+        }
         if (task.id == BuiltInTaskId.LLM_AGENT_CHAT) {
           model.agentSkillTopKAdjusted = true
           model.agentSkillTopK = curConfigValues[ConfigKeys.TOPK.label]
@@ -314,8 +314,9 @@ fun ModelPageAppBar(
         modelManagerViewModel.updateConfigValuesUpdateTrigger()
 
         if (!task.handleModelConfigChangesInTask) {
-          // Force to re-initialize the model with the new configs.
-          if (needReinitialization) {
+          // Force to re-initialize the model with the new configs. [ALTREX] Only a loaded model:
+          // a model that is not loaded takes the new values at its next "Charger".
+          if (needReinitialization && model.instance != null) {
             modelManagerViewModel.initializeModel(
               context = context,
               task = task,

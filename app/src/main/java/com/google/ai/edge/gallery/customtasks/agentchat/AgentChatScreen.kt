@@ -17,7 +17,6 @@
 package com.google.ai.edge.gallery.customtasks.agentchat
 
 import android.content.Context
-import android.os.Bundle
 import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
@@ -63,6 +62,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -79,15 +79,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.agent.PromptExpander
-import com.google.ai.edge.gallery.common.LOCAL_URL_BASE
 import com.google.ai.edge.gallery.data.AgentSkillsURLs
 import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.Task
-import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.skills.formatSelectedSkills
 import com.google.ai.edge.gallery.tools.AskInfoToolAction
 import com.google.ai.edge.gallery.tools.AskMcpToolCallPermissionAction
@@ -137,12 +134,17 @@ fun AgentChatScreen(
   skillManagerViewModel: SkillManagerViewModel = hiltViewModel(),
   mcpManagerViewModel: McpManagerViewModel = hiltViewModel(),
   initialQuery: String? = null,
-  /** [ALTREX] Main chat: skills and tools only when "Skills et outils" is on (ChatTools). */
+  /** [ALTREX] Main chat (Discuter): its own prompt when tools are off (never, since the merge). */
   optionalTools: Boolean = false,
 ) {
   val context = LocalContext.current
   val toolsPref by ChatTools.enabled(context).collectAsState()
   val toolsOn = !optionalTools || toolsPref == true
+  // [ALTREX] Back from the Connectors screen (its own view model): pick up what changed there.
+  val mcpRefreshScope = androidx.compose.runtime.rememberCoroutineScope()
+  androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+    mcpRefreshScope.launch { mcpManagerViewModel.refreshFromStore() }
+  }
   agentTools.toolsEnabled = toolsOn
   val scope = rememberCoroutineScope()
   agentTools.context = context
@@ -249,33 +251,10 @@ fun AgentChatScreen(
     viewModel = viewModel,
     skillCount = skillCount,
     mcpCount = mcpCount,
-    mcpToolsCount = mcpToolsCount,
     topContent = {
-      Column {
-        if (optionalTools) {
-          ToolsToggleRow(
-            checked = toolsOn,
-            onCheckedChange = { on ->
-              ChatTools.setEnabled(context, on)
-              agentTools.toolsEnabled = on
-              if (!on) viewModel.setAutonomousMode(false)
-              // The model starts again with the new prompt, and keeps the conversation so far.
-              val model = modelManagerViewModel.uiState.value.selectedModel
-              resetSessionWithCurrentSkillsAndMcps(
-                viewModel,
-                modelManagerViewModel,
-                skillManagerViewModel,
-                task,
-                promptFor(on),
-                agentTools,
-                initialMessages = viewModel.uiState.value.messagesByModel[model.name].orEmpty(),
-                clearHistory = false,
-              )
-            },
-          )
-        }
-        if (toolsOn) AutonomousModeToggleRow(viewModel = viewModel)
-      }
+      // [ALTREX] Chat and agent are one screen: skills and tools are always there, only the
+      // autonomous mode is a choice.
+      if (toolsOn) AutonomousModeToggleRow(viewModel = viewModel)
     },
     onFirstToken = { model ->
       scope.launch(Dispatchers.Main) {
@@ -344,11 +323,6 @@ fun AgentChatScreen(
     onMcpClicked = { showMcpManagerBottomSheet = true },
     showImagePicker = true,
     showAudioPicker = true,
-    getActiveSkills = {
-      skillManagerViewModel.getSelectedSkills().map { skill ->
-        skillManagerViewModel.getSkillShortId(skill)
-      }
-    },
     composableBelowMessageList = { model ->
       val actionChannel = agentTools.receiveActionChannel
       val doneIcon = ImageVector.vectorResource(R.drawable.skill)
@@ -371,36 +345,12 @@ fun AgentChatScreen(
               )
             }
             is CallJsToolAction -> {
-              val skillName =
-                if (action.url.contains("/skills/")) {
-                  action.url.substringAfter("/skills/").substringBefore("/")
-                } else if (action.url.startsWith(LOCAL_URL_BASE + "/")) {
-                  action.url.substringAfter(LOCAL_URL_BASE + "/").substringBefore("/")
-                } else {
-                  action.url
-                }
-              val skill = skillManagerViewModel.getSkill(name = skillName)
-              val skillId = skill?.let { skillManagerViewModel.getSkillShortId(it) } ?: "xxxx"
               try {
                 // Set up a safety net timeout so we NEVER hang the chat or tool execution
                 launch {
                   delay(60000L) // 60 seconds max
                   if (!action.result.isCompleted) {
                     Log.e(TAG, "JS Execution timed out, completing with error.")
-                    Log.d(
-                      TAG,
-                      "Analytics: skill_execution, capability_name=${task.id}, skill_name=$skillName, success=false, error_type=timeout",
-                    )
-                    firebaseAnalytics?.logEvent(
-                      GalleryEvent.SKILL_EXECUTION.id,
-                      Bundle().apply {
-                        putString("capability_name", task.id)
-                        putString("skill_name", skillName)
-                        putString("skill_id", skillId)
-                        putBoolean("success", false)
-                        putString("error_type", "timeout")
-                      },
-                    )
                     action.result.complete(
                       "{\"error\": \"Skill execution timed out. Please check network connection.\"}"
                     )
@@ -420,24 +370,8 @@ fun AgentChatScreen(
                 // Execute JS.
                 Log.d(TAG, "Start to run js")
                 chatViewJavascriptInterface.onResultListener = { result ->
-                  Log.d(TAG, "Got result:\n$result")
+                  // [ALTREX] The raw result is not logged (it may hold the user's data).
                   action.result.complete(result)
-                  val isSuccess = !result.contains("\"error\":")
-                  val errorType = if (isSuccess) "" else "js_error"
-                  Log.d(
-                    TAG,
-                    "Analytics: skill_execution, capability_name=${task.id}, skill_name=$skillName, success=$isSuccess, error_type=$errorType",
-                  )
-                  firebaseAnalytics?.logEvent(
-                    GalleryEvent.SKILL_EXECUTION.id,
-                    Bundle().apply {
-                      putString("capability_name", task.id)
-                      putString("skill_name", skillName)
-                      putString("skill_id", skillId)
-                      putBoolean("success", isSuccess)
-                      putString("error_type", errorType)
-                    },
-                  )
                 }
 
                 val safeData = JSONObject.quote(action.data)
@@ -464,20 +398,6 @@ fun AgentChatScreen(
                     .trimIndent()
                 webViewRef?.evaluateJavascript(script, null)
               } catch (e: Exception) {
-                Log.d(
-                  TAG,
-                  "Analytics: skill_execution, capability_name=${task.id}, skill_name=$skillName, success=false, error_type=exception",
-                )
-                firebaseAnalytics?.logEvent(
-                  GalleryEvent.SKILL_EXECUTION.id,
-                  Bundle().apply {
-                    putString("capability_name", task.id)
-                    putString("skill_name", skillName)
-                    putString("skill_id", skillId)
-                    putBoolean("success", false)
-                    putString("error_type", "exception")
-                  },
-                )
                 action.result.completeExceptionally(e)
               }
             }
@@ -556,53 +476,8 @@ fun AgentChatScreen(
       val modelManagerUiState by modelManagerViewModel.uiState.collectAsState()
       val modelInitializationStatus = modelManagerUiState.modelInitializationStatus[model.name]
       Box(modifier = Modifier.fillMaxSize()) {
-        AnimatedVisibility(
-          !WindowInsets.isImeVisible,
-          enter = fadeIn(animationSpec = tween(200)),
-          exit = fadeOut(animationSpec = tween(200)),
-        ) {
-          Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(
-              modifier =
-                Modifier.align(Alignment.Center)
-                  .padding(horizontal = 48.dp)
-                  .padding(bottom = 48.dp),
-              horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-              Text(
-                stringResource(R.string.introducing),
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center,
-              )
-              Text(
-                stringResource(R.string.agent_skills),
-                style =
-                  MaterialTheme.typography.headlineLarge.copy(
-                    fontWeight = FontWeight.Medium,
-                    brush =
-                      Brush.linearGradient(colors = listOf(Color(0xFF85B1F8), Color(0xFF3174F1))),
-                  ),
-                modifier = Modifier.padding(top = 12.dp, bottom = 16.dp),
-                textAlign = TextAlign.Center,
-              )
-              Text(
-                AnnotatedString.fromHtml(
-                  stringResource(
-                    R.string.agent_skills_intro,
-                    AgentSkillsURLs.REPOSITORY,
-                    AgentSkillsURLs.DISCUSSIONS,
-                    stringResource(R.string.agent_skills),
-                  )
-                ),
-                style =
-                  MaterialTheme.typography.headlineSmall.copy(fontSize = 16.sp, lineHeight = 22.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-              )
-            }
-          }
-        }
-
+        // [ALTREX] No "Discover Agent Skills" text since chat and agent are one screen: only the
+        // example chips.
         Row(
           modifier =
             Modifier.align(Alignment.BottomCenter)
@@ -631,13 +506,6 @@ fun AgentChatScreen(
                       messages =
                         listOf(ChatMessageText(content = promptChip.prompt, side = ChatSide.USER)),
                     )
-                  firebaseAnalytics?.logEvent(
-                    GalleryEvent.BUTTON_CLICKED.id,
-                    Bundle().apply {
-                      putString("event_type", "agent_skills_prompt_chip")
-                      putString("button_id", promptChip.label)
-                    },
-                  )
                 }
                 // Skill is not selected, show alert dialog.
                 else {
@@ -681,6 +549,11 @@ fun AgentChatScreen(
 
   // [ALTREX] A phone action without its own confirmation screen (alarm, notification…).
   currentActionPermission?.let { action ->
+    // [ALTREX] Closed as soon as the request is answered or expired (refused after the delay).
+    LaunchedEffect(action) {
+      action.result.await()
+      if (currentActionPermission === action) currentActionPermission = null
+    }
     McpToolCallPermissionDialog(
       title = action.label,
       toolName = action.label,
@@ -694,12 +567,17 @@ fun AgentChatScreen(
 
   if (currentMcpPermissionAction != null) {
     val action = currentMcpPermissionAction!!
+    LaunchedEffect(action) {
+      action.result.await()
+      if (currentMcpPermissionAction === action) currentMcpPermissionAction = null
+    }
     McpToolCallPermissionDialog(
       toolName = action.toolName,
       argument = action.argument,
       onResult = { result ->
-        action.result.complete(result)
-        if (result == PermissionResult.ALWAYS_ALLOW) {
+        // An answer given after the request expired changes nothing (no late "always allow").
+        val accepted = action.result.complete(result)
+        if (accepted && result == PermissionResult.ALWAYS_ALLOW) {
           val serverState =
             mcpManagerViewModel.uiState.value.mcpServers.find { serverState ->
               serverState.mcpServer.toolsList.any { it.name == action.toolName }
@@ -777,43 +655,30 @@ fun AgentChatScreen(
 
 /** [ALTREX] Main chat: turns skills, MCP tools and phone actions on or off. */
 @Composable
-private fun ToolsToggleRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-  Row(
-    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-    horizontalArrangement = Arrangement.SpaceBetween,
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-      Text("Skills et outils", style = MaterialTheme.typography.bodyMedium)
-      Text(
-        if (checked) "Skills, serveurs MCP, actions du téléphone et recherche web"
-        else "Désactivés : réponses plus rapides, idéal pour un petit modèle",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-    }
-    Switch(checked = checked, onCheckedChange = onCheckedChange)
-  }
-}
-
-@Composable
 private fun AutonomousModeToggleRow(viewModel: AgentChatViewModel) {
   val enabled by viewModel.autonomousModeEnabled.collectAsState()
+  // [ALTREX] One compact line: it stays at the top of the chat, it must not eat the screen.
   Row(
-    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
     horizontalArrangement = Arrangement.SpaceBetween,
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    // [ALTREX] Weighted column: the switch keeps its room and the text wraps instead of being cut.
-    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-      Text("Mode autonome", style = MaterialTheme.typography.bodyMedium)
-      Text(
-        "Le modèle vérifie son travail et réessaie tout seul",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-    }
-    Switch(checked = enabled, onCheckedChange = { viewModel.setAutonomousMode(it) })
+    Text(
+      if (enabled) "Mode autonome : le modèle vérifie et réessaie seul" else "Mode autonome",
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier = Modifier.weight(1f).padding(end = 8.dp),
+      maxLines = 1,
+      overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+    )
+    Switch(
+      checked = enabled,
+      onCheckedChange = { viewModel.setAutonomousMode(it) },
+      modifier = Modifier.graphicsLayer {
+        scaleX = 0.8f
+        scaleY = 0.8f
+      },
+    )
   }
 }
 
@@ -828,32 +693,13 @@ private fun updateProgressPanel(viewModel: LlmChatViewModel, model: Model, agent
     lastProgressPanelMessage != null &&
       lastProgressPanelMessage is ChatMessageCollapsableProgressPanel
   ) {
-    if (lastProgressPanelMessage.title.startsWith("Loading")) {
-      agentTools.sendToolAction(
-        SkillProgressToolAction(
-          label = lastProgressPanelMessage.title.replace("Loading", "Loaded"),
-          inProgress = false,
-        )
+    // [ALTREX] French "done" label (it was "Loaded / Called / Executed").
+    agentTools.sendToolAction(
+      SkillProgressToolAction(
+        label = com.google.ai.edge.gallery.tools.ProgressLabels.done(lastProgressPanelMessage.title),
+        inProgress = false,
       )
-    } else if (lastProgressPanelMessage.title.startsWith("Calling")) {
-      agentTools.sendToolAction(
-        SkillProgressToolAction(
-          label = lastProgressPanelMessage.title.replace("Calling", "Called"),
-          inProgress = false,
-        )
-      )
-    } else if (lastProgressPanelMessage.title.startsWith("Executing")) {
-      agentTools.sendToolAction(
-        SkillProgressToolAction(
-          label = lastProgressPanelMessage.title.replace("Executing", "Executed"),
-          inProgress = false,
-        )
-      )
-    } else {
-      agentTools.sendToolAction(
-        SkillProgressToolAction(label = lastProgressPanelMessage.title, inProgress = false)
-      )
-    }
+    )
   }
 }
 

@@ -31,6 +31,7 @@ import com.google.ai.edge.gallery.common.getJsonResponse
 import com.google.ai.edge.gallery.common.isAICoreSupported
 import com.google.ai.edge.gallery.customtasks.common.CustomTask
 import com.google.ai.edge.gallery.data.Accelerator
+import com.google.ai.edge.gallery.compute.ComputeRuntime
 import com.google.ai.edge.gallery.data.ArgoraManifest
 import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.Category
@@ -59,7 +60,6 @@ import com.google.ai.edge.gallery.data.markInitializationFailed
 import com.google.ai.edge.gallery.data.markInitializationStarted
 import com.google.ai.edge.gallery.data.markInitialized
 import com.google.ai.edge.gallery.data.resetInitialization
-import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.huggingface.HuggingFaceApiClient
 import com.google.ai.edge.gallery.proto.AccessTokenData
 import com.google.ai.edge.gallery.proto.HfModelItemProto
@@ -81,6 +81,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -182,7 +183,6 @@ private val PREDEFINED_LLM_TASK_ORDER =
     BuiltInTaskId.LLM_AGENT_CHAT,
     BuiltInTaskId.LLM_PROMPT_LAB,
     BuiltInTaskId.LLM_SECURITY,
-    BuiltInTaskId.MP_SCRAPBOOK,
   )
 
 /**
@@ -378,6 +378,7 @@ constructor(
   }
 
   fun deleteModel(model: Model, removeImportedFromModelList: Boolean = true) {
+    ComputeRuntime.lastModel(context).clearIf(model.name)
     // [ALTREX] A loaded model is unloaded too: deleting only its file left it in RAM, still shown as
     // loaded.
     if (model.instance != null) {
@@ -513,6 +514,8 @@ constructor(
             cleanupModel(context = context, task = task, model = model)
           } else {
             model.markInitialized()
+            // [ALTREX] Proposed first next time (never loaded by itself).
+            ComputeRuntime.lastModel(context).set(model.name)
           }
           onDone()
         } else if (error.isNotEmpty()) {
@@ -562,6 +565,7 @@ constructor(
       Log.d(TAG, "Cleaning up model '${model.name}'...")
       val onDoneFn: () -> Unit = {
         model.resetInitialization()
+        ComputeRuntime.setUnloaded(model.name)
         updateModelInitializationStatus(
           model = model,
           status = ModelInitializationStatusType.NOT_INITIALIZED,
@@ -588,6 +592,48 @@ constructor(
       }
       onDone()
     }
+  }
+
+  /**
+   * [ALTREX] Loads [model] because the user asked for it ("Charger"). Nothing loads a model by
+   * itself: neither the app's start nor opening a chat or Forge. Outside a conversation, the Auto
+   * mode may measure the backends during this load.
+   */
+  fun loadModel(context: Context, task: Task, model: Model, conversationActive: Boolean) {
+    if (model.instance != null || model.initializing) return
+    ComputeRuntime.permitBenchmark(model.name, conversationActive)
+    initializeModel(context = context, task = task, model = model)
+  }
+
+  /** [ALTREX] Frees the model's memory now ("Décharger"). */
+  fun unloadModel(context: Context, task: Task, model: Model, onDone: () -> Unit = {}) {
+    cleanupModel(context = context, task = task, model = model, onDone = onDone)
+  }
+
+  /**
+   * [ALTREX] Loads [model] if needed and waits for it: the user sent a message to a model that is
+   * not loaded (an explicit request; no measurement since a conversation is going on). Returns
+   * null when the model is ready, else the error to show.
+   */
+  suspend fun ensureLoaded(context: Context, task: Task, model: Model): String? {
+    if (!ComputeRuntime.hasLocalCompute(model)) return null
+    if (model.instance != null && uiState.value.isModelInitialized(model)) return null
+    if (!model.initializing && !uiState.value.isModelInitializing(model)) {
+      // A message is waiting: no background measurement after this load.
+      ComputeRuntime.permitBenchmark(model.name, conversationActive = true)
+      initializeModel(context = context, task = task, model = model)
+    }
+    val reached =
+      withTimeoutOrNull(10 * 60_000L) {
+        uiState.first {
+          val st = it.modelInitializationStatus[model.name]?.status
+          (st == ModelInitializationStatusType.INITIALIZED && model.instance != null) ||
+            st == ModelInitializationStatusType.ERROR
+        }
+      }
+    if (model.instance != null) return null
+    return reached?.modelInitializationStatus?.get(model.name)?.error?.takeIf { it.isNotBlank() }
+      ?: "Le modèle n'a pas pu être chargé."
   }
 
   fun setDownloadStatus(curModel: Model, status: ModelDownloadStatus) {
@@ -671,29 +717,6 @@ constructor(
 
   fun saveThemeOverride(theme: Theme) {
     dataStoreRepository.saveTheme(theme = theme)
-  }
-
-  /**
-   * Retrieves whether Firebase Analytics collection is currently enabled.
-   *
-   * @return `true` if enabled or not explicitly disabled in settings; `false` if disabled.
-   */
-  fun readFirebaseAnalytics(): Boolean {
-    return dataStoreRepository.readFirebaseAnalytics()
-  }
-
-  /**
-   * Updates the user preference for Firebase Analytics data collection right away.
-   *
-   * Persists the setting to on-disk DataStore
-   * (`dataStoreRepository.saveFirebaseAnalytics(enabled)`) and dynamically updates the live
-   * Firebase SDK state via `firebaseAnalytics?.setAnalyticsCollectionEnabled(enabled)`.
-   *
-   * @param enabled `true` to enable diagnostic/analytics gathering; `false` to disable.
-   */
-  fun saveFirebaseAnalytics(enabled: Boolean) {
-    dataStoreRepository.saveFirebaseAnalytics(enabled = enabled)
-    firebaseAnalytics?.setAnalyticsCollectionEnabled(enabled)
   }
 
   fun getModelUrlResponse(model: Model, accessToken: String? = null): Int {
@@ -810,7 +833,7 @@ constructor(
    * [ALTREX] Adds a model served by a Hugging Face Space ([com.google.ai.edge.gallery.runtime.RemoteSpace])
    * to the model list: nothing is downloaded, the model runs in the Space. [spaceId] is owner/name.
    */
-  fun addRemoteSpaceModel(spaceId: String) {
+  fun addRemoteSpaceModel(spaceId: String, manifestJson: String = "") {
     val info =
       ImportedModel.newBuilder()
         .setFileName(com.google.ai.edge.gallery.runtime.RemoteSpace.modelName(spaceId))
@@ -822,6 +845,32 @@ constructor(
             .setDefaultTopk(40)
             .setDefaultTopp(0.95f)
             .setDefaultTemperature(0.3f)
+            .setSupportThinking(true)
+            // [ALTREX] Argora served by a Space: its manifest gives the trained system prompt and the
+            // mode suffixes, as for an imported GGUF.
+            .setManifestJson(manifestJson)
+            .build()
+        )
+        .build()
+    addImportedLlmModel(info)
+  }
+
+  /**
+   * [ALTREX] Adds a cloud model (provider API with the user's key, [CloudApi]). Nothing to download;
+   * a long answer budget since these models have large contexts.
+   */
+  fun addCloudModel(provider: com.google.ai.edge.gallery.runtime.CloudApi.Provider, modelId: String) {
+    val info =
+      ImportedModel.newBuilder()
+        .setFileName(com.google.ai.edge.gallery.runtime.CloudApi.modelName(provider, modelId))
+        .setFileSize(0L)
+        .setLlmConfig(
+          LlmConfig.newBuilder()
+            .addCompatibleAccelerators(Accelerator.CPU.label)
+            .setDefaultMaxTokens(8192)
+            .setDefaultTopk(40)
+            .setDefaultTopp(0.95f)
+            .setDefaultTemperature(1.0f)
             .setSupportThinking(true)
             .build()
         )
@@ -1067,9 +1116,15 @@ constructor(
           }
         }
 
+        // [ALTREX] Told to the welcome screen, which offers to retry.
+        var allowlistError = ""
         if (modelAllowlist == null) {
-          _uiState.update { it.copy(loadingModelAllowlistError = "Failed to load model list") }
-          return@launch
+          allowlistError = "Liste des modèles indisponible"
+          // [ALTREX] No list (offline at the very first launch, or a version Google publishes no list
+          // for): carry on with an empty one. Imported, cloud and remote models need none; returning
+          // here left the start screen blank for ever, with no way out.
+          Log.w(TAG, "No model allowlist available: continuing with an empty one")
+          modelAllowlist = Gson().fromJson("{\"models\":[]}", ModelAllowlist::class.java)
         }
 
         Log.d(TAG, "Allowlist: $modelAllowlist")
@@ -1155,6 +1210,7 @@ constructor(
           createUiState()
             .copy(
               loadingModelAllowlist = false,
+              loadingModelAllowlistError = allowlistError,
               tasks = curTasks,
               tasksByCategory = groupTasksByCategory(),
             )
@@ -1170,6 +1226,18 @@ constructor(
         Log.d(TAG, "loadModelAllowlist: Done")
       } catch (e: Exception) {
         Log.e(TAG, "Failed to load model allowlist", e)
+        // [ALTREX] Leave the loading state with the tasks (and the imported, cloud and remote
+        // models) in place, so the start screen offers a way out instead of waiting for ever.
+        val tasks = getActiveCustomTasks().map { it.task }
+        val base =
+          runCatching { createUiState().copy(tasks = tasks) }
+            .getOrElse { _uiState.value.copy(tasks = tasks) }
+        _uiState.update {
+          base.copy(
+            loadingModelAllowlist = false,
+            loadingModelAllowlistError = "Liste des modèles indisponible",
+          )
+        }
       } finally {
         allowlistLoading = false
       }
@@ -1264,6 +1332,8 @@ constructor(
         modelInstances[model.name] =
           ModelInitializationStatus(status = ModelInitializationStatusType.NOT_INITIALIZED)
         checkedModelNames.add(model.name)
+        // [ALTREX] Compute choice, context and threads chosen by the user, kept between runs.
+        ComputeRuntime.restoreModelSettings(context, model)
       }
     }
 
@@ -1320,8 +1390,8 @@ constructor(
       }
     }
 
+    // [ALTREX] Not logged: it is what the user typed.
     val textInputHistory = dataStoreRepository.readTextInputHistory()
-    Log.d(TAG, "text input history: $textInputHistory")
 
     Log.d(TAG, "model download status: $modelDownloadStatus")
     return ModelManagerUiState(
@@ -1413,7 +1483,10 @@ constructor(
         // through the native llama.cpp engine, everything else (.task/.litertlm) through
         // LiteRT-LM.
         runtimeType =
-          if (com.google.ai.edge.gallery.runtime.RemoteSpace.isRemote(info.fileName)) {
+          if (
+            com.google.ai.edge.gallery.runtime.RemoteSpace.isRemote(info.fileName) ||
+              com.google.ai.edge.gallery.runtime.CloudApi.isCloud(info.fileName)
+          ) {
             RuntimeType.REMOTE
           } else if (info.fileName.endsWith(".gguf")) {
             RuntimeType.LLAMA_CPP
@@ -1422,6 +1495,7 @@ constructor(
           },
       )
     model.preProcess()
+    ComputeRuntime.restoreModelSettings(context, model)
 
     return model
   }

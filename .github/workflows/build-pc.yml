@@ -1,0 +1,117 @@
+# Altrex pour PC (pc/, Rust) : tests et exécutable Windows.
+#
+# Rédigé depuis un conteneur Linux et PAS ENCORE EXÉCUTÉ : le premier passage sur un runner Windows
+# est à surveiller (voir docs/pc/README.md, « Ce qui n'est pas vérifié sur Windows »).
+name: Altrex PC
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "pc/**"
+      - "docs/forge/OUTILS.md"
+      - "docs/forge/contrat/**"
+      - "app/src/main/res/font/**"
+      - ".github/workflows/build-pc.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: altrex-pc-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  windows:
+    name: Windows (tests et .exe)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: pc
+    steps:
+      - uses: actions/checkout@v4
+
+      # Les runners GitHub ont rustup ; on fixe seulement la chaîne et ses composants.
+      - name: Chaîne Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt
+          rustup default stable
+          rustc --version
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            pc/target
+          key: pc-windows-${{ hashFiles('pc/Cargo.lock') }}
+
+      - name: Mise en forme
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      # Les tests tournent ici pour de bon sous Windows : PowerShell, DPAPI, chemins C:\, taskkill.
+      - name: Tests
+        run: cargo test --locked
+
+      - name: Exécutable (MSVC, release)
+        run: cargo build --release --locked -p altrex-pc
+
+      - name: Empreinte
+        shell: pwsh
+        run: |
+          Copy-Item target/release/altrex-pc.exe altrex-pc.exe
+          (Get-FileHash altrex-pc.exe -Algorithm SHA256).Hash.ToLower() + "  altrex-pc.exe" | Out-File -Encoding ascii altrex-pc.exe.sha256
+          Get-Item altrex-pc.exe | Select-Object Name, Length
+
+      # Non signé : Windows SmartScreen avertira au premier lancement (docs/pc/PLAN.md § 10).
+      - uses: actions/upload-artifact@v4
+        with:
+          name: altrex-pc-windows-x64
+          path: |
+            pc/altrex-pc.exe
+            pc/altrex-pc.exe.sha256
+          if-no-files-found: error
+
+  linux:
+    name: Linux (tests et contrat partagé)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: pc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Chaîne Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt
+          rustup default stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            pc/target
+          key: pc-linux-${{ hashFiles('pc/Cargo.lock') }}
+
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+      - run: cargo build --release --locked -p altrex-pc
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: altrex-pc-linux-x64
+          path: pc/target/release/altrex-pc
+          if-no-files-found: error

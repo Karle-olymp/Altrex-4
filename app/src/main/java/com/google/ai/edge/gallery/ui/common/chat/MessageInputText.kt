@@ -297,10 +297,13 @@ fun MessageInputText(
       !modelPreparing &&
       !inProgress &&
       !isResettingSession
-  LaunchedEffect(sharedRequest, modelReady) {
+  LaunchedEffect(sharedRequest, modelReady, modelInitializing, modelPreparing, inProgress, isResettingSession) {
     val request = sharedRequest ?: return@LaunchedEffect
     if (task.id != com.google.ai.edge.gallery.data.BuiltInTaskId.LLM_CHAT) return@LaunchedEffect
-    if (request.autoSend && !modelReady) return@LaunchedEffect
+    // [ALTREX] An auto-sent request ("Demander à Altrex") is an explicit request: sending loads
+    // the model when it is not loaded; it only waits while the model is busy.
+    val modelBusy = modelInitializing || modelPreparing || inProgress || isResettingSession
+    if (request.autoSend && modelBusy) return@LaunchedEffect
     if (SharedInbox.take() == null) return@LaunchedEffect
     val images = if (showImagePicker) request.images.take(MAX_IMAGE_COUNT) else emptyList()
     if (request.images.isNotEmpty() && images.isEmpty()) {

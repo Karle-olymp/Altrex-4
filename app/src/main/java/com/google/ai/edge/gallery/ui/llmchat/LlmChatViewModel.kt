@@ -178,7 +178,7 @@ open class LlmChatViewModelBase(
     allowThinking: Boolean = false,
     argoraMode: String? = null,
   ) {
-    val accelerator = model.getStringConfigValue(key = ConfigKeys.ACCELERATOR, defaultValue = "")
+    val accelerator = com.google.ai.edge.gallery.compute.ComputeRuntime.activeLabel(model)
     viewModelScope.launch(Dispatchers.Default) {
       setInProgress(true)
       setPreparing(true)
@@ -445,7 +445,7 @@ open class LlmChatViewModelBase(
     allowThinking: Boolean = false,
     argoraMode: String? = null,
   ) {
-    val accelerator = model.getStringConfigValue(key = ConfigKeys.ACCELERATOR, defaultValue = "")
+    val accelerator = com.google.ai.edge.gallery.compute.ComputeRuntime.activeLabel(model)
     documentReadingStopped = false
     viewModelScope.launch(Dispatchers.Default) {
       setInProgress(true)
@@ -633,26 +633,6 @@ open class LlmChatViewModelBase(
 
 @HiltViewModel
 open class LlmChatViewModel
-@Inject
-constructor(
-  systemPromptRepository: SystemPromptRepository,
-  userDataDataStore: DataStore<UserData>,
-  @AiChatExecutor runtimeExecutor: AgentRuntimeExecutor,
-) :
-LlmChatViewModelBase(systemPromptRepository, userDataDataStore, null, runtimeExecutor)
-
-@HiltViewModel
-class LlmAskImageViewModel
-@Inject
-constructor(
-  systemPromptRepository: SystemPromptRepository,
-  userDataDataStore: DataStore<UserData>,
-  @AiChatExecutor runtimeExecutor: AgentRuntimeExecutor,
-) :
-LlmChatViewModelBase(systemPromptRepository, userDataDataStore, null, runtimeExecutor)
-
-@HiltViewModel
-class LlmAskAudioViewModel
 @Inject
 constructor(
   systemPromptRepository: SystemPromptRepository,

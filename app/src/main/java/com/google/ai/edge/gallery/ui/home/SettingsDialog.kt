@@ -31,7 +31,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
@@ -96,6 +95,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
@@ -107,9 +108,8 @@ import androidx.compose.ui.window.Dialog
 import com.google.ai.edge.gallery.BuildConfig
 import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.proto.Theme
-import com.google.ai.edge.gallery.ui.common.ClickableLink
-import com.google.ai.edge.gallery.ui.common.tos.AppTosDialog
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
+import com.google.ai.edge.gallery.proto.AccessTokenData
 import com.google.ai.edge.gallery.ui.theme.ThemeSettings
 import com.google.ai.edge.gallery.ui.theme.labelSmallNarrow
 import java.time.Instant
@@ -120,20 +120,57 @@ import kotlin.math.min
 
 private val THEME_OPTIONS = listOf(Theme.THEME_AUTO, Theme.THEME_LIGHT, Theme.THEME_DARK)
 
+/** [ALTREX] The six blocks of the settings, in order. */
+val SETTINGS_BLOCKS =
+  listOf(
+    "Apparence",
+    "Modèles et clés",
+    "Linux du modèle",
+    "Mémoire locale",
+    "Confidentialité",
+    "Application",
+  )
+
 /**
- * [ALTREX] Settings as a full-screen page: grouped sections (Appearance, Models, Privacy,
- * Application) made of rows with an icon, a title and a subtitle.
+ * [ALTREX] Settings as a full-screen page, in six blocks ([SETTINGS_BLOCKS]) made of rows with an
+ * icon, a title and a subtitle. Every key (Hugging Face, cloud providers, online services) is in
+ * "Modèles et clés".
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsDialog(
   curThemeOverride: Theme,
-  curFirebaseAnalytics: Boolean,
   modelManagerViewModel: ModelManagerViewModel,
   onDismissed: () -> Unit,
 ) {
+  SettingsPage(
+    curThemeOverride = curThemeOverride,
+    readHfToken = { modelManagerViewModel.getTokenStatusAndData().data },
+    saveHfToken = { token ->
+      modelManagerViewModel.saveAccessToken(
+        accessToken = token,
+        refreshToken = "",
+        expiresAt = System.currentTimeMillis() + 1000L * 60 * 60 * 24 * 365 * 10,
+      )
+    },
+    clearHfToken = { modelManagerViewModel.clearAccessToken() },
+    saveTheme = { modelManagerViewModel.saveThemeOverride(it) },
+    onDismissed = onDismissed,
+  )
+}
+
+/** The settings themselves, without the view model (so they can be drawn in tests). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun SettingsPage(
+  curThemeOverride: Theme,
+  readHfToken: () -> AccessTokenData?,
+  saveHfToken: (String) -> Unit,
+  clearHfToken: () -> Unit,
+  saveTheme: (Theme) -> Unit,
+  onDismissed: () -> Unit,
+) {
   var selectedTheme by remember { mutableStateOf(curThemeOverride) }
-  var hfToken by remember { mutableStateOf(modelManagerViewModel.getTokenStatusAndData().data) }
+  var hfToken by remember { mutableStateOf(readHfToken()) }
   val dateFormatter = remember {
     DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
       .withZone(ZoneId.systemDefault())
@@ -150,7 +187,7 @@ fun SettingsDialog(
     selectedTheme = theme
     // Updates the app's theme and saves it.
     ThemeSettings.themeOverride.value = theme
-    modelManagerViewModel.saveThemeOverride(theme)
+    saveTheme(theme)
     // Keeps other activities launched from MainActivity on the same theme.
     val uiModeManager =
       context.applicationContext.getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
@@ -203,7 +240,8 @@ fun SettingsDialog(
         verticalArrangement = Arrangement.spacedBy(6.dp),
       ) {
         // Appearance.
-        SettingsSection("Apparence") {
+        // 1. Appearance.
+        SettingsSection(SETTINGS_BLOCKS[0]) {
           SettingsRow(
             icon = Icons.Outlined.Palette,
             title = stringResource(R.string.theme_title),
@@ -245,8 +283,8 @@ fun SettingsDialog(
           }
         }
 
-        // Models.
-        SettingsSection("Modèles") {
+        // 2. Models and keys: the Hugging Face token, the cloud providers and the online services.
+        SettingsSection(SETTINGS_BLOCKS[1]) {
           val curHfToken = hfToken
           val hasToken = curHfToken != null && curHfToken.accessToken.isNotEmpty()
           SettingsRow(
@@ -265,12 +303,8 @@ fun SettingsDialog(
           )
           if (showTokenEditor) {
             val handleSaveToken = {
-              modelManagerViewModel.saveAccessToken(
-                accessToken = customHfToken,
-                refreshToken = "",
-                expiresAt = System.currentTimeMillis() + 1000L * 60 * 60 * 24 * 365 * 10,
-              )
-              hfToken = modelManagerViewModel.getTokenStatusAndData().data
+              saveHfToken(customHfToken)
+              hfToken = readHfToken()
               customHfToken = ""
               focusManager.clearFocus()
             }
@@ -329,7 +363,7 @@ fun SettingsDialog(
               if (hasToken) {
                 OutlinedButton(
                   onClick = {
-                    modelManagerViewModel.clearAccessToken()
+                    clearHfToken()
                     hfToken = null
                   }
                 ) {
@@ -338,44 +372,39 @@ fun SettingsDialog(
               }
             }
           }
+          // Keys of the cloud model providers (models added from the model list).
+          SettingsSubLabel("Modèles cloud")
+          ApiKeysSettings(CLOUD_KEYS)
+          // Keys of the online tools.
+          SettingsSubLabel("Services en ligne")
+          ApiKeysSettings(API_KEYS)
         }
 
-        // [ALTREX] API keys of the online tools, stored encrypted on the phone.
-        SettingsSection("Clés d'API") { ApiKeysSettings() }
+        // 3. The model's own Linux (run_command tool): approvals, shared folder and reset. The
+        // user's Linux is the Terminal space.
+        SettingsSection(SETTINGS_BLOCKS[2]) { AgentLinuxSettings() }
 
-        // [ALTREX] Local memory: a folder the model draws on.
-        SettingsSection("Mémoire locale") { MemorySettings() }
+        // 4. Local memory: a folder the model draws on.
+        SettingsSection(SETTINGS_BLOCKS[3]) { MemorySettings() }
 
-        // [ALTREX] Linux terminal, first step (test screen).
-        var showLinux by remember { mutableStateOf(false) }
-        SettingsSection("Linux") {
-          SettingsRow(
-            icon = Icons.Outlined.Terminal,
-            title = "Linux (test)",
-            subtitle = "Alpine Linux dans Altrex : installer, lancer une commande",
-            showChevron = true,
-            onClick = { showLinux = true },
-          )
-        }
-        if (showLinux) {
-          com.google.ai.edge.gallery.terminal.LinuxTestDialog(onDismiss = { showLinux = false })
-        }
-
-        // Privacy.
-        SettingsSection("Confidentialité") {
+        // 5. Privacy.
+        SettingsSection(SETTINGS_BLOCKS[4]) {
           SettingsRow(
             icon = Icons.Outlined.Lock,
             title = "Ce qui sort du téléphone",
             subtitle =
-              "Les modèles et la mémoire locale restent sur ton téléphone. Le scan de l'espace Code " +
-                "envoie du code à SecurCode après ton accord, projet par projet ; la recherche web " +
-                "n'envoie que tes requêtes à Brave ; l'import GitHub ne fait que télécharger. Aucune " +
-                "clé n'est jamais montrée au modèle.",
+              "Les modèles locaux, la mémoire locale et tes notes restent sur ton téléphone. Quand tu " +
+                "utilises un modèle cloud ou un Space, tes messages, les résultats des outils et les " +
+                "documents joints partent chez ce fournisseur, avec ta clé. Un connecteur reçoit ce que " +
+                "le modèle lui envoie, et lui seul. Le scan de l'espace Code envoie du code à SecurCode " +
+                "après ton accord, projet par projet ; la recherche web n'envoie que tes requêtes à " +
+                "Brave ; l'import GitHub ne fait que télécharger. La liste des modèles proposés est " +
+                "téléchargée depuis GitHub. Aucune clé n'est jamais montrée au modèle.",
           )
         }
 
-        // Application.
-        SettingsSection("Application") {
+        // 6. Application.
+        SettingsSection(SETTINGS_BLOCKS[5]) {
           SettingsRow(
             icon = Icons.Outlined.Info,
             title = "Version",
@@ -411,8 +440,8 @@ private val API_KEYS =
       help =
         "Colle ta clé Brave Search (api-dashboard.search.brave.com → API keys). Seules tes requêtes " +
           "de recherche partent vers Brave, jamais ton code ni un secret.",
-      read = { com.google.ai.edge.gallery.ui.llmsingleturn.WebSettings.getBraveKey(it) },
-      save = { c, k -> com.google.ai.edge.gallery.ui.llmsingleturn.WebSettings.saveBraveKey(c, k) },
+      read = { com.google.ai.edge.gallery.tools.WebSettings.getBraveKey(it) },
+      save = { c, k -> com.google.ai.edge.gallery.tools.WebSettings.saveBraveKey(c, k) },
     ),
     ApiKeySpec(
       name = "SecurCode",
@@ -434,18 +463,33 @@ private val API_KEYS =
     ),
   )
 
+/** [ALTREX] One key per cloud provider ([com.google.ai.edge.gallery.runtime.CloudApi]). */
+private val CLOUD_KEYS =
+  com.google.ai.edge.gallery.runtime.CloudApi.Provider.entries.map { p ->
+    ApiKeySpec(
+      name = p.label,
+      purpose = "Modèles ${p.label.substringBefore(" (")}",
+      help =
+        "Colle ta clé d'API ${p.label} (${p.keyPage.removePrefix("https://")}). Elle n'est envoyée " +
+          "qu'à ${java.net.URL(p.baseUrl).host}, quand tu utilises un de ses modèles ; l'usage est facturé " +
+          "sur ton compte. Ajoute ensuite le modèle depuis la liste des modèles → Modèle cloud.",
+      read = { com.google.ai.edge.gallery.runtime.CloudApi.getKey(it, p) },
+      save = { c, k -> com.google.ai.edge.gallery.runtime.CloudApi.saveKey(c, p, k) },
+    )
+  }
+
 /**
  * [ALTREX] Every API key in one place: status (masked), add or change, delete. Keys are stored
  * encrypted on the phone and are never sent to the model.
  */
 @Composable
-private fun ApiKeysSettings() {
+private fun ApiKeysSettings(specs: List<ApiKeySpec>) {
   val context = LocalContext.current
   var version by remember { mutableStateOf(0) }
   var editing by remember { mutableStateOf<ApiKeySpec?>(null) }
   var input by remember { mutableStateOf("") }
 
-  for (spec in API_KEYS) {
+  for (spec in specs) {
     val key = remember(version) { spec.read(context) }
     Row(
       verticalAlignment = Alignment.CenterVertically,
@@ -659,6 +703,130 @@ private fun SemanticSearchRow() {
   }
 }
 
+/**
+ * [ALTREX] The model's Linux environment (run_command): whether each command needs approval, and a
+ * reset that deletes everything the model installed there.
+ */
+@Composable
+private fun AgentLinuxSettings() {
+  val context = LocalContext.current
+  val scope = rememberCoroutineScope()
+  val shell = com.google.ai.edge.gallery.tools.AgentShell
+  var mode by remember { mutableStateOf(shell.mode(context)) }
+  var prefixes by remember { mutableStateOf(shell.allowedPrefixes(context).sorted()) }
+  var edits by remember { mutableStateOf(shell.editsAllowed(context)) }
+  var share by remember { mutableStateOf(com.google.ai.edge.gallery.terminal.LinuxEnv.agentSharesFolder(context)) }
+  val env = remember { com.google.ai.edge.gallery.terminal.LinuxEnv.of(context, com.google.ai.edge.gallery.terminal.LinuxEnv.AGENT) }
+  var installed by remember { mutableStateOf(env.isInstalled) }
+  var resetting by remember { mutableStateOf(false) }
+  Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+    Text(
+      "Dans Discuter, le modèle a son propre Linux, séparé de ton terminal : commandes, fichiers, " +
+        "tâches de fond. Il a accès à Internet comme l'appli.",
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Text(
+      "Ses commandes",
+      style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+      modifier = Modifier.padding(top = 10.dp),
+    )
+    for ((m, label) in
+      listOf(
+        com.google.ai.edge.gallery.tools.AgentShell.Mode.READS_FREE to "Lectures libres, me demander le reste",
+        com.google.ai.edge.gallery.tools.AgentShell.Mode.ASK_ALL to "Me demander pour chaque commande",
+        com.google.ai.edge.gallery.tools.AgentShell.Mode.ALLOW_ALL to "Tout autoriser sans demander",
+      )) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier =
+          Modifier.fillMaxWidth().clickable {
+            mode = m
+            shell.setMode(context, m)
+            edits = shell.editsAllowed(context)
+          },
+      ) {
+        androidx.compose.material3.RadioButton(
+          selected = mode == m,
+          onClick = {
+            mode = m
+            shell.setMode(context, m)
+            edits = shell.editsAllowed(context)
+          },
+        )
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+      }
+    }
+    if (prefixes.isNotEmpty()) {
+      Text(
+        "Toujours autorisés : " + prefixes.joinToString(", "),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 4.dp),
+      )
+      androidx.compose.material3.TextButton(
+        onClick = {
+          for (p in prefixes) shell.removePrefix(context, p)
+          prefixes = emptyList()
+        }
+      ) {
+        Text("Oublier ces autorisations")
+      }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+      Column(modifier = Modifier.weight(1f)) {
+        Text("Modifier ses fichiers sans demander", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
+        Text(
+          "Écritures et modifications de fichiers dans son Linux",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+      androidx.compose.material3.Switch(
+        checked = edits,
+        enabled = mode != com.google.ai.edge.gallery.tools.AgentShell.Mode.ALLOW_ALL,
+        onCheckedChange = {
+          edits = it
+          shell.setEditsAllowed(context, it)
+        },
+      )
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+      Column(modifier = Modifier.weight(1f)) {
+        Text("Accès au dossier partagé", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
+        Text(
+          "Le modèle voit ~/partage (Android/media/…/Linux), comme ton terminal",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+      androidx.compose.material3.Switch(
+        checked = share,
+        onCheckedChange = {
+          share = it
+          com.google.ai.edge.gallery.terminal.LinuxEnv.setAgentSharesFolder(context, it)
+        },
+      )
+    }
+    if (installed) {
+      androidx.compose.material3.TextButton(
+        enabled = !resetting,
+        onClick = {
+          resetting = true
+          scope.launch {
+            com.google.ai.edge.gallery.tools.AgentJobs.stopAll()
+            env.uninstall()
+            installed = env.isInstalled
+            resetting = false
+          }
+        },
+      ) {
+        Text(if (resetting) "Réinitialisation…" else "Réinitialiser le Linux du modèle")
+      }
+    }
+  }
+}
+
 @Composable
 private fun SettingsSection(title: String, content: @Composable () -> Unit) {
   Text(
@@ -676,6 +844,17 @@ private fun SettingsSection(title: String, content: @Composable () -> Unit) {
   ) {
     content()
   }
+}
+
+/** A small heading inside a block (e.g. "Modèles cloud" in "Modèles et clés"). */
+@Composable
+private fun SettingsSubLabel(text: String) {
+  Text(
+    text,
+    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+    color = MaterialTheme.colorScheme.primary,
+    modifier = Modifier.padding(start = 14.dp, top = 10.dp, bottom = 2.dp),
+  )
 }
 
 @Composable

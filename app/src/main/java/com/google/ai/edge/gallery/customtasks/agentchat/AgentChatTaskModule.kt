@@ -17,185 +17,83 @@
 package com.google.ai.edge.gallery.customtasks.agentchat
 
 import android.content.Context
-import androidx.compose.runtime.Composable
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.DataStoreFactory
 import androidx.datastore.dataStoreFile
-import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.agent.AgentChatExecutor
-import com.google.ai.edge.gallery.agent.AgentRuntimeConfig
 import com.google.ai.edge.gallery.agent.AgentRuntimeExecutor
 import com.google.ai.edge.gallery.agent.DefaultAgentRuntimeExecutor
 import com.google.ai.edge.gallery.agent.PromptExpander
-import com.google.ai.edge.gallery.customtasks.common.CustomTask
-import com.google.ai.edge.gallery.customtasks.common.CustomTaskDataForBuiltinTask
-import com.google.ai.edge.gallery.data.BuiltInTaskId
-import com.google.ai.edge.gallery.data.Category
-import com.google.ai.edge.gallery.data.Model
-import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.proto.McpServers
 import com.google.ai.edge.gallery.skills.SkillManager
 import com.google.ai.edge.gallery.skills.SkillsProvider
 import com.google.ai.edge.gallery.skills.formatSelectedSkills
 import com.google.ai.edge.gallery.tools.RuntimeToolDispatcher
-import com.google.ai.edge.litertlm.Contents
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import dagger.multibindings.IntoSet
-import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 private const val TAG = "AGAgentChatTask"
 
-// The default system prompt for the agent chat task with both skills and MCP tools.
-const val DEFAULT_SYSTEM_PROMPT =
+// [ALTREX] The agent's routing prompt. The original one only knew skills and MCP tools ("if no
+// skill is found, stop"): models never used run_command or answered directly, and invented skill
+// names instead ("yum"). Every path is listed now, plain questions first.
+private const val AGENT_PROMPT_HEAD =
   """
-  You are an AI assistant that helps users by answering questions and completing tasks using skills and tools. For EVERY new task, request, or question, you MUST execute the following steps in exact order. You MUST NOT skip any steps.
+  You are Altrex, an assistant running on the user's phone. Reply in the user's language, briefly.
 
-  CRITICAL RULE: You MUST execute all steps silently. Do NOT generate or output any internal thoughts, reasoning, explanations, or intermediate text at ANY step.
+  For each request, choose ONE path:
+  - A normal question, an explanation, code to write or review, or a chat: answer directly, with no tool.
+  - Running a shell command, installing a package, executing code or a script: call `run_command`. It runs in your own Alpine Linux: install packages with `apk add <package>` (not apt or yum), one short command per call, then read `exit_code` and `output`. The working directory carries over between commands (`cd` stays). For a server or a long task, set `background` to true and follow it with `check_job`.
+  - Reading, creating or changing a file in that Linux: `read_file` (with line numbers), `write_file` (whole file), `edit_file` (replace an exact piece of text, after reading the file).
+  - Recent information from the internet: call `webSearch`.
+  - A task that matches a skill in --- SKILLS ---: call `load_skill` with its exact name, then follow its instructions.
 
-  1. EVALUATE AND ROUTE:
-     Determine if the request should be handled by a "Skill" (requires loading instructions) or directly by an "MCP Tool".
-     - If it is a Skill: Go to Step 2.
-     - If it is an MCP Tool: Go to Step 4.
-     - If nothing is found, output "No skills or tools found" and stop.
+  When the user asks you to install, run, check, clone or download something, do it yourself with `run_command`: never tell the user to type the command, and never state a result that no tool gave you.
+  Examples:
+  - "install python 3" → call `run_command` with {"command": "apk add python3"}
+  - "quelle version de Linux ?" → call `run_command` with {"command": "uname -a"}
+  - "clone github.com/user/projet" → call `run_command` with {"command": "apk add git && git clone https://github.com/user/projet"}
+  """
+
+private const val AGENT_PROMPT_MCP_PATH =
+  """
+  - A task that matches a tool in --- MCP TOOLS ---: call `runMcpTool` with `toolName` (the exact name from the list) and `input` (a JSON object matching its schema).
+  """
+
+private const val AGENT_PROMPT_RULES =
+  """
+  Only use skill and tool names that appear below or above; never invent one. If a tool fails or is refused, say so plainly instead of retrying it.
+  After a tool result, give the final answer: one short sentence on what you did, then the result.
 
   --- SKILLS ---
   ___SKILLS___
+  """
+
+private const val AGENT_PROMPT_MCP_LIST =
+  """
 
   --- MCP TOOLS ---
   ___TOOLS___
-
-  ==================================================
-  FLOW A: SKILL EXECUTION
-  ==================================================
-
-  2. Find the most relevant skill from the --- SKILLS --- list. You MUST NOT use `run_intent` or `runMcpTool` under any circumstances at this step.
-
-  3. Use the `load_skill` tool to read its instructions. Follow the skill's instructions exactly to complete the task.
-     - You MUST NOT output any intermediate thoughts or status updates. No exceptions!
-     - Output ONLY the final result when successful. It should contain a one-sentence summary of the action taken and the final result of the skill.
-     - Stop here once Flow A is complete.
-
-  ==================================================
-  FLOW B: MCP TOOL DIRECT EXECUTION
-  ==================================================
-
-  4. Find the most relevant tool from the --- MCP TOOLS --- list.
-
-  5. Call the `runMcpTool` tool with the following parameters:
-     - `toolName`: The name of the tool to run. Use the exact name from the list above. Do not hallucinate the name. Pay attention to casing and plurals.
-     - `input`: The input JSON object that matches the tool's expected input schema.
-
-  6. Output ONLY the final result returned by the tool. You MUST NOT output any intermediate thoughts or status updates. No exceptions!
   """
 
-val DEFAULT_SYSTEM_PROMPT_TRIMMED = DEFAULT_SYSTEM_PROMPT.trimIndent()
+// The default system prompt for the agent chat task (skills and MCP tools).
+val DEFAULT_SYSTEM_PROMPT =
+  AGENT_PROMPT_HEAD.trimIndent() + "\n" + AGENT_PROMPT_MCP_PATH.trimIndent() + "\n\n" +
+    AGENT_PROMPT_RULES.trimIndent() + "\n\n" + AGENT_PROMPT_MCP_LIST.trimIndent()
 
-// The default system prompt for the agent chat task with only skills.
-const val DEFAULT_SYSTEM_PROMPT_SKILLS_ONLY =
-  """
-  You are an AI assistant that helps users by answering questions and completes tasks using skills. For EVERY new task or request or question, you MUST execute the following steps in exact order. You MUST NOT skip any steps.
+val DEFAULT_SYSTEM_PROMPT_TRIMMED = DEFAULT_SYSTEM_PROMPT.trim()
 
-  CRITICAL RULE: You MUST execute all steps silently. Do NOT generate or output any internal thoughts, reasoning, explanations, or intermediate text at ANY step.
+// The default system prompt for the agent chat task without MCP tools.
+val DEFAULT_SYSTEM_PROMPT_SKILLS_ONLY =
+  AGENT_PROMPT_HEAD.trimIndent() + "\n\n" + AGENT_PROMPT_RULES.trimIndent()
 
-  1. First, find the most relevant skill from the following list:
-
-  ___SKILLS___
-
-  After this step you MUST go to next step. You MUST NOT use `run_intent` under any circumstances at this step.
-
-  2. If a relevant skill exists, use the `load_skill` tool to read its instructions. You MUST NOT use `run_intent` under any circumstances at this step.
-
-  3. Follow the skill's instructions exactly to complete the task. You MUST NOT output any intermediate thoughts or status updates. No exceptions! Output ONLY the final result when successful. It should contain one-sentence summary of the action taken, and the final result of the skill.
-
-  4. If no relevant skill is found, output "No relevant skills found" and stop.
-  """
-
-val DEFAULT_SYSTEM_PROMPT_SKILLS_ONLY_TRIMMED = DEFAULT_SYSTEM_PROMPT_SKILLS_ONLY.trimIndent()
-
-class AgentChatTask
-@Inject
-constructor(
-  @ApplicationContext private val context: Context,
-  private val skillsProvider: SkillsProvider,
-  private val agentTools: AgentTools,
-  @AgentChatExecutor private val executor: AgentRuntimeExecutor,
-) : CustomTask {
-  override val task: Task by lazy {
-    Task(
-      id = BuiltInTaskId.LLM_AGENT_CHAT,
-      label = context.getString(R.string.task_label_agent_skills),
-      category = Category.LLM,
-      iconVectorResourceId = R.drawable.agent,
-      newFeature = true,
-      models = mutableListOf(),
-      description = context.getString(R.string.task_desc_agent_skills),
-      shortDescription = context.getString(R.string.task_short_desc_agent_skills),
-      docUrl = "https://github.com/google-ai-edge/LiteRT-LM/blob/main/kotlin/README.md",
-      sourceCodeUrl =
-        "https://github.com/google-ai-edge/gallery/blob/main/Android/src/app/src/main/java/com/google/ai/edge/gallery/customtasks/agentchat/",
-      textInputPlaceHolderRes = R.string.text_input_placeholder_llm_chat,
-      defaultSystemPrompt = DEFAULT_SYSTEM_PROMPT_TRIMMED,
-    )
-  }
-
-  override fun initializeModelFn(
-    context: Context,
-    coroutineScope: CoroutineScope,
-    model: Model,
-    systemInstruction: Contents?,
-    onDone: (String) -> Unit,
-  ) {
-    val initialSystemPrompt = systemInstruction?.toString() ?: task.defaultSystemPrompt
-    coroutineScope.launch(Dispatchers.Default) {
-      agentTools.toolsEnabled = true
-      val finalSystemPrompt = buildAgentSystemPrompt(agentTools, skillsProvider, initialSystemPrompt)
-
-      val config =
-        AgentRuntimeConfig(
-          model = model,
-          taskId = task.id,
-          actionChannel = agentTools.sendActionChannel,
-          supportImage = model.llmSupportImage,
-          supportAudio = model.llmSupportAudio,
-          enableConversationConstrainedDecoding = true,
-          systemInstruction = finalSystemPrompt,
-        )
-
-      executor.initialize(context = context, config = config, onDone = onDone)
-    }
-  }
-
-  override fun cleanUpModelFn(
-    context: Context,
-    coroutineScope: CoroutineScope,
-    model: Model,
-    onDone: () -> Unit,
-  ) {
-    executor.cleanUpModel(model = model, onDone = onDone)
-  }
-
-  @Composable
-  override fun MainScreen(data: Any) {
-    val myData = data as CustomTaskDataForBuiltinTask
-    AgentChatScreen(
-      task = task,
-      modelManagerViewModel = myData.modelManagerViewModel,
-      navigateUp = myData.onNavUp,
-      agentTools = agentTools,
-      onMenuClicked = myData.onMenuClicked,
-      initialQuery = myData.initialQuery,
-    )
-  }
-}
+val DEFAULT_SYSTEM_PROMPT_SKILLS_ONLY_TRIMMED = DEFAULT_SYSTEM_PROMPT_SKILLS_ONLY.trim()
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -221,17 +119,6 @@ internal object AgentChatTaskModule {
   }
 
   @Provides
-  @IntoSet
-  fun provideTask(
-    @ApplicationContext context: Context,
-    skillManager: SkillManager,
-    agentTools: AgentTools,
-    @AgentChatExecutor executor: AgentRuntimeExecutor,
-  ): CustomTask {
-    return AgentChatTask(context, skillManager, agentTools, executor)
-  }
-
-  @Provides
   @Singleton
   fun provideMcpServersDataStore(@ApplicationContext context: Context): DataStore<McpServers> {
     return DataStoreFactory.create(
@@ -243,8 +130,8 @@ internal object AgentChatTaskModule {
 
 /**
  * [ALTREX] The agent's system prompt: [template] with the selected skills and the MCP tools put
- * in (the default template depends on whether MCP tools are on). Shared by the main chat with
- * "Skills et outils" on and the Agent Skills task.
+ * in (the default template depends on whether MCP tools are on). Used by the main chat with
+ * "Skills et outils" on.
  */
 suspend fun buildAgentSystemPrompt(
   agentTools: AgentTools,

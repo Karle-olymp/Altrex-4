@@ -76,6 +76,7 @@ fun ModelPickerChip(
   initialModel: Model,
   modelManagerViewModel: ModelManagerViewModel,
   onModelSelected: (prev: Model, cur: Model) -> Unit,
+  conversationActive: Boolean = true,
 ) {
   var showModelPicker by remember { mutableStateOf(false) }
   var modelPickerModel by remember { mutableStateOf<Model?>(null) }
@@ -114,8 +115,12 @@ fun ModelPickerChip(
           // green when loaded, dim otherwise (the ring below shows loading).
           val chipDownloadStatus = modelManagerUiState.modelDownloadStatus[initialModel.name]
           if (chipDownloadStatus?.status == ModelDownloadStatusType.SUCCEEDED) {
+            // [ALTREX] A cloud model or a Space has nothing to load: green once its connection is checked.
+            val remote by com.google.ai.edge.gallery.runtime.RemoteCheck.status.collectAsState()
             val loaded =
-              modelInitializationStatus?.status == ModelInitializationStatusType.INITIALIZED
+              if (com.google.ai.edge.gallery.runtime.RemoteCheck.isRemoteModel(initialModel.name))
+                remote[initialModel.name]?.state == com.google.ai.edge.gallery.runtime.RemoteState.READY
+              else modelInitializationStatus?.status == ModelInitializationStatusType.INITIALIZED
             Box(
               modifier =
                 Modifier.size(8.dp)
@@ -168,6 +173,7 @@ fun ModelPickerChip(
       ModelPicker(
         task = task,
         modelManagerViewModel = modelManagerViewModel,
+        conversationActive = conversationActive,
         onModelSelected = { selectedModel ->
           showModelPicker = false
           val prevSelectedModel = modelManagerUiState.selectedModel

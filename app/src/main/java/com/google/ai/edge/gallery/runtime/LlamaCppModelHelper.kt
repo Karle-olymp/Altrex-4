@@ -19,6 +19,10 @@ package com.google.ai.edge.gallery.runtime
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
+import com.google.ai.edge.gallery.compute.AutoParamsCalculator
+import com.google.ai.edge.gallery.compute.AutoSelector
+import com.google.ai.edge.gallery.compute.ComputeChoice
+import com.google.ai.edge.gallery.compute.ComputeRuntime
 import com.google.ai.edge.gallery.data.ARGORA_MODE_KEY
 import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN
@@ -101,34 +105,54 @@ object LlamaCppModelHelper : LlmModelHelper {
     val modelPath = model.getPath(context = context)
 
     // Memory guard. A big model next to Android and the other apps can get the process killed
-    // without any error message. [ALTREX] Count the KV cache too (it grows with the context) and
-    // shrink the context before giving up.
-    val fileBytes = java.io.File(modelPath).length()
-    val memInfo = android.app.ActivityManager.MemoryInfo()
-    (context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager)
-      .getMemoryInfo(memInfo)
+    // without any error message. [ALTREX] Context and threads are chosen from the free memory, the
+    // model size and its maximal context (AutoParamsCalculator) unless the user set them; a manual
+    // context is still halved when it does not fit.
     val megabyte = 1024L * 1024L
-    // Rough KV cache cost per context token (f16): ~32 KB for 1B models up to ~160 KB for 8B.
-    val kvBytesPerToken = (fileBytes / 30_000L).coerceIn(32L * 1024L, 160L * 1024L)
-    fun needed(ctx: Int) = fileBytes + 400L * megabyte + ctx * kvBytesPerToken
-    var contextLength = if (fileBytes > 4_000L * megabyte) minOf(maxTokens, 4096) else maxTokens
-    while (contextLength > 2048 && fileBytes > 0 && memInfo.availMem < needed(contextLength)) {
-      contextLength /= 2
+    val auto = ComputeRuntime.autoParams(context, model)
+    val mem = ComputeRuntime.memorySnapshot(context)
+    val fileBytes = java.io.File(modelPath).length()
+    val autoContext =
+      model.getBooleanConfigValue(key = ConfigKeys.CONTEXT_AUTO, defaultValue = false)
+    var contextLength: Int
+    if (autoContext) {
+      contextLength = auto.contextTokens
+    } else {
+      contextLength = if (fileBytes > 4_000L * megabyte) minOf(maxTokens, 4096) else maxTokens
+      while (
+        contextLength > 2048 &&
+          fileBytes > 0 &&
+          mem.availBytes < AutoParamsCalculator.neededBytes(fileBytes, contextLength)
+      ) {
+        contextLength /= 2
+      }
     }
+    val needed = AutoParamsCalculator.neededBytes(fileBytes, contextLength)
+    val threadsSetting = model.getIntConfigValue(key = ConfigKeys.NUM_THREADS, defaultValue = 0)
     Log.i(
       TAG,
-      "Loading '${model.name}': file=${fileBytes / megabyte} MB, available RAM=${memInfo.availMem / megabyte} MB, " +
-        "context=$contextLength (asked $maxTokens)",
+      "Loading '${model.name}': file=${fileBytes / megabyte} MB, available RAM=${mem.availBytes / megabyte} MB, " +
+        "context=$contextLength (auto=$autoContext, asked $maxTokens), threads=${if (threadsSetting > 0) threadsSetting else "auto " + auto.threads}",
     )
-    if (fileBytes > 0 && memInfo.availMem < needed(contextLength)) {
+    if (fileBytes > 0 && mem.availBytes < needed) {
       val msg =
-        "Mémoire insuffisante pour charger ce modèle : environ ${needed(contextLength) / megabyte} Mo " +
-          "nécessaires, ${memInfo.availMem / megabyte} Mo disponibles. Ferme d'autres applications " +
+        "Mémoire insuffisante pour charger ce modèle : environ ${needed / megabyte} Mo " +
+          "nécessaires, ${mem.availBytes / megabyte} Mo disponibles. Ferme d'autres applications " +
           "ou choisis un modèle plus petit."
       model.markInitializationFailed(msg)
       onDone(msg)
       return
     }
+    // llama.cpp has the CPU backend only in this build: Auto and CPU both run there.
+    val computeLine =
+      if (ComputeRuntime.choice(model) == ComputeChoice.AUTO) {
+        AutoSelector.explain("CPU", null, "seul calcul de llama.cpp ici")
+      } else {
+        "Calcul : CPU"
+      }
+    val paramsLine =
+      "contexte $contextLength" + (if (autoContext) " (auto)" else "") + " · " +
+        (if (threadsSetting > 0) "$threadsSetting threads" else "${auto.threads} threads (auto)")
 
     // [ALTREX] One completion path, reported exactly once (the shared-flow collector could miss
     // the events and both paths could fire).
@@ -170,6 +194,7 @@ object LlamaCppModelHelper : LlmModelHelper {
               sharedFlow = sharedFlow,
               contextLength = effectiveContext,
             )
+          ComputeRuntime.setLoaded(model.name, ComputeChoice.CPU, computeLine, paramsLine)
           model.markInitialized()
           onDone("")
         }

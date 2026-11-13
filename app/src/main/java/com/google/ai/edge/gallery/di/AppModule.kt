@@ -24,7 +24,6 @@ import androidx.datastore.dataStoreFile
 import com.google.ai.edge.gallery.AppLifecycleProvider
 import com.google.ai.edge.gallery.BenchmarkResultsSerializer
 import com.google.ai.edge.gallery.BuildConfig
-import com.google.ai.edge.gallery.CutoutsSerializer
 import com.google.ai.edge.gallery.GalleryLifecycleProvider
 import com.google.ai.edge.gallery.SettingsSerializer
 import com.google.ai.edge.gallery.SkillsSerializer
@@ -34,7 +33,6 @@ import com.google.ai.edge.gallery.data.DefaultDataStoreRepository
 import com.google.ai.edge.gallery.data.DefaultDownloadRepository
 import com.google.ai.edge.gallery.data.DownloadRepository
 import com.google.ai.edge.gallery.proto.BenchmarkResults
-import com.google.ai.edge.gallery.proto.CutoutCollection
 import com.google.ai.edge.gallery.proto.Settings
 import com.google.ai.edge.gallery.proto.Skills
 import com.google.ai.edge.gallery.proto.UserData
@@ -55,13 +53,6 @@ internal object AppModule {
   @Singleton
   fun provideSettingsSerializer(): Serializer<Settings> {
     return SettingsSerializer
-  }
-
-  // Provides the CutoutSerializer
-  @Provides
-  @Singleton
-  fun provideCutoutSerializer(): Serializer<CutoutCollection> {
-    return CutoutsSerializer
   }
 
   // Provides the UserDataSerializer
@@ -95,19 +86,6 @@ internal object AppModule {
     return DataStoreFactory.create(
       serializer = settingsSerializer,
       produceFile = { context.dataStoreFile("settings.pb") },
-    )
-  }
-
-  // Provides DataStore<CutoutCollection>
-  @Provides
-  @Singleton
-  fun provideCutoutsDataStore(
-    @ApplicationContext context: Context,
-    cutoutsSerializer: Serializer<CutoutCollection>,
-  ): DataStore<CutoutCollection> {
-    return DataStoreFactory.create(
-      serializer = cutoutsSerializer,
-      produceFile = { context.dataStoreFile("cutouts.pb") },
     )
   }
 
@@ -163,14 +141,12 @@ internal object AppModule {
   fun provideDataStoreRepository(
     dataStore: DataStore<Settings>,
     userDataDataStore: DataStore<UserData>,
-    cutoutsDataStore: DataStore<CutoutCollection>,
     benchmarkResultsStore: DataStore<BenchmarkResults>,
     skillsDataStore: DataStore<Skills>,
   ): DataStoreRepository {
     return DefaultDataStoreRepository(
       dataStore,
       userDataDataStore,
-      cutoutsDataStore,
       benchmarkResultsStore,
       skillsDataStore,
     )

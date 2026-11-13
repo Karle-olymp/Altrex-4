@@ -16,42 +16,19 @@
 
 package com.google.ai.edge.gallery.ui.llmchat
 
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import android.graphics.Bitmap
-import android.os.Bundle
-import android.util.Log
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import com.google.ai.edge.gallery.GalleryEvent
-import com.google.ai.edge.gallery.R
 import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.ModelCapability
-import com.google.ai.edge.gallery.data.RuntimeType
 import com.google.ai.edge.gallery.data.Task
-import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessage
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessageAudioClip
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessageImage
@@ -60,42 +37,6 @@ import com.google.ai.edge.gallery.ui.common.chat.ChatView
 import com.google.ai.edge.gallery.ui.common.chat.SendMessageTrigger
 import com.google.ai.edge.gallery.ui.common.chat.convertToLitertMessage
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
-import com.google.ai.edge.gallery.ui.theme.emptyStateContent
-import com.google.ai.edge.gallery.ui.theme.emptyStateTitle
-
-private const val TAG = "AGLlmChatScreen"
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun LlmChatModeToggle(
-  selectedMode: ChatMode,
-  onModeSelected: (ChatMode) -> Unit,
-  modifier: Modifier = Modifier,
-) {
-  Row(
-    modifier =
-      modifier
-        .fillMaxWidth()
-        .padding(horizontal = 16.dp, vertical = 4.dp),
-    horizontalArrangement = Arrangement.Center,
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    SingleChoiceSegmentedButtonRow {
-      SegmentedButton(
-        selected = selectedMode == ChatMode.GENERAL,
-        onClick = { onModeSelected(ChatMode.GENERAL) },
-        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-        label = { Text("Général") },
-      )
-      SegmentedButton(
-        selected = selectedMode == ChatMode.CODE,
-        onClick = { onModeSelected(ChatMode.CODE) },
-        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-        label = { Text("Code") },
-      )
-    }
-  }
-}
 
 @Composable
 fun LlmChatScreen(
@@ -119,10 +60,8 @@ fun LlmChatScreen(
   sendMessageTrigger: SendMessageTrigger? = null,
   showImagePicker: Boolean = false,
   showAudioPicker: Boolean = false,
-  getActiveSkills: () -> List<String> = { emptyList() },
   skillCount: Int = 0,
   mcpCount: Int = 0,
-  mcpToolsCount: Int = 0,
   topContent: (@Composable () -> Unit)? = null,
 ) {
   val chatMode by viewModel.chatMode.collectAsState()
@@ -148,108 +87,12 @@ fun LlmChatScreen(
     curSystemPrompt = curSystemPrompt,
     skillCount = skillCount,
     mcpCount = mcpCount,
-    mcpToolsCount = mcpToolsCount,
     onSystemPromptChanged = onSystemPromptChanged,
     emptyStateComposable = emptyStateComposable,
     sendMessageTrigger = sendMessageTrigger,
     showImagePicker = showImagePicker,
     showAudioPicker = showAudioPicker,
-    getActiveSkills = getActiveSkills,
     topContent = topContent ?: defaultTopContent,
-  )
-}
-
-@Composable
-fun LlmAskImageScreen(
-  modelManagerViewModel: ModelManagerViewModel,
-  navigateUp: () -> Unit,
-  modifier: Modifier = Modifier,
-  onMenuClicked: (() -> Unit)? = null,
-  viewModel: LlmAskImageViewModel = hiltViewModel(),
-  allowEditingSystemPrompt: Boolean = false,
-  curSystemPrompt: String = "",
-  onSystemPromptChanged: (String) -> Unit = {},
-) {
-  ChatViewWrapper(
-    viewModel = viewModel,
-    modelManagerViewModel = modelManagerViewModel,
-    taskId = BuiltInTaskId.LLM_ASK_IMAGE,
-    navigateUp = navigateUp,
-    modifier = modifier,
-    onMenuClicked = onMenuClicked,
-    allowEditingSystemPrompt = allowEditingSystemPrompt,
-    curSystemPrompt = curSystemPrompt,
-    onSystemPromptChanged = onSystemPromptChanged,
-    showImagePicker = true,
-    showAudioPicker = false,
-    emptyStateComposable = { model ->
-      Box(modifier = Modifier.fillMaxSize()) {
-        Column(
-          modifier =
-            Modifier.align(Alignment.Center).padding(horizontal = 48.dp).padding(bottom = 48.dp),
-          horizontalAlignment = Alignment.CenterHorizontally,
-          verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-          Text(stringResource(R.string.askimage_emptystate_title), style = emptyStateTitle)
-          val contentRes =
-            if (model.runtimeType == RuntimeType.AICORE) {
-              R.string.askimage_emptystate_content_aicore
-            } else {
-              R.string.askimage_emptystate_content
-            }
-          Text(
-            stringResource(contentRes),
-            style = emptyStateContent,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-          )
-        }
-      }
-    },
-  )
-}
-
-@Composable
-fun LlmAskAudioScreen(
-  modelManagerViewModel: ModelManagerViewModel,
-  navigateUp: () -> Unit,
-  modifier: Modifier = Modifier,
-  onMenuClicked: (() -> Unit)? = null,
-  viewModel: LlmAskAudioViewModel = hiltViewModel(),
-  allowEditingSystemPrompt: Boolean = false,
-  curSystemPrompt: String = "",
-  onSystemPromptChanged: (String) -> Unit = {},
-) {
-  ChatViewWrapper(
-    viewModel = viewModel,
-    modelManagerViewModel = modelManagerViewModel,
-    taskId = BuiltInTaskId.LLM_ASK_AUDIO,
-    navigateUp = navigateUp,
-    modifier = modifier,
-    onMenuClicked = onMenuClicked,
-    allowEditingSystemPrompt = allowEditingSystemPrompt,
-    curSystemPrompt = curSystemPrompt,
-    onSystemPromptChanged = onSystemPromptChanged,
-    showImagePicker = false,
-    showAudioPicker = true,
-    emptyStateComposable = {
-      Box(modifier = Modifier.fillMaxSize()) {
-        Column(
-          modifier =
-            Modifier.align(Alignment.Center).padding(horizontal = 48.dp).padding(bottom = 48.dp),
-          horizontalAlignment = Alignment.CenterHorizontally,
-          verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-          Text(stringResource(R.string.askaudio_emptystate_title), style = emptyStateTitle)
-          Text(
-            stringResource(R.string.askaudio_emptystate_content),
-            style = emptyStateContent,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-          )
-        }
-      }
-    },
   )
 }
 
@@ -275,10 +118,8 @@ fun ChatViewWrapper(
   sendMessageTrigger: SendMessageTrigger? = null,
   showImagePicker: Boolean = false,
   showAudioPicker: Boolean = false,
-  getActiveSkills: () -> List<String> = { emptyList() },
   skillCount: Int = 0,
   mcpCount: Int = 0,
-  mcpToolsCount: Int = 0,
   topContent: (@Composable () -> Unit)? = null,
 ) {
   val context = LocalContext.current
@@ -389,6 +230,16 @@ fun ChatViewWrapper(
         val baseInput = input
         val readLongDocument = longDocument
         scope.launch {
+          // [ALTREX] Sending to a model that is not loaded loads it first (an explicit request;
+          // the Auto mode does not measure during a conversation).
+          val loadError = modelManagerViewModel.ensureLoaded(context, task, model)
+          if (loadError != null) {
+            viewModel.addMessage(
+              model = model,
+              message = com.google.ai.edge.gallery.ui.common.chat.ChatMessageError(content = loadError),
+            )
+            return@launch
+          }
           var finalInput = baseInput
           if (useMemory) {
             val contextTokens =
@@ -425,27 +276,6 @@ fun ChatViewWrapper(
             )
           }
         }
-
-        val activeSkills = getActiveSkills()
-        Log.d(
-          TAG,
-          "Analytics: generate_action, capability_name=${task.id}, active_skills=${activeSkills.joinToString(",")}, active_mcp_servers_count=$mcpCount, active_mcp_tools_count=$mcpToolsCount",
-        )
-        firebaseAnalytics?.logEvent(
-          GalleryEvent.GENERATE_ACTION.id,
-          Bundle().apply {
-            putString("capability_name", task.id)
-            putString("model_id", model.name)
-            putBoolean("has_image", images.isNotEmpty())
-            putInt("image_count", images.size)
-            putBoolean("has_audio", audioMessages.isNotEmpty())
-            putInt("audio_count", audioMessages.size)
-            putInt("active_skills_count", activeSkills.size)
-            putString("active_skills_list", activeSkills.joinToString(","))
-            putInt("active_mcp_servers_count", mcpCount)
-            putInt("active_mcp_tools_count", mcpToolsCount)
-          },
-        )
       }
     },
     onRunAgainClicked = { model, message ->

@@ -85,6 +85,8 @@ import com.google.ai.edge.gallery.ui.theme.labelSmallNarrow
 fun ModelPicker(
   task: Task,
   modelManagerViewModel: ModelManagerViewModel,
+  // [ALTREX] Whether a conversation is going on (then "Charger" never measures the backends).
+  conversationActive: Boolean = true,
   onModelSelected: (Model) -> Unit,
 ) {
   val modelManagerUiState by modelManagerViewModel.uiState.collectAsState()
@@ -130,10 +132,17 @@ fun ModelPicker(
   // Reading task.updateTrigger keeps this list in sync when a model is imported while this
   // picker is open (import mutates task.models and bumps this trigger).
   task.updateTrigger.value
+  // [ALTREX] The last used model first (proposed, not loaded).
+  val lastUsed = remember { com.google.ai.edge.gallery.compute.ComputeRuntime.lastModel(context).get() }
   val onDevice =
-    task.models.filter {
-      it.imported ||
-        modelManagerUiState.modelDownloadStatus[it.name]?.status == ModelDownloadStatusType.SUCCEEDED
+    com.google.ai.edge.gallery.compute.ModelOrdering.lastUsedFirst(
+      task.models.filter {
+        it.imported ||
+          modelManagerUiState.modelDownloadStatus[it.name]?.status == ModelDownloadStatusType.SUCCEEDED
+      },
+      lastUsed,
+    ) {
+      it.name
     }
   val downloadable = task.models.filter { m -> onDevice.none { it.name == m.name } }
   val pickModel: (Model) -> Unit = { model ->
@@ -167,6 +176,15 @@ fun ModelPicker(
       )
     }
 
+    // [ALTREX] The selected model's state, with "Charger" / "Décharger".
+    ActiveModelCard(
+      task = task,
+      model = modelManagerUiState.selectedModel,
+      modelManagerViewModel = modelManagerViewModel,
+      conversationActive = conversationActive,
+      modifier = Modifier.padding(bottom = 10.dp),
+    )
+
     Text(
       "SUR L'APPAREIL",
       style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
@@ -188,6 +206,12 @@ fun ModelPicker(
         selected = model.name == modelManagerUiState.selectedModel.name,
         downloadStatus = modelManagerUiState.modelDownloadStatus[model.name],
         onClick = { pickModel(model) },
+        badge =
+          when {
+            model.instance != null -> "Chargé"
+            model.name == lastUsed -> "Dernier utilisé"
+            else -> null
+          },
       )
     }
 
@@ -353,6 +377,7 @@ private fun PickerModelRow(
   selected: Boolean,
   downloadStatus: ModelDownloadStatus?,
   onClick: () -> Unit,
+  badge: String? = null,
 ) {
   val shape = RoundedCornerShape(16.dp)
   Row(
@@ -384,6 +409,13 @@ private fun PickerModelRow(
           if (selected) MaterialTheme.colorScheme.onPrimaryContainer
           else MaterialTheme.colorScheme.onSurface,
       )
+      if (badge != null) {
+        Text(
+          badge,
+          style = labelSmallNarrow,
+          color = MaterialTheme.colorScheme.primary,
+        )
+      }
       if (model.runtimeType != RuntimeType.AICORE) {
         Row(
           horizontalArrangement = Arrangement.spacedBy(4.dp),

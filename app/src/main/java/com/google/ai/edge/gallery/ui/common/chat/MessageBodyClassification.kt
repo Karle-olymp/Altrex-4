@@ -38,7 +38,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 val CLASSIFICATION_BAR_HEIGHT = 8.dp
-val CLASSIFICATION_BAR_MAX_WIDTH = 200.dp
 
 /**
  * Composable function to display classification results.

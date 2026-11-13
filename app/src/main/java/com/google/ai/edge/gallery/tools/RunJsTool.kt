@@ -92,10 +92,10 @@ class RunJsTool(
         if (savedSecret == null || savedSecret.isEmpty()) {
           val action =
             AskInfoToolAction(
-              dialogTitle = "Enter secret",
+              dialogTitle = "Clé secrète requise",
               fieldLabel =
                 skill.requireSecretDescription.ifEmpty {
-                  "The JS script needs a secret (API key / token) to proceed:"
+                  "Ce script a besoin d'un secret (clé d'API ou jeton) pour continuer :"
                 },
             )
           // [ALTREX] No screen to ask on (no action channel): fail instead of waiting forever.
@@ -134,10 +134,10 @@ class RunJsTool(
         ?.actionChannel
         ?.send(
           SkillProgressToolAction(
-            label = "Calling JS script \"${skillName}/${scriptName}\"",
+            label = ProgressLabels.callingScript(skillName, scriptName),
             inProgress = true,
-            addItemTitle = "Call JS script: \"${skillName}/${scriptName}\"",
-            addItemDescription = "- URL: ${url.replace(LOCAL_URL_BASE, "")}\n- Data: $data",
+            addItemTitle = "Script JS « ${skillName}/${scriptName} »",
+            addItemDescription = "- URL : ${url.replace(LOCAL_URL_BASE, "")}\n- Données : $data",
             customData = skill,
           )
         )
@@ -194,7 +194,6 @@ class RunJsTool(
           Log.d(TAG, "Webview url: $webviewUrl")
           resultWebviewToShow = webview.copy(url = webviewUrl)
         }
-        Log.d(TAG, "Result: ${resultJson.result}")
         mapOf("result" to (resultJson.result ?: ""), "status" to "succeeded")
       }
     }
